@@ -685,6 +685,19 @@ describe('tools/ops/github-repo-settings.sh — the release flow’s GitHub sett
 
 describe('tools/ops/deploy-identity.sh — Workload Identity Federation per environment (ADR 2026-11-18, E8)', () => {
   const SCRIPT = 'deploy-identity.sh';
+  /** The default compute account: the build account (ADR 2026-11-19, I4). */
+  const COMPUTE = 'PROJECT_NUMBER-compute@developer.gserviceaccount.com';
+  /** The functions' runtime account (ADR 2026-11-19, I1). */
+  const RUNTIME = 'creativo-functions@creativo-v2-prod.iam.gserviceaccount.com';
+  /** The roles a dry run grants `account` on the project, in order. */
+  const projectRolesOf = (out, account) =>
+    [
+      ...out.matchAll(
+        /^\+ gcloud projects add-iam-policy-binding creativo-v2-prod --member=serviceAccount:(\S+) --role=(\S+) --condition=None$/gm,
+      ),
+    ]
+      .filter((match) => match[1] === account)
+      .map((match) => match[2]);
   const args = (environment) => [
     '--project',
     'creativo-v2-prod',
@@ -763,10 +776,10 @@ describe('tools/ops/deploy-identity.sh — Workload Identity Federation per envi
     );
   });
 
-  it('makes sure the runtime account exists, then lets it sign its own custom tokens — on itself, never project-wide', () => {
+  it('waits for the build account, makes the runtime account, and lets the runtime account sign its own custom tokens — on itself, never project-wide', () => {
     const { out } = dryRun(SCRIPT, args('staging'));
-    const runtime = 'PROJECT_NUMBER-compute@developer.gserviceaccount.com';
-    // Compute Engine's API is what creates the default compute account.
+    // Compute Engine's API is what creates the default compute account,
+    // the account Cloud Build builds the functions as.
     assert.match(
       out,
       /^\+ gcloud services enable [^\n]* compute\.googleapis\.com /m,
@@ -781,23 +794,110 @@ describe('tools/ops/deploy-identity.sh — Workload Identity Federation per envi
       out,
       /^\+ gcloud services enable [^\n]* cloudbilling\.googleapis\.com /m,
     );
-    const describe = out.indexOf(
-      `+ gcloud iam service-accounts describe ${runtime} --project=creativo-v2-prod`,
+    const describeBuild = out.indexOf(
+      `+ gcloud iam service-accounts describe ${COMPUTE} --project=creativo-v2-prod`,
+    );
+    const actAsBuild = out.indexOf(
+      `+ gcloud iam service-accounts add-iam-policy-binding ${COMPUTE} --role=roles/iam.serviceAccountUser`,
+    );
+    assert.ok(describeBuild >= 0, 'the build account is described');
+    assert.ok(actAsBuild > describeBuild, 'and bound only after the wait');
+    const describeRuntime = out.indexOf(
+      `+ gcloud iam service-accounts describe ${RUNTIME} --project=creativo-v2-prod`,
+    );
+    const create = out.indexOf(
+      "+ gcloud iam service-accounts create creativo-functions '--display-name=Creativo functions (runtime)' --project=creativo-v2-prod",
     );
     const tokenCreator = out.indexOf(
-      `+ gcloud iam service-accounts add-iam-policy-binding ${runtime} --role=roles/iam.serviceAccountTokenCreator --member=serviceAccount:${runtime} --project=creativo-v2-prod`,
+      `+ gcloud iam service-accounts add-iam-policy-binding ${RUNTIME} --role=roles/iam.serviceAccountTokenCreator --member=serviceAccount:${RUNTIME} --project=creativo-v2-prod`,
     );
-    assert.ok(
-      describe >= 0,
-      'the runtime account is described before it is bound',
+    assert.ok(describeRuntime >= 0, 'the runtime account is described');
+    assert.ok(create > describeRuntime, 'created when absent');
+    assert.ok(tokenCreator > create, 'Token Creator on itself, once it exists');
+    // On the project, Token Creator goes to the Pub/Sub agent alone.
+    assert.deepEqual(
+      [
+        ...out.matchAll(
+          /^\+ gcloud projects add-iam-policy-binding creativo-v2-prod --member=serviceAccount:(\S+) --role=roles\/iam\.serviceAccountTokenCreator /gm,
+        ),
+      ].map((match) => match[1]),
+      ['service-PROJECT_NUMBER@gcp-sa-pubsub.iam.gserviceaccount.com'],
     );
-    assert.ok(
-      tokenCreator > describe,
-      'Token Creator on itself, after the wait',
-    );
+    // The default compute account signs nothing any more: no Token Creator
+    // is granted to it, anywhere.
     assert.doesNotMatch(
       out,
-      /add-iam-policy-binding creativo-v2-prod --member=serviceAccount:PROJECT_NUMBER-compute@[^\n]*serviceAccountTokenCreator/,
+      /add-iam-policy-binding [^\n]*--member=serviceAccount:PROJECT_NUMBER-compute@[^\n]*serviceAccountTokenCreator|add-iam-policy-binding PROJECT_NUMBER-compute@[^\n]*serviceAccountTokenCreator/,
+    );
+  });
+
+  it('grants the runtime account exactly what the functions call — the default bucket’s objects on that bucket alone, never Editor, an admin of the project or a project-wide Storage role (ADR 2026-11-19, I2)', () => {
+    const { out } = dryRun(SCRIPT, args('production'));
+    assert.deepEqual(projectRolesOf(out, RUNTIME), [
+      'roles/datastore.user',
+      'roles/firebaseauth.admin',
+      'roles/firebaseappcheck.tokenVerifier',
+      'roles/logging.logWriter',
+      'roles/run.invoker',
+      'roles/eventarc.eventReceiver',
+    ]);
+    assert.deepEqual(
+      [
+        ...out.matchAll(
+          /^\+ gcloud storage buckets add-iam-policy-binding (\S+) --member=serviceAccount:(\S+) --role=(\S+) --project=creativo-v2-prod$/gm,
+        ),
+      ].map((match) => match.slice(1)),
+      [
+        [
+          'gs://creativo-v2-prod.firebasestorage.app',
+          RUNTIME,
+          'roles/storage.objectUser',
+        ],
+      ],
+    );
+    for (const line of out.split('\n')) {
+      if (!line.includes(`--member=serviceAccount:${RUNTIME}`)) continue;
+      assert.doesNotMatch(
+        line,
+        /roles\/(owner|editor|storage\.admin|storage\.objectAdmin|firebase\.admin|datastore\.owner|iam\.serviceAccountUser|resourcemanager\.|secretmanager\.admin)/,
+        line,
+      );
+    }
+  });
+
+  it('gives the build account Cloud Run Builder and the two bindings firebase-tools’ first deploy checks — none of the app’s data (ADR 2026-11-19, I4)', () => {
+    const { out } = dryRun(SCRIPT, args('production'));
+    assert.deepEqual(projectRolesOf(out, COMPUTE), [
+      'roles/run.builder',
+      'roles/run.invoker',
+      'roles/eventarc.eventReceiver',
+    ]);
+    // No secret, no bucket and no signing for the build account.
+    assert.doesNotMatch(
+      out,
+      /^\+ gcloud (secrets|storage buckets) add-iam-policy-binding [^\n]*PROJECT_NUMBER-compute@/m,
+    );
+  });
+
+  it('runs the functions as the account it makes — the global options name names.env’s runtime account id', () => {
+    const names = opsNamesOf(read('tools/ops/names.env'));
+    assert.equal(names.RUNTIME_SERVICE_ACCOUNT_ID, 'creativo-functions');
+    const account = read('apps/functions/src/lib/runtime-account.ts');
+    assert.equal(
+      /^export const FUNCTIONS_SERVICE_ACCOUNT_ID = '([^']*)';$/m.exec(
+        account,
+      )?.[1],
+      names.RUNTIME_SERVICE_ACCOUNT_ID,
+    );
+    // The full address, resolved per project at deploy — never the `name@`
+    // shorthand, which Cloud Scheduler would receive unexpanded.
+    assert.match(
+      account,
+      /^export const FUNCTIONS_SERVICE_ACCOUNT = expr`\$\{FUNCTIONS_SERVICE_ACCOUNT_ID\}@\$\{projectID\}\.iam\.gserviceaccount\.com`;$/m,
+    );
+    assert.match(
+      read('apps/functions/src/main.ts'),
+      /^setGlobalOptions\(\{\n {2}region: FUNCTIONS_REGION,\n {2}serviceAccount: FUNCTIONS_SERVICE_ACCOUNT,\n\}\);$/m,
     );
   });
 
@@ -817,16 +917,15 @@ describe('tools/ops/deploy-identity.sh — Workload Identity Federation per envi
       present > probe && bind > present && absent > bind,
       'bound only when it exists',
     );
-    // The deploy account acts as exactly these two accounts.
+    // The deploy account acts as exactly these three accounts (ADR
+    // 2026-11-19, I5): the build's, the runtime's and the one
+    // firebase-tools checks.
     const actAs = [
       ...out.matchAll(
         /^\+ gcloud iam service-accounts add-iam-policy-binding (\S+) --role=roles\/iam\.serviceAccountUser /gm,
       ),
     ].map((match) => match[1]);
-    assert.deepEqual(actAs, [
-      'PROJECT_NUMBER-compute@developer.gserviceaccount.com',
-      appspot,
-    ]);
+    assert.deepEqual(actAs, [COMPUTE, RUNTIME, appspot]);
   });
 
   it('creates the Pub/Sub service agent before binding it — a new project has none until asked', () => {
@@ -871,7 +970,7 @@ describe('tools/ops/deploy-identity.sh — Workload Identity Federation per envi
     ]) {
       assert.ok(
         out.includes(
-          `+ gcloud secrets add-iam-policy-binding ${secret} --member=serviceAccount:PROJECT_NUMBER-compute@developer.gserviceaccount.com --role=roles/secretmanager.secretAccessor --project=creativo-v2-prod`,
+          `+ gcloud secrets add-iam-policy-binding ${secret} --member=serviceAccount:${RUNTIME} --role=roles/secretmanager.secretAccessor --project=creativo-v2-prod`,
         ),
         secret,
       );
@@ -900,6 +999,120 @@ describe('tools/ops/deploy-identity.sh — Workload Identity Federation per envi
     );
     const text = read(`tools/ops/${SCRIPT}`);
     assert.doesNotMatch(text, /keys create|gh secret set|credentials_json/);
+  });
+
+  it('removes nothing without --remove-default-editor — it only says how (ADR 2026-11-19, I6)', () => {
+    const { out } = dryRun(SCRIPT, args('staging'));
+    assert.doesNotMatch(out, /remove-iam-policy-binding|functions list/);
+    assert.match(
+      out,
+      /^# 10\. the default accounts keep Editor: once every function runs as creativo-functions@creativo-v2-prod\.iam\.gserviceaccount\.com, re-run with --remove-default-editor /m,
+    );
+  });
+
+  it('with --remove-default-editor, lists the functions before it removes anything, then takes Editor off both default accounts and the old runtime grants off the build account — each behind its read, nothing of the runtime or deploy account, still dry', () => {
+    rmSync(marker, { force: true });
+    const run = dryRun(SCRIPT, [...args('staging'), '--remove-default-editor']);
+    assert.equal(run.status, 0, run.err);
+    assert.equal(existsSync(marker), false, 'the stub gcloud was called');
+    const { out } = run;
+    const list = out.indexOf(
+      "+ gcloud functions list --project=creativo-v2-prod '--format=value(name.basename(),serviceConfig.serviceAccountEmail)'",
+    );
+    assert.ok(list >= 0, 'the functions are listed');
+    assert.ok(
+      out.indexOf('remove-iam-policy-binding') > list,
+      'before any removal',
+    );
+    const lines = out.split('\n');
+    const removals = lines.filter((line) =>
+      line.includes(' remove-iam-policy-binding '),
+    );
+    assert.deepEqual(removals, [
+      `+ gcloud projects remove-iam-policy-binding creativo-v2-prod --member=serviceAccount:${COMPUTE} --role=roles/editor --condition=None`,
+      '+ gcloud projects remove-iam-policy-binding creativo-v2-prod --member=serviceAccount:creativo-v2-prod@appspot.gserviceaccount.com --role=roles/editor --condition=None',
+      `+ gcloud iam service-accounts remove-iam-policy-binding ${COMPUTE} --member=serviceAccount:${COMPUTE} --role=roles/iam.serviceAccountTokenCreator --project=creativo-v2-prod`,
+      ...[
+        'WALKIN_ID_KEY',
+        'LOG_DIGEST_KEY',
+        'OTP_POSTMARK_TOKEN',
+        'OTP_EMAIL_FROM',
+      ].map(
+        (secret) =>
+          `+ gcloud secrets remove-iam-policy-binding ${secret} --member=serviceAccount:${COMPUTE} --role=roles/secretmanager.secretAccessor --project=creativo-v2-prod`,
+      ),
+    ]);
+    // Each removal follows the read of its policy and the branch it runs in.
+    for (const removal of removals) {
+      const at = lines.indexOf(removal);
+      assert.match(lines[at - 1], /^# {3}when it holds \S+ →$/, removal);
+      assert.match(
+        lines[at - 2],
+        / get-iam-policy [^\n]*'--flatten=bindings\[\]\.members' '--format=value\(bindings\.role,bindings\.members\)'$/,
+        removal,
+      );
+    }
+  });
+
+  it('refuses the removal while any function runs as another account, and reads a policy by its exact role and member (tools/ops/lib/least-privilege.sh)', () => {
+    const lib = (fn, ...values) => {
+      const result = spawnSync(
+        'bash',
+        [
+          '-c',
+          `. tools/ops/lib/least-privilege.sh; ${fn} "$@"`,
+          'lib',
+          ...values,
+        ],
+        { cwd: ROOT, encoding: 'utf8' },
+      );
+      return { status: result.status, out: result.stdout };
+    };
+    const runtime = 'creativo-functions@p.iam.gserviceaccount.com';
+    const off = (listing) => lib('functions_off_account', listing, runtime).out;
+    assert.equal(off(''), '', 'a project with no function');
+    assert.equal(off(`a\t${runtime}\nb\t${runtime}\n`), '');
+    assert.equal(
+      off(`a\t${runtime}\nb\t1-compute@developer.gserviceaccount.com`),
+      'b (1-compute@developer.gserviceaccount.com)\n',
+    );
+    assert.equal(off('c\t\nd'), 'c (no account)\nd (no account)\n');
+    assert.equal(off(`e\t${runtime}x`), `e (${runtime}x)\n`);
+
+    const policy = [
+      'roles/editor\tserviceAccount:1-compute@developer.gserviceaccount.com',
+      'roles/run.invoker\tserviceAccount:p@appspot.gserviceaccount.com',
+    ].join('\n');
+    const holds = (role, member) =>
+      lib('policy_holds', policy, role, member).status === 0;
+    assert.equal(
+      holds(
+        'roles/editor',
+        'serviceAccount:1-compute@developer.gserviceaccount.com',
+      ),
+      true,
+    );
+    assert.equal(
+      holds('roles/editor', 'serviceAccount:p@appspot.gserviceaccount.com'),
+      false,
+      'another role of the member',
+    );
+    assert.equal(
+      holds(
+        'roles/edit',
+        'serviceAccount:1-compute@developer.gserviceaccount.com',
+      ),
+      false,
+      'a prefix of the role',
+    );
+    assert.equal(
+      holds(
+        'roles/editor',
+        'serviceAccount:1-compute@developer.gserviceaccount.co',
+      ),
+      false,
+      'a prefix of the member',
+    );
   });
 
   it('refuses --apply without an environment, and an environment of no name, running nothing', () => {

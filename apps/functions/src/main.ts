@@ -141,6 +141,7 @@ import { CRON_TIME_ZONE } from './lib/cron-zone';
 import { adminAuth, adminBucket, adminFirestore } from './lib/firebase-admin';
 import { serverRelease } from './lib/release';
 import { FUNCTIONS_REGION } from './lib/region';
+import { FUNCTIONS_SERVICE_ACCOUNT } from './lib/runtime-account';
 import {
   arrivalRefusal,
   arrivedOf,
@@ -327,9 +328,14 @@ import { refusalOf, type WireRequest } from './wire/wire-read';
  */
 
 // Every export runs in the database's region (ADR 2026-11-18,
-// europe-west8): set before the first function below is defined, which is
-// when each one reads the global options.
-setGlobalOptions({ region: FUNCTIONS_REGION });
+// europe-west8), as the dedicated least-privilege runtime account (ADR
+// 2026-11-19, I1; never the default compute account and its Editor role):
+// set before the first function below is defined, which is when each one
+// reads the global options.
+setGlobalOptions({
+  region: FUNCTIONS_REGION,
+  serviceAccount: FUNCTIONS_SERVICE_ACCOUNT,
+});
 
 /** Build on first use, then keep — the cold-start-once rule for anything behind an SDK client. */
 function once<T>(build: () => T): () => T {

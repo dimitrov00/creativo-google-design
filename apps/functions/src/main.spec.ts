@@ -1,5 +1,6 @@
 import { logger } from 'firebase-functions';
 import { type CallableRequest, HttpsError } from 'firebase-functions/v2/https';
+import { Expression } from 'firebase-functions/params';
 import {
   Actor,
   ClientIssueKind,
@@ -189,8 +190,10 @@ type PipelineName = (typeof seam.PIPELINES)[number];
 
 /**
  * Every option a deployed endpoint declares that no export of ours sets —
- * and the one every export shares: the region, from `setGlobalOptions`
- * (ADR 2026-11-18, europe-west8), beside the database.
+ * and the two every export shares, from `setGlobalOptions`: the region (ADR
+ * 2026-11-18, europe-west8), beside the database, and the runtime account
+ * (ADR 2026-11-19, I1) — the dedicated least-privilege one, its address
+ * resolved per project at deploy, never the default compute account.
  */
 const PLATFORM = {
   region: [FUNCTIONS_REGION],
@@ -200,7 +203,8 @@ const PLATFORM = {
   maxInstances: null,
   ingressSettings: null,
   concurrency: null,
-  serviceAccountEmail: null,
+  serviceAccountEmail:
+    'creativo-functions@{{ params.PROJECT_ID }}.iam.gserviceaccount.com',
   vpc: null,
   platform: 'gcfv2',
   labels: {},
@@ -306,9 +310,12 @@ const daily = (schedule: string) => ({
  * added `setRoles`, the admin's audited roles change — a traced callable
  * declaring no other option; staff permissions added `setStaffPermissions`,
  * the owner's save of what a staff level may do, the same way. Staff analytics added `staffAnalytics`, the
- * read-only report — traced, on 512 MiB (a shop-month's read).
+ * read-only report — traced, on 512 MiB (a shop-month's read). The
+ * runtime identity's least-privilege pass (ADR 2026-11-19) moved every
+ * export onto the dedicated runtime account (`PLATFORM`).
  * A literal: what `firebase deploy` reads, so a changed path, retry flag,
- * timeout, memory, instance cap, secret or schedule fails here.
+ * timeout, memory, instance cap, secret, schedule or runtime account fails
+ * here.
  */
 const ENDPOINTS = {
   requestOtpChallenge: {
@@ -435,13 +442,26 @@ const EXPORTS = Object.keys(ENDPOINTS).sort() as readonly ExportName[];
 const exported = new Map<string, unknown>(Object.entries(main));
 
 /**
- * An export's `__endpoint` as the capture read it — through JSON, which
- * drops the SDK's `undefined`-valued keys (no deploy reads those).
+ * JSON's replacer for an endpoint: a param expression as its CEL text, as
+ * the SDK's own manifest writes it (`stackToWire`) — read off the holder,
+ * since JSON has already passed the value through its `toJSON`.
+ */
+function celOfExpressions(this: object, key: string, value: unknown): unknown {
+  const original: unknown = Reflect.get(this, key);
+  return original instanceof Expression ? original.toCEL() : value;
+}
+
+/**
+ * An export's `__endpoint` as `firebase deploy` reads it — through JSON,
+ * which drops the SDK's `undefined`-valued keys (no deploy reads those),
+ * every param expression as its CEL text (the runtime account is one).
  */
 const endpointOf = (fn: unknown): unknown =>
   fn === null || typeof fn !== 'function'
     ? undefined
-    : JSON.parse(JSON.stringify(Reflect.get(fn, '__endpoint') ?? null));
+    : JSON.parse(
+        JSON.stringify(Reflect.get(fn, '__endpoint') ?? null, celOfExpressions),
+      );
 
 /** A deployed function's `run` — what the platform (and a spec) invokes. */
 type Runnable = { run: (input: unknown) => Promise<unknown> };

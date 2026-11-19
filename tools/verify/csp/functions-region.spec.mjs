@@ -49,10 +49,11 @@ describe('the functions’ region (ADR 2026-11-18, europe-west8)', () => {
       main,
       /^import \{ FUNCTIONS_REGION \} from '\.\/lib\/region';$/m,
     );
-    const calls = [
-      ...main.matchAll(/setGlobalOptions\(\{ region: FUNCTIONS_REGION \}\);/g),
-    ];
+    // The one call, whatever else it sets beside the region (the runtime
+    // account, ADR 2026-11-19).
+    const calls = [...main.matchAll(/setGlobalOptions\(\{[^}]*\}\);/g)];
     assert.equal(calls.length, 1);
+    assert.match(calls[0][0], /\bregion: FUNCTIONS_REGION\b/);
     const first = Math.min(
       ...[
         ' = onCall(',
