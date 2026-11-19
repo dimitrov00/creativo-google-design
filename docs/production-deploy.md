@@ -103,8 +103,9 @@ so the owner has to make the call.
 Staging is `main`: every merge deploys there once CI passes on it.
 Production is the release tags: merging release-please's PR tags `vX.Y.Z`,
 and the tag deploys once you approve it. Both run section 3 of this
-checklist, in its order, non-interactively and never with `--force`
-(`.github/actions/deploy`). The rest of this checklist still applies to
+checklist, in its order, non-interactively, with `--force` on the functions
+deploy alone (`.github/actions/deploy`; ADR E6, amended 2026-11-19: a
+function removed from the source is deleted). The rest of this checklist still applies to
 each project; what changed is who runs section 3.
 
 |                       | staging                                             | production                                           |
@@ -214,16 +215,15 @@ tools/ops/deploy-identity.sh --project "$PROJECT_ID" --environment staging --app
 ```
 
 - [ ] **7. The first staging deploy.** Merge any PR, or re-run the latest
-      Deploy staging run; watch Actions → Deploy staging. **The first run
-      stops at the end of «Deploy the functions», after every function is
-      deployed:** firebase-tools finds no cleanup policy on the functions'
-      new image repository (`gcf-artifacts` in `europe-west8`), and with
-      `--non-interactive` and no `--force` (E6) it refuses to choose one.
-      The repository exists only after that first build, so set the policy
-      then, once per project (the deploy account may read it, not set it),
-      and re-run the deploy; it redeploys the same functions and goes on to
-      hosting. Then section 3.5 (the metrics, alerts and backstops). If a
-      deploy names a missing permission, add that role to `DEPLOY_ROLES` in
+      Deploy staging run; watch Actions → Deploy staging. **«Deploy the
+      functions» ends with a warning, «could not set up cleanup policy»:**
+      the functions' new image repository (`gcf-artifacts` in
+      `europe-west8`) has none, and the deploy account may read the policy,
+      not set it. The repository exists only after that first build, so set
+      the policy then, once per project; until you do, every deploy warns
+      and old images pile up. The run itself goes on to hosting. Then
+      section 3.5 (the metrics, alerts and backstops). If a deploy names a
+      missing permission, add that role to `DEPLOY_ROLES` in
       `tools/ops/deploy-identity.sh` in a PR, and re-run the script.
 
 ```bash
@@ -249,10 +249,10 @@ Auth's authorised domains.
    Review deployments). The job refuses a tag whose commit did not pass CI.
 4. **Rollback:** Actions → Deploy production → Run workflow → «Use workflow
    from»: **Tags** → the previous `vX.Y.Z`, and the same tag in `tag`; then
-   approve. It deploys that tag's code with that tag's workflow. If the
-   newer release added a function, the rollback stops at the deletion and
-   names the command (`firebase functions:delete …`): delete it yourself,
-   or roll back only the web — Firebase console → Hosting → release history
+   approve. It deploys that tag's code with that tag's workflow, and its
+   functions deploy is forced (E6): a function the newer release added is
+   deleted, and a trigger's events stop with it. When that must not happen,
+   roll back only the web — Firebase console → Hosting → release history
    → Rollback, which is instant (each release is named `release <version>`).
 
 ### Hotfixes
@@ -1065,10 +1065,11 @@ pnpm run preflight --project "$PROJECT_ID"
 `deploy-production.yml` from a release tag after your approval; section
 «Environments and releases»): the preflight in both scopes, then 3.1 with a
 bounded wait for P2 and P3, 3.2, 3.3 and 3.4 back to back, then a smoke
-check of the live site. Non-interactive and never `--force`, so a deploy
-that would delete a function, raise the minimum bill or drop an index stops
-and names the command. What follows is what it runs and why, and what you
-do by hand only when it stops. CI (`.github/workflows/ci.yml`) itself has
+check of the live site. Non-interactive, and only the functions deploy is
+forced (ADR E6, amended 2026-11-19): a new retry flag, a deletion or a raised
+minimum bill goes through, each pinned by `apps/functions/src/main.spec.ts`;
+the index deploy is never forced, so it never drops an index. What follows
+is what it runs and why, and what you do by hand only when it stops. CI (`.github/workflows/ci.yml`) itself has
 no deploy job and names no secret but `GITHUB_TOKEN`. Its jobs run in parallel: `main` runs format, affected
 lint/test/build/typecheck, the static CSP hash check, the icon checks,
 `pnpm audit` and gitleaks (the audit ignores ONE advisory,
@@ -1251,6 +1252,13 @@ wired (P8), if the App Check mode is `ENFORCE` while the live web carries no
 site key (P10), or if `WALKIN_ID_KEY`, `OTP_POSTMARK_TOKEN` or
 `OTP_EMAIL_FROM` is missing (a bound secret that Secret Manager doesn't hold
 fails the deploy).
+
+CI adds `--non-interactive --force` (ADR E6, amended 2026-11-19): forced, it
+goes past the retrying triggers below («will newly be retried in case of
+failure», which a non-interactive deploy otherwise refuses), deletes a
+function the source no longer exports and accepts a raised minimum bill —
+each of them a diff of the literal in `apps/functions/src/main.spec.ts`. Run
+by hand, firebase-tools asks each question instead.
 
 The deploy holds 51 functions. Audit-hardening WS-3 (DEP-14) added thirteen
 document-change audit triggers, one per governed collection, each retrying:

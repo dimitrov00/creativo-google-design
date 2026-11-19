@@ -5,9 +5,10 @@
 // E4–E11), held to their contract at the text level: staging deploys only
 // a commit CI passed on a push; production only a release tag, under the
 // production environment; both refuse the legacy projects first; the
-// action deploys in the runbook's order, non-interactively, never with
-// --force or the preflight's escape hatch, through Workload Identity
-// Federation pinned to a full sha, and names no secret at all.
+// action deploys in the runbook's order, non-interactively, with --force on
+// the functions deploy alone (E6, amended 2026-11-19: main.spec.ts pins what
+// it confirms) and never the preflight's escape hatch, through Workload
+// Identity Federation pinned to a full sha, and names no secret at all.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -40,7 +41,6 @@ const FORBIDDEN = [
   '|| true',
   'secrets: inherit',
   'write-all',
-  '--force',
   'CREATIVO_SKIP_PREFLIGHT',
   'credentials_json',
   'GOOGLE_APPLICATION_CREDENTIALS',
@@ -310,6 +310,33 @@ describe('actions/deploy/action.yml — the runbook’s order, non-interactive',
       assert.match(body, / --project "\$PROJECT" --non-interactive/, body);
     }
     assert.match(deploys[3], /--message "release \$CREATIVO_RELEASE"$/);
+  });
+
+  it('forces the functions deploy and nothing else — never the indexes, whose --force drops an undeclared one', () => {
+    assert.equal(occurrences(CODE, '--force'), 1, 'one --force in the action');
+    assert.ok(
+      BODIES.includes(
+        'pnpm exec firebase deploy --only functions --project "$PROJECT" --non-interactive --force',
+      ),
+    );
+    for (const text of [STAGING, PRODUCTION]) {
+      assert.equal(occurrences(withoutComments(text), '--force'), 0);
+    }
+  });
+
+  it('forces only what main.spec.ts pins: the export list and every export’s whole endpoint', () => {
+    // What --force confirms — a deletion, a new retry flag, the instance
+    // bounds — is reviewed as a diff of this literal before it deploys.
+    const spec = read('apps/functions/src/main.spec.ts');
+    assert.match(spec, /^const ENDPOINTS = \{$/m);
+    assert.match(
+      spec,
+      /expect\(\[\.\.\.exported\.keys\(\)\]\.sort\(\)\)\.toEqual\(\[\.\.\.EXPORTS\]\);/,
+    );
+    assert.match(
+      spec,
+      /expect\(endpointOf\(exported\.get\(name\)\)\)\.toEqual\(ENDPOINTS\[name\]\);/,
+    );
   });
 
   it('federates its identity — never a key — from the environment’s variables', () => {
