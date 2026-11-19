@@ -271,19 +271,6 @@ function oneFinalStop(sentence: string): string {
 /** The typographic minus (U+2212): a movement's direction is its sign, never a colour. */
 const MINUS = '−';
 
-/** A sentence inside a longer name ends on ONE full stop, whatever it ended on. */
-function oneStop(sentence: string): string {
-  return /[.!?…]$/u.test(sentence) ? sentence : `${sentence}.`;
-}
-
-/**
- * What an absent slot leaves behind: doubled spaces inside, a space at an
- * end. Plain spaces only: the no-break space of «25,00 €» is typography.
- */
-function withoutGaps(sentence: string): string {
-  return sentence.replace(/ {2,}/gu, ' ').replace(/^ +| +$/gu, '');
-}
-
 /** «Карта: , Злато» → «Карта: Злато» — a name whose first fact is absent opens on the next one. */
 function withoutEmptyLead(sentence: string): string {
   return sentence.replace(/: , /u, ': ');
@@ -344,8 +331,6 @@ export interface ClientCardWords {
     ) => string;
     /** «Рожден ден днес, навършва 34 години» — the band alone, heard. */
     readonly name: (age: number | null) => string;
-    /** «Рожден ден днес, навършва 34 години. Подарък: −20 %, използвай» — the card as ONE button. */
-    readonly giftName: (age: number | null, value: string) => string;
     /** «…Подарък: −20 %, с това посещение» — the gift already on the bill. */
     readonly giftAppliedName: (age: number | null, value: string) => string;
   };
@@ -379,9 +364,11 @@ export interface ClientCardWords {
   readonly reward: {
     readonly until: (date: string) => string;
     readonly more: (count: number) => string;
-    /** «Рожден ден, −20%, използвай»; no value (the name says it): «Безплатно подстригване, използвай». */
-    readonly name: (title: string, value: string | null) => string;
-    /** An applied ticket: «Рожден ден, −20%, с това посещение»; «Безплатно подстригване, с това посещение». */
+    /**
+     * An applied ticket, an `article` named by this sentence: «Рожден ден,
+     * −20%, с това посещение»; «Безплатно подстригване, с това посещение».
+     * A ready ticket has none: it is a button, named by the words it prints.
+     */
     readonly appliedName: (title: string, value: string | null) => string;
     /** «×2» — identical grants collapsed into one ticket (`[uiCouponBadge]`), the figure as on screen. */
     readonly stack: (count: number) => string;
@@ -421,17 +408,6 @@ export interface ClientCardWords {
     readonly holding: (holding: LoyaltyHoldingWord) => string;
     /** «3 от 10» — the stamps fact. */
     readonly stampsOf: (filled: number, size: number) => string;
-    /**
-     * «Лоялност: 371 точки. Стигат за безплатно оформяне на брада. Ваучер
-     * 25,00 €, печати 3 от 10, ритъм 9 посещения.» — the card as ONE
-     * button. `points` is worded (`points(371)`); the sentence and the
-     * holdings each end on one full stop here, and an absent one leaves no gap.
-     */
-    readonly cardName: (
-      points: string,
-      sentence: string | null,
-      holdings: string | null,
-    ) => string;
   };
   readonly loyaltyPage: {
     /**
@@ -538,8 +514,8 @@ export interface ClientCardWords {
     readonly catalogTitle: string;
     /**
      * «Награди за точки: 371 точки, стигат за 2 от 3 награди» — the grid's
-     * name under that heading. `points` is WORDED (`loyalty.points(371)`,
-     * as `loyalty.cardName` takes it); the rewards agree with `total`.
+     * name under that heading. `points` is WORDED (`loyalty.points(371)`);
+     * the rewards agree with `total`.
      */
     readonly catalogListName: (
       points: string,
@@ -838,6 +814,13 @@ export interface ClientCardWords {
       requirement: string,
     ) => string;
     readonly newSuffix: string;
+    /**
+     * «, ниво II» — the rim numeral in words, as a medal button's name says
+     * it after its title and caption (the figure is a drawing, WCAG 2.5.3).
+     */
+    readonly figureLevel: (level: string) => string;
+    /** «, още не е започнато» — the dashed ring in words, for the same name. */
+    readonly figureNotStarted: string;
     readonly nextSuffix: (
       value: number,
       target: number,
@@ -1134,11 +1117,6 @@ export function clientCardWordsOf(
           : translate('clientCard.birthday.upcomingAge', { age: n(age) })),
       name: (age) =>
         translate('clientCard.birthday.name', { age: ageSuffix(age) }),
-      giftName: (age, value) =>
-        translate('clientCard.birthday.giftName', {
-          age: ageSuffix(age),
-          value,
-        }),
       giftAppliedName: (age, value) =>
         translate('clientCard.birthday.giftAppliedName', {
           age: ageSuffix(age),
@@ -1173,10 +1151,6 @@ export function clientCardWordsOf(
     reward: {
       until: (date) => translate('clientCard.reward.until', { date }),
       more: (count) => translate('clientCard.reward.more', { count }),
-      name: (title, value) =>
-        value === null
-          ? translate('clientCard.reward.nameBare', { title })
-          : translate('clientCard.reward.name', { title, value }),
       appliedName: (title, value) =>
         value === null
           ? translate('clientCard.reward.appliedNameBare', { title })
@@ -1217,14 +1191,6 @@ export function clientCardWordsOf(
           filled: n(filled),
           size: n(size),
         }),
-      cardName: (points, sentence, holdings) =>
-        withoutGaps(
-          translate('clientCard.loyalty.cardName', {
-            points,
-            sentence: slot(sentence, oneStop),
-            holdings: slot(holdings, oneStop),
-          }),
-        ),
     },
     loyaltyPage: {
       rewardName: (cost, title, state) =>
@@ -1641,6 +1607,9 @@ export function clientCardWordsOf(
           requirement,
         }),
       newSuffix: translate('clientCard.achievement.newSuffix'),
+      figureLevel: (level) =>
+        translate('clientCard.achievement.figureLevel', { level }),
+      figureNotStarted: translate('clientCard.achievement.figureNotStarted'),
       nextSuffix: (value, target, level) =>
         translate('clientCard.achievement.nextSuffix', {
           value,

@@ -1,8 +1,10 @@
 <!-- THE PARTS, once — each shape below sets them on its own element. A part
      that a list row takes into a slot goes in through `ngProjectAs`, so the
      row's DOM is the DS contract (`> [uileading]`, `> [uitrailing]`)
-     whichever shape carries it. Every drawn part is hidden from the reader:
-     the row's sentence already says all of it. -->
+     whichever shape carries it. The drawings — the tile, the glyph, the
+     face — are hidden from the reader in both shapes. The WORDS are hidden
+     only on the static row, whose sentence says all of it; a button is
+     named by them (WCAG 2.5.3). -->
 <ng-template #lead>
   @if (vm().tile; as tile) {
   <span uiLeading class="visit-row__lead" aria-hidden="true">
@@ -26,11 +28,16 @@
      of its second line; a client's row mounts the head as it is. -->
 <ng-template #words>
   @if (staff()) {
-  <lib-visit-row-words [vm]="vm()" [fact]="fact()" [wraps]="wraps()" />
+  <lib-visit-row-words
+    [attr.aria-hidden]="wordsHidden()"
+    [vm]="vm()"
+    [fact]="fact()"
+    [wraps]="wraps()"
+  />
   } @else {
   <lib-staff-event-head
     class="visit-row__head"
-    aria-hidden="true"
+    [attr.aria-hidden]="wordsHidden()"
     size="regular"
     [truncate]="!wraps()"
     [truncateLines]="!wraps()"
@@ -95,7 +102,10 @@
 
 @switch (shape()) { @case ('button') {
 <!-- The row IS the control: «Моите часове» opens the visit's sheet; a
-     staff list whose host asked for it opens that visit. -->
+     staff list whose host asked for it opens that visit. It is NAMED BY
+     THE WORDS IT PRINTS, then by what only its drawing says (the tile's
+     day, a struck title's state) — no aria-label over them, so a speech
+     user says what they see (WCAG 2.5.3, «label in name»). -->
 <button
   type="button"
   uiListRow
@@ -107,13 +117,15 @@
   [attr.data-testid]="vm().testId"
   [attr.data-appointment-id]="vm().id"
   [attr.data-status]="vm().bookingStatus"
-  [attr.aria-label]="vm().accessibleName"
   (click)="open.emit()"
 >
   <ng-container ngProjectAs="[uiLeading]">
     <ng-container *ngTemplateOutlet="lead" />
   </ng-container>
   <ng-container *ngTemplateOutlet="words" />
+  @if (vm().drawnName; as drawn) {
+  <span uiVisuallyHidden>{{ drawn }}</span>
+  }
   <ng-container ngProjectAs="[uiTrailing]">
     <ng-container *ngTemplateOutlet="end" />
   </ng-container>

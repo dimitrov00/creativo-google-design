@@ -304,6 +304,8 @@
   </button>
 </article>
 } @else {
+<!-- Named by the words it prints — the title, the figure, the detail and
+     the pill's «Използвай» — so a speech user says what they see. -->
 <button
   type="button"
   uiCouponCard
@@ -312,7 +314,6 @@
   [uiTitle]="reward.data.title"
   [uiValue]="reward.data.value"
   [uiDetail]="reward.data.detail"
-  [attr.aria-label]="reward.data.accessibleName"
   data-testid="client-reward-ready"
   (click)="openReward.emit(reward.data.grantId)"
 >
@@ -326,7 +327,6 @@
     uiButton
     uiButtonStyle="borderedProminent"
     uiControlSize="small"
-    aria-hidden="true"
     >{{ w.reward.use }}</span
   >
 </button>

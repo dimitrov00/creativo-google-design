@@ -186,13 +186,13 @@ describe('ClientCardCompositionPage', () => {
       'Рожден ден · 34 г.',
     );
     expect(card.textContent).toContain('−20 %');
-    expect(card.getAttribute('aria-label')).toBe(
-      'Рожден ден днес, навършва 34 години. Подарък: −20 %, използвай',
-    );
-    // The pill is the ticket's dress, not a second control.
+    // Named by the words it prints (WCAG 2.5.3): no aria-label over them.
+    expect(card.hasAttribute('aria-label')).toBe(false);
+    // The pill is the ticket's dress, not a second control — and its word
+    // is the end of the ticket's name, so it is never hidden.
     const pill = card.querySelector('[uicouponaction]');
     expect(pill?.tagName).toBe('SPAN');
-    expect(pill?.getAttribute('aria-hidden')).toBe('true');
+    expect(pill?.hasAttribute('aria-hidden')).toBe(false);
   });
 
   it('the birthday: without a gift is the band alone, a note', async () => {
@@ -285,12 +285,10 @@ describe('ClientCardCompositionPage', () => {
       ticket.closest('[data-testid="composition-modules"]'),
     ).not.toBeNull();
     expect(ticket.tagName).toBe('BUTTON');
-    expect(ticket.getAttribute('aria-label')).toBe(
-      'Награда: безплатно подстригване, важи до 28 октомври. Използвай',
-    );
+    expect(ticket.hasAttribute('aria-label')).toBe(false);
     const pill = ticket.querySelector('[uicouponaction]');
     expect(pill?.tagName).toBe('SPAN');
-    expect(pill?.getAttribute('aria-hidden')).toBe('true');
+    expect(pill?.hasAttribute('aria-hidden')).toBe(false);
     expect(pill?.getAttribute('data-button-style')).toBe('borderedProminent');
     expect(pill?.getAttribute('data-control-size')).toBe('small');
   });
@@ -431,7 +429,12 @@ describe('ClientCardCompositionPage', () => {
     ]);
     for (const medal of medals) {
       expect(medal.querySelector('ui-gauge')).not.toBeNull();
-      expect(medal.getAttribute('aria-label')?.length).toBeGreaterThan(10);
+      // A medal button with words is named by them (WCAG 2.5.3); an image,
+      // or a button with none, by its one sentence.
+      const name =
+        medal.getAttribute('aria-label') ??
+        medal.querySelector('.ui-medal__title')?.textContent;
+      expect(name?.length).toBeGreaterThan(2);
     }
   });
 

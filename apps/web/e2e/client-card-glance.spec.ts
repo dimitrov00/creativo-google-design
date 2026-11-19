@@ -620,12 +620,13 @@ test.describe('client card — the glance (client.profile on)', () => {
       // «Използвай» puts the reward on the bill and opens the discount page
       // with it applied; ‹ finds the SAME ticket where it stood, stamped,
       // «Премахни» where «Използвай» stood, and the focus on it. Its name
-      // says the rule, so no value line repeats it.
+      // says the rule, so no value line repeats it. The button is named by
+      // the words it prints, the call last (WCAG 2.5.3, «label in name»).
       const ticket = card.getByTestId('client-reward-ready');
       await expect(ticket).toBeVisible({ timeout: 20_000 });
-      await expect(ticket).toHaveAttribute(
-        'aria-label',
-        'Безплатно подстригване, използвай',
+      await expect(ticket).not.toHaveAttribute('aria-label');
+      await expect(ticket).toHaveAccessibleName(
+        /^Безплатно подстригване(?: .+)? Използвай$/,
       );
       await ticket.click();
       await expect(editor).toHaveAttribute('data-depth', '2');
@@ -748,13 +749,13 @@ test.describe('client card — the glance (client.profile on)', () => {
       );
       const gift = card.getByTestId('client-birthday-gift');
       await expect(gift).toHaveJSProperty('tagName', 'BUTTON');
-      // The button's one sentence: the day, the age, the gift, the verb.
-      await expect(gift).toHaveAttribute(
-        'aria-label',
-        /^Рожден ден днес, навършва \d+ години\. Подарък: .*20.*%, използвай$/,
-      );
-      expect(await gift.getAttribute('aria-label')).toContain(
-        `навършва ${age} години`,
+      // The button is named by the words it prints (WCAG 2.5.3): the band,
+      // the label, the figure, the verb.
+      await expect(gift).not.toHaveAttribute('aria-label');
+      await expect(gift).toHaveAccessibleName(
+        new RegExp(
+          `^Рожден ден · ${age} г\\. Подарък от салона .*20.*%.*Използвай$`,
+        ),
       );
       await expect(gift).toContainText('Подарък от салона');
       await expect(gift).toContainText('Използвай');

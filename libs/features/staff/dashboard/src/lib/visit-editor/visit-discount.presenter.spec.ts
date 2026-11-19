@@ -174,7 +174,6 @@ describe('an offer’s card', () => {
       applied: false,
       blocked: false,
       accessibleName: 'Първо посещение, FIRST10, −10\u202f%',
-      blockedName: 'Първо посещение, FIRST10, −10\u202f%, Не се комбинира',
       removeName: 'Премахни отстъпката: Първо посещение',
     });
   });

@@ -68,13 +68,15 @@ describe('RecordCard (§2.3.2 AE, §3.14)', () => {
     expect(card?.getAttribute('data-padding')).toBe('regular');
     expect(card?.hasAttribute('data-interactive')).toBe(true);
     expect(card?.getAttribute('data-kind')).toBe('longestRhythm');
-    // The button is ONE sentence; its parts are hidden from a reader.
-    expect(card?.getAttribute('aria-label')).toBe(
-      'Най-дълъг ритъм: 23, септември 2026 г., нов рекорд',
+    // WCAG 2.5.3: the button is named by the words it prints — the label,
+    // the figure, the capsule, the detail — with no aria-label over them.
+    // Only the emblem, a drawing, is hidden from a reader.
+    expect(card?.hasAttribute('aria-label')).toBe(false);
+    const hidden = [...(card?.querySelectorAll(':scope > *') ?? [])].filter(
+      (part) => part.getAttribute('aria-hidden') === 'true',
     );
-    for (const part of card?.querySelectorAll(':scope > *') ?? []) {
-      expect(part.getAttribute('aria-hidden')).toBe('true');
-    }
+    expect(hidden).toHaveLength(1);
+    expect(hidden[0]?.classList.contains('record-card__emblem')).toBe(true);
   });
 
   it('stacks the emblem, the label, the figure and one quiet detail, each at its rung (§2.0)', async () => {
@@ -202,10 +204,12 @@ describe('RecordCard (§2.3.2 AE, §3.14)', () => {
     expect(old.card?.querySelector('.ui-badge')).toBeNull();
   });
 
-  it('binds the detail’s «г.» to its year on the card, and leaves the card’s sentence plain (review 3, F13)', async () => {
+  it('binds the detail’s «г.» to its year on the card, the bound detail part of its name (review 3, F13)', async () => {
     const { detail, card } = await mount(RECORD_CARD.longestRhythm);
     expect(detail?.textContent).toBe('септември 2026\u00a0г.');
-    expect(card?.getAttribute('aria-label')).toContain('септември 2026 г.');
+    // The no-break space reads as a space: the name keeps the detail whole.
+    expect(detail?.hasAttribute('aria-hidden')).toBe(false);
+    expect(card?.textContent).toContain('септември 2026\u00a0г.');
   });
 
   it('leaves the detail out when the record has none', async () => {

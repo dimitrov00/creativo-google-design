@@ -15,7 +15,10 @@ import { TranslocoDirective } from '@jsverse/transloco';
 import { UiAvatar, UiButton, UiIcon } from '@creativo/ui/controls';
 import { UiLogo } from '@creativo/ui/icons';
 import { UiStack, UiToolbar } from '@creativo/ui/layout';
-import { UiFrameDirective } from '@creativo/ui/modifiers';
+import {
+  UiFrameDirective,
+  UiVisuallyHiddenDirective,
+} from '@creativo/ui/modifiers';
 import { MenuIconComponent } from '../icons/icons';
 import { SessionIdentityService } from '../identity/session-identity.service';
 import { SiteMenuComponent } from '../menu/site-menu.component';
@@ -49,6 +52,7 @@ import { SiteMenuComponent } from '../menu/site-menu.component';
     UiLogo,
     UiStack,
     UiToolbar,
+    UiVisuallyHiddenDirective,
   ],
   templateUrl: './site-header.component.html',
   styleUrl: './site-header.component.css',

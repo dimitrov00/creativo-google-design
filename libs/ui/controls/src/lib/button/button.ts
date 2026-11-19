@@ -52,7 +52,10 @@ export type UiButtonBorderShape = 'roundedRectangle' | 'capsule';
  * hand-rolling. The `span[uiButton]` form is the DECORATIVE affordance:
  * button chrome on a non-interactive element inside a larger tappable
  * surface (a card that IS the button), where nesting a real control would
- * be invalid HTML — pair it with `aria-hidden` on the cluster. */
+ * be invalid HTML. It takes no role, so its word reads as part of the
+ * surface's name: leave it readable when the surface is named by the words
+ * it prints (WCAG 2.5.3), and hide it with `aria-hidden` only inside a
+ * cluster a reader is told about in other words. */
 @Component({
   selector: 'button[uiButton], a[uiButton], span[uiButton]',
   // BUSY (owner, 2026-09-17: "when saving or performing an async operation

@@ -364,7 +364,7 @@ describe('ClientAccount', () => {
     // The card the staff glance draws too (client-card revision 3 §3.10),
     // in `/account`'s form: the label is the heading, no services line, no
     // face, plain like every card on this page — and the WHOLE card is the
-    // control, named by its one sentence.
+    // control, named by the words it prints (WCAG 2.5.3).
     const card = host.querySelector<HTMLElement>('lib-visit-card');
     expect(card?.getAttribute('data-header-prominence')).toBe('increased');
     expect(card?.getAttribute('data-kind')).toBe('next');
@@ -376,8 +376,9 @@ describe('ClientAccount', () => {
     expect(upcoming?.classList.contains('ui-card')).toBe(true);
     expect(upcoming?.getAttribute('data-tone')).toBe('plain');
     expect(upcoming?.getAttribute('data-padding')).toBe('comfortable');
-    expect(upcoming?.getAttribute('aria-label')).toMatch(
-      /^Предстоящ час: .*10:00, Потвърден$/,
+    expect(upcoming?.hasAttribute('aria-label')).toBe(false);
+    expect(upcoming?.textContent?.trim()).toMatch(
+      /^Предстоящ час.*10:00\s*Потвърден$/,
     );
     const label = upcoming?.querySelector('.visit-card__label');
     expect(label?.textContent?.trim()).toBe('Предстоящ час');
@@ -570,7 +571,7 @@ describe('ClientAccount', () => {
     const card = () =>
       host.querySelector<HTMLElement>('[data-testid="account-upcoming"]');
     expect(host.getAttribute('data-upcoming')).toBe('populated');
-    expect(card()?.getAttribute('aria-label')).toMatch(/10:00, Потвърден$/);
+    expect(card()?.textContent?.trim()).toMatch(/10:00\s*Потвърден$/);
 
     // A sooner booking at the same shop becomes the soonest.
     upcoming$.next(
@@ -585,11 +586,11 @@ describe('ClientAccount', () => {
     expect(
       host.querySelector('[data-testid="account-upcoming-skeleton"]'),
     ).toBeNull();
-    expect(card()?.getAttribute('aria-label')).toMatch(/09:00, Потвърден$/);
+    expect(card()?.textContent?.trim()).toMatch(/09:00\s*Потвърден$/);
 
     await settle(fixture);
     expect(host.getAttribute('data-upcoming')).toBe('populated');
-    expect(card()?.getAttribute('aria-label')).toMatch(/09:00, Потвърден$/);
+    expect(card()?.textContent?.trim()).toMatch(/09:00\s*Потвърден$/);
     expect(zoneOf).toHaveBeenCalledTimes(1);
   });
 
@@ -621,7 +622,7 @@ describe('ClientAccount', () => {
     const card = host.querySelector<HTMLButtonElement>(
       '[data-testid="account-upcoming"]',
     );
-    expect(card?.getAttribute('aria-label')).toMatch(/10:00, Потвърден$/);
+    expect(card?.textContent?.trim()).toMatch(/10:00\s*Потвърден$/);
     card?.click();
     expect(navigate).toHaveBeenCalledWith(['/account/appointments'], {
       queryParams: { visit: 'appt_next' },
@@ -690,8 +691,8 @@ describe('ClientAccount', () => {
     expect(
       host
         .querySelector('[data-testid="account-upcoming"]')
-        ?.getAttribute('aria-label'),
-    ).toMatch(/11:00, Потвърден$/);
+        ?.textContent?.trim(),
+    ).toMatch(/11:00\s*Потвърден$/);
     // Each shop's zone asked for once, by its own id.
     expect(zoneOf.mock.calls.map(([id]) => id).sort()).toEqual([
       'loc-center',
@@ -745,7 +746,7 @@ describe('ClientAccount', () => {
     const card = host.querySelector<HTMLButtonElement>(
       '[data-testid="account-upcoming"]',
     );
-    expect(card?.getAttribute('aria-label')).toMatch(/11:00, Потвърден$/);
+    expect(card?.textContent?.trim()).toMatch(/11:00\s*Потвърден$/);
     card?.click();
     expect(navigate).toHaveBeenCalledWith(['/account/appointments'], {
       queryParams: { visit: 'appt_home' },

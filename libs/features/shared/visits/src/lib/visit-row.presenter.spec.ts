@@ -273,6 +273,8 @@ describe('visitRowOf · the staff card', () => {
       accessibleName: EURO(
         'Фейд, 4 септември в 10:00, Иван, Център, 27,50 €, 1 снимка, от клиента: „Къса отстрани, по-дълго отгоре“',
       ),
+      // What a button of this row hears after its words: the tile's day.
+      drawnName: ', 4 септември',
       testId: 'history-row-appt-sep',
     });
   });
@@ -979,6 +981,8 @@ describe('visitRowOf · the client’s own list', () => {
       outcome: VisitRowOutcome.Worked,
       bookingStatus: BookingStatus.Completed,
       accessibleName: 'Фейд, 4 септември в 10:00, Иван',
+      // The button's name after its words: the day its tile draws.
+      drawnName: ', 4 септември',
       // The id every client spec and e2e reads (§5.3.5).
       testId: 'appointment-row',
     });
@@ -1318,6 +1322,8 @@ describe('waitlistRowOf', () => {
       bookingStatus: null,
       // Spelled out: a reader never hears «чт – пт».
       accessibleName: 'Фейд, чака свободен час: четвъртък и петък, следобед',
+      // Its glyph is decoration: its words say it all.
+      drawnName: null,
       testId: 'client-visit-waitlist',
     });
   });

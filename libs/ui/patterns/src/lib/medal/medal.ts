@@ -12,6 +12,7 @@ import {
   isDevMode,
 } from '@angular/core';
 import { UiIcon, type UiIconName } from '@creativo/ui/icons';
+import { UiVisuallyHiddenDirective } from '@creativo/ui/modifiers';
 import { UiGauge } from '../gauge/gauge';
 
 /**
@@ -83,9 +84,15 @@ const clamp01 = (value: number): number =>
  *
  * Two lives. `ui-medal` is an image (`role="img"`); `button[uiMedal]` opens
  * the family's detail, with the one hover/press grammar and a focus ring
- * round the whole tile. Either way ONE sentence names it (`uiLabel`): the
- * state, the level won and when, the caption in words, and «ново»; its
- * ring is presentational. The one decoration is the consumer's
+ * round the whole tile. The image is named by ONE sentence (`uiLabel`):
+ * the state, the level won and when, the caption in words, and «ново»;
+ * its ring is presentational. A BUTTON WITH WORDS (the tile form) is named
+ * by the words it prints — the title, the caption — and then by what only
+ * its figure draws (`uiFigureLabel`: the rim numeral, a dashed ring,
+ * «ново»; and the ring's reading, `uiValueText`, where no caption prints
+ * it), never by an `aria-label` over them: a speech user says what they
+ * see (WCAG 2.5.3, «label in name»). A bare button, with no words to
+ * print, keeps `uiLabel`. The one decoration is the consumer's
  * `span[uiBadge]` (a pattern cannot import the badge control), and it
  * never covers the glyph: the «Ново» marker, projected `[uiMedalMarker]`,
  * stands OVER the ring, top-trailing, a tight step above it (a label's
@@ -116,7 +123,7 @@ const clamp01 = (value: number): number =>
  */
 @Component({
   selector: 'ui-medal, button[uiMedal]',
-  imports: [UiIcon, UiGauge],
+  imports: [UiIcon, UiGauge, UiVisuallyHiddenDirective],
   template: `
     <span class="ui-medal__marker" aria-hidden="true"
       ><ng-content select="[uiMedalMarker]"
@@ -159,6 +166,14 @@ const clamp01 = (value: number): number =>
     @if (uiCaption(); as caption) {
       <span class="ui-medal__caption">{{ caption }}</span>
     }
+    @if (namedByWords()) {
+      @if (uiCaption() === null && uiValueText(); as reading) {
+        <span uiVisuallyHidden>, {{ reading }}</span>
+      }
+      @if (uiFigureLabel(); as figure) {
+        <span uiVisuallyHidden>{{ figure }}</span>
+      }
+    }
   `,
   styleUrl: './medal.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -168,7 +183,7 @@ const clamp01 = (value: number): number =>
     class: 'ui-medal',
     '[attr.role]': "isButton ? null : 'img'",
     '[attr.type]': "isButton ? 'button' : null",
-    '[attr.aria-label]': 'uiLabel()',
+    '[attr.aria-label]': 'namedByWords() ? null : uiLabel()',
     '[attr.data-state]': 'uiState()',
     '[attr.data-control-size]': 'uiControlSize()',
     '[attr.data-interactive]': "isButton ? '' : null",
@@ -197,14 +212,33 @@ export class UiMedal {
   readonly uiControlSize = input<UiMedalControlSize>('large');
   /** Several medals as one item (a day's levels): a second medal behind this one. Form only: the count stays in the words. */
   readonly uiStacked = input(false, { transform: booleanAttribute });
-  /** One sentence: «Фейд, ниво II спечелено на 3 юни, 23 от 25 до ниво III, ново». */
+  /**
+   * One sentence: «Фейд, ниво II спечелено на 3 юни, 23 от 25 до ниво III,
+   * ново» — the image's name, and a bare button's. A button with words is
+   * named by them instead, then by {@link uiFigureLabel}.
+   */
   readonly uiLabel = input.required<string>();
+  /**
+   * What the FIGURE draws, in words, to follow the title and caption in a
+   * button's name — the rim numeral, a dashed ring, «ново» — carrying its
+   * own leading «, »: «, ниво II, ново». `null` when the drawing says
+   * nothing the words do not. Read only by a button with words.
+   */
+  readonly uiFigureLabel = input<string | null>(null);
 
   private readonly host =
     inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
 
   /** A button opens the detail; anything else is an image. */
   protected readonly isButton = this.host.tagName === 'BUTTON';
+
+  /**
+   * A button that prints words is named by them (WCAG 2.5.3): no
+   * `aria-label` over the title and caption, the figure's words after them.
+   */
+  protected readonly namedByWords = computed(
+    () => this.isButton && this.tile(),
+  );
 
   /** A level is won on an earned medal and on a complete one, nowhere else. */
   private readonly won = computed(() => {

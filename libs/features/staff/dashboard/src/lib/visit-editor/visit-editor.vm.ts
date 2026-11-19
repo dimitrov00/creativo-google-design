@@ -109,7 +109,6 @@ export type VisitEditorWords = {
   readonly voucherNothingLeft: string;
   readonly voucherVoid: string;
   readonly appliedRow: string;
-  readonly couponBlocked: string;
   readonly removeDiscount: string;
   readonly removeVoucher: string;
   /* The tip. */
@@ -376,10 +375,12 @@ export type OfferChoice = {
   readonly line: string;
   readonly applied: boolean;
   readonly blocked: boolean;
-  /** The card's spoken name: «Първо посещение, FIRST10, −10 %». */
+  /**
+   * The stamped card's spoken name — an `article`, named by it: «Първо
+   * посещение, FIRST10, −10 %». An offered or a blocked card is a button,
+   * named by the words it prints (WCAG 2.5.3), so it wears none.
+   */
   readonly accessibleName: string;
-  /** The same name, on a blocked card — it says why. */
-  readonly blockedName: string;
   /** The stamped card's way off, spoken. */
   readonly removeName: string;
 };

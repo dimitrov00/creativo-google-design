@@ -142,6 +142,30 @@ export const MEDAL_STATES = {
   [MedalState.Earned]: 'earned',
 } as const satisfies Record<MedalState, UiMedalState>;
 
+/**
+ * What a medal's FIGURE draws, in words — the rim numeral (drawn on a
+ * medal won, the DS's numeral rule), the dashed ring of one not started,
+ * the «Ново» marker — to follow its title and caption in a button's name
+ * (`UiMedal.uiFigureLabel`; the figure is a drawing, and a button is named
+ * by the words it prints, WCAG 2.5.3): «, ниво II, ново». `null` when the
+ * drawing says nothing the words do not. Worded from the face as it is
+ * drawn, so a medal re-dressed (its rim emptied, its ring completed)
+ * passes its new face again.
+ */
+export function medalFigureName(
+  face: Pick<MedalVm, 'state' | 'level' | 'isNew'>,
+  ctx: AchievementsContext,
+): string | null {
+  const achievement = ctx.words.achievement;
+  const won = face.state === 'earned' || face.state === 'complete';
+  const words = [
+    won && face.level !== null ? achievement.figureLevel(face.level) : '',
+    face.state === 'notStarted' ? achievement.figureNotStarted : '',
+    face.isNew ? achievement.newSuffix : '',
+  ].join('');
+  return words === '' ? null : words;
+}
+
 /** How many tiles a rail or a shelf shows; past that, the shelf's action is the way on. */
 const RAIL_LIMIT = 8;
 
@@ -884,21 +908,24 @@ export function medalVm(
       ) + withVisitSuffix;
   }
 
+  const state = MEDAL_STATES[BadgeSystem.faceState(standing, withThisVisit)];
+  const level =
+    standing.highestLevel > 0 ? levelNumeral(standing.highestLevel) : null;
   return {
     seriesId: series.id,
     familyId: series.id,
-    state: MEDAL_STATES[BadgeSystem.faceState(standing, withThisVisit)],
+    state,
     icon: BADGE_EMBLEM_ICONS[series.emblem],
     src,
     monogram,
-    level:
-      standing.highestLevel > 0 ? levelNumeral(standing.highestLevel) : null,
+    level,
     title: (options.titled ?? true) ? title : null,
     caption,
     value: meter?.value ?? null,
     valueText: meter?.text ?? null,
     isNew,
     accessibleName,
+    figureName: medalFigureName({ state, level, isNew }, ctx),
   };
 }
 
@@ -1225,7 +1252,13 @@ function seasonTrack(
   // one place the level is drawn. The medal's sentence keeps the level.
   return {
     seasonId: season.id,
-    medal: outlook.finished ? medal : { ...medal, level: null },
+    medal: outlook.finished
+      ? medal
+      : {
+          ...medal,
+          level: null,
+          figureName: medalFigureName({ ...medal, level: null }, ctx),
+        },
     gauge,
     sentence,
   };
@@ -1540,13 +1573,14 @@ function archivedSeasonTile(
     counts.earned,
     counts.total,
   );
+  const state = MEDAL_STATES[StandingSystem.scopeMedalState(counts)];
   return {
     key: season.id,
     medal: {
       seriesId: season.id,
       // The season's OWN medal: no family is drawn (DEP-4).
       familyId: null,
-      state: MEDAL_STATES[StandingSystem.scopeMedalState(counts)],
+      state,
       icon: BADGE_EMBLEM_ICONS[season.emblem],
       src: null,
       monogram: null,
@@ -1557,6 +1591,7 @@ function archivedSeasonTile(
       valueText: null,
       isNew: false,
       accessibleName: `${title}, ${familyCount}, ${range}`,
+      figureName: medalFigureName({ state, level: null, isNew: false }, ctx),
     },
     opens,
   };

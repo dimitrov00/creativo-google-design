@@ -34,9 +34,11 @@ import type { LoyaltyGlanceVm } from '../client-pages.vm';
  * them (the pass's own recipe), so nothing paints outside the card and
  * no word of the card lies over a wash.
  *
- * The button's one sentence (`vm.accessibleName`) names it all; the drawn
- * words are hidden from a reader, so nothing is heard twice. The three
- * facts keep their test ids on the spans that print them (§0.4).
+ * The button is NAMED BY THE WORDS IT PRINTS — the figure and its unit,
+ * the sentence, the facts — under the «Лоялност» heading that names the
+ * module: no `aria-label` over them, so a speech user says what they see
+ * (WCAG 2.5.3, «label in name»). The discs are decoration. The three facts
+ * keep their test ids on the spans that print them (§0.4).
  */
 @Component({
   selector: 'lib-loyalty-glance',

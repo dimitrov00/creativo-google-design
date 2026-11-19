@@ -126,7 +126,6 @@ export function visitEditorWordsOf(
     voucherNothingLeft: copy('staff.visit.voucherNothingLeft'),
     voucherVoid: copy('staff.visit.voucherVoid'),
     appliedRow: copy('staff.visit.appliedRow'),
-    couponBlocked: copy('staff.visit.couponBlocked'),
     removeDiscount: copy('staff.visit.removeDiscount'),
     removeVoucher: copy('staff.visit.removeVoucher'),
     tip: copy('staff.visit.tip'),

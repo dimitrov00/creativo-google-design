@@ -441,9 +441,8 @@ describe('lib-client-card — Георги, every flag on, his next visit open',
     expect(ticket.type).toBe('button');
     expect(ticket.classList.contains('ui-coupon-card')).toBe(true);
     expect(ticket.hasAttribute('data-interactive')).toBe(true);
-    expect(ticket.getAttribute('aria-label')).toBe(
-      'Безплатно подстригване, Безплатна услуга, използвай',
-    );
+    // WCAG 2.5.3: named by the words it prints, never an aria-label over them.
+    expect(ticket.hasAttribute('aria-label')).toBe(false);
     expect(text(ticket.querySelector('.ui-coupon-card__title'))).toBe(
       'Безплатно подстригване',
     );
@@ -459,7 +458,8 @@ describe('lib-client-card — Георги, every flag on, his next visit open',
     expect(pill.tagName).toBe('SPAN');
     expect(pill.getAttribute('data-button-style')).toBe('borderedProminent');
     expect(pill.getAttribute('data-control-size')).toBe('small');
-    expect(pill.getAttribute('aria-hidden')).toBe('true');
+    // Its word is part of the ticket's name: never hidden from a reader.
+    expect(pill.hasAttribute('aria-hidden')).toBe(false);
     expect(text(pill)).toBe('Използвай');
     // The written call is deprecated: nothing projects it.
     expect(ticket.querySelector('.ui-coupon-card__action')).toBeNull();
@@ -514,7 +514,12 @@ describe('lib-client-card — Георги, every flag on, his next visit open',
     expect(card.closest('lib-loyalty-glance')).not.toBeNull();
     expect(card.tagName).toBe('BUTTON');
     expect(card.getAttribute('data-tone')).toBe('elevated');
-    expect(card.getAttribute('aria-label')).toBe(loyalty.data.accessibleName);
+    // Named by the words it prints (WCAG 2.5.3): no aria-label over them,
+    // and none of them hidden from a reader.
+    expect(card.hasAttribute('aria-label')).toBe(false);
+    expect(
+      card.querySelector('.loyalty-glance__words')?.hasAttribute('aria-hidden'),
+    ).toBe(false);
     const figure = must(byId('client-loyalty-points-figure'));
     expect(text(figure)).toBe(loyalty.data.figure);
     expect(figure.getAttribute('data-font')).toBe('title2');
@@ -757,9 +762,8 @@ describe('lib-client-card — Мартин, in the chair on his birthday', () =>
     const ticket = must(byId<HTMLButtonElement>('client-birthday-gift'));
     expect(ticket.tagName).toBe('BUTTON');
     expect(ticket.hasAttribute('data-occasion')).toBe(true);
-    expect(ticket.getAttribute('aria-label')).toBe(
-      'Рожден ден днес, навършва 34 години. Подарък: −20 %, използвай',
-    );
+    // Named by the words it prints: the band, the label, the figure, the call.
+    expect(ticket.hasAttribute('aria-label')).toBe(false);
     expect(byId('client-birthday-band')?.parentElement).toBe(ticket);
     expect(text(ticket.querySelector('.ui-coupon-card__value'))).toBe('−20 %');
     expect(text(ticket.querySelector('.ui-coupon-card__title'))).toBe(

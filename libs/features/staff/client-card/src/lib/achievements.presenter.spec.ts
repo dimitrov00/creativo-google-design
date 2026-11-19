@@ -137,6 +137,8 @@ describe('medalVm', () => {
         isNew: false,
         accessibleName:
           'Фейд, ниво II, спечелено на 22 септември 2025 г., 24 от 25 до ниво III',
+        // The rim numeral in words, for a button named by its title and caption.
+        figureName: ', ниво II',
       },
     );
   });

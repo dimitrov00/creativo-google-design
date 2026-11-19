@@ -203,8 +203,15 @@ describe('the pages’ view models: the shapes', () => {
       'rhythm' | 'visits' | 'favourites'
     >();
     expectTypeOf<RecordsPageVm['featured']>().toEqualTypeOf<
-      (RecordCardVm & { readonly sentence: string }) | null
+      | (RecordCardVm & {
+          readonly sentence: string;
+          readonly accessibleName: string;
+        })
+      | null
     >();
+    // A record card is a button named by its words (WCAG 2.5.3): only the
+    // featured record, a group, carries a sentence.
+    expectTypeOf<RecordCardVm>().not.toHaveProperty('accessibleName');
     expectTypeOf<FeaturedRecordVm>().toExtend<RecordCardVm>();
   });
 

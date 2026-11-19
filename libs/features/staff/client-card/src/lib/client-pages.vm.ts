@@ -199,8 +199,13 @@ export interface RewardReadyVm {
   readonly stack: string | null;
   /** On this visit's draft bill: stamped, «Премахни» where «Използвай» stood. */
   readonly applied: boolean;
-  /** «Безплатно подстригване, използвай»; applied «Безплатно подстригване, с това посещение». */
-  readonly accessibleName: string;
+  /**
+   * The applied ticket's sentence — an `article`, named by it: «Безплатно
+   * подстригване, с това посещение». `null` on a ready ticket: a button,
+   * named by the words it prints (title, figure, detail, «Използвай»), so
+   * a speech user says what they see (WCAG 2.5.3).
+   */
+  readonly accessibleName: string | null;
   /** The applied ticket's «Премахни», named: «Премахни отстъпката: Безплатно подстригване». */
   readonly removeName: string;
 }
@@ -254,8 +259,19 @@ export interface MedalVm {
    * `false` elsewhere.
    */
   readonly isNew: boolean;
-  /** One sentence: «Фейд, ниво II, спечелено на 3 юни, 24 от 25 до ниво III, ново». */
+  /**
+   * One sentence: «Фейд, ниво II, спечелено на 3 юни, 24 от 25 до ниво
+   * III, ново» — the medal's name where it is an image, or a button with no
+   * words of its own.
+   */
   readonly accessibleName: string;
+  /**
+   * What the figure draws, in words, to follow the title and caption in a
+   * button's name (`medalFigureName`): «, ниво II, ново»; `null` when the
+   * drawing says nothing the words do not. A medal that is a button with
+   * words is named by them, never by {@link accessibleName} (WCAG 2.5.3).
+   */
+  readonly figureName: string | null;
 }
 
 /** G1 — the glance strip: ≤3 medals and one cue. */
@@ -561,8 +577,13 @@ export interface BirthdayVm {
   readonly gift: RewardReadyVm | null;
   /** «Подарък от салона» — the ticket's title under the figure. */
   readonly giftLabel: string;
-  /** «Рожден ден днес, навършва 34 години. Подарък: −20 %, използвай». */
-  readonly accessibleName: string;
+  /**
+   * The card's sentence where it is not a control: the notice, the band
+   * alone, the gift on the bill («…Подарък: −20 %, с това посещение»).
+   * `null` while the gift is held: that ticket is a button, named by the
+   * words it prints (WCAG 2.5.3).
+   */
+  readonly accessibleName: string | null;
 }
 
 /** H — «Посещения» on the glance: up to three cards of ONE shape. */
@@ -595,10 +616,13 @@ export interface LoyaltyGlanceVm {
   readonly unit: string | null;
   /** «Стигат за безплатно оформяне на брада» · «Още 42 до …» (DV5's held rule); `null` without a catalogue. */
   readonly sentence: string | null;
-  /** A fact whose data is absent is absent; with none the line is absent. */
+  /**
+   * A fact whose data is absent is absent; with none the line is absent.
+   * The card names itself by these words, the figure first: it is a button,
+   * and a button says what it prints (WCAG 2.5.3), under the «Лоялност»
+   * heading that already names the module.
+   */
   readonly holdings: readonly HoldingFactVm[];
-  /** «Лоялност: 371 точки. Стигат за безплатно оформяне на брада. Ваучер 25,00 €, печати 3 от 10, ритъм 9 посещения.» */
-  readonly accessibleName: string;
 }
 
 /** G1 — one record on the medals card's quiet line. */
@@ -1118,10 +1142,13 @@ export interface RecordCardVm {
   readonly icon: UiIconName;
   /** The subject's picture (a favourite service's cover), in the emblem's place; `null` draws the emblem. */
   readonly src: string | null;
-  /** Set in the last 30 days of the shop's today: the capsule «Нов рекорд». */
+  /**
+   * Set in the last 30 days of the shop's today: the capsule «Нов рекорд».
+   * The card carries no sentence of its own: it is a button, named by the
+   * words it prints — the label, the figure, the capsule, the detail
+   * (WCAG 2.5.3, «label in name»).
+   */
   readonly isNew: boolean;
-  /** «Най-дълъг ритъм: 23, септември 2026 г., нов рекорд» (`clientCard.achievements.recordName`). */
-  readonly accessibleName: string;
 }
 
 /** AK — the collection: families with a level earned, of the families published today. */
@@ -1214,6 +1241,11 @@ export interface RecordRowVm {
 export type FeaturedRecordVm = RecordCardVm & {
   /** «поредни посещения в ритъм» — what the figure counts, under it. */
   readonly sentence: string;
+  /**
+   * The hero's `role="group"` as one sentence (`clientCard.achievements.recordName`):
+   * «Най-дълъг ритъм: 23 поредни посещения в ритъм, септември 2026 г., нов рекорд».
+   */
+  readonly accessibleName: string;
 };
 
 /** RD, RE — one theme's rows; a group without a row is absent. */

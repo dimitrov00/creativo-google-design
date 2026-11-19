@@ -531,7 +531,6 @@ describe('the words of revision 3 (client-card-revision-3 §6.1)', () => {
       everyWord(words);
       everyWord(words, 'words', 1);
       // What the sample arguments cannot reach: a member's `null` path.
-      words.reward.name('x', null);
       words.reward.appliedName('x', null);
       const unread = [...strict.sentences.keys()].filter(
         (key) => key.startsWith('clientCard.') && !strict.asked.has(key),
@@ -639,7 +638,7 @@ describe('the words of revision 3 (client-card-revision-3 §6.1)', () => {
     ).toBe('Gold, 7 visits more to Platinum');
   });
 
-  it('words the birthday card: the band, the day before it, the gift as one button', () => {
+  it('words the birthday card: the band, the day before it, the gift on the bill', () => {
     expect(bg.birthday.today).toBe('Рожден ден днес');
     expect(bg.birthday.todayAge(34)).toBe('Рожден ден · 34 г.');
     expect(bg.birthday.gift).toBe('Подарък от салона');
@@ -651,9 +650,8 @@ describe('the words of revision 3 (client-card-revision-3 §6.1)', () => {
     );
     expect(bg.birthday.name(34)).toBe('Рожден ден днес, навършва 34 години');
     expect(bg.birthday.name(null)).toBe('Рожден ден днес');
-    expect(bg.birthday.giftName(34, '−20 %')).toBe(
-      'Рожден ден днес, навършва 34 години. Подарък: −20 %, използвай',
-    );
+    // The held gift has no sentence: it is a button, named by the words it
+    // prints (WCAG 2.5.3). Only the one on the bill, an article, has one.
     expect(bg.birthday.giftAppliedName(null, '−20 %')).toBe(
       'Рожден ден днес. Подарък: −20 %, с това посещение',
     );
@@ -661,9 +659,13 @@ describe('the words of revision 3 (client-card-revision-3 §6.1)', () => {
     expect(en.birthday.upcoming('Friday', '2 Oct', 34)).toBe(
       'Birthday · Friday, 2 Oct · 34',
     );
-    expect(en.birthday.giftName(34, '−20%')).toBe(
-      'Birthday today, turning 34. Gift: −20%, use',
-    );
+  });
+
+  it('words what a medal’s figure draws, for a button named by its words (WCAG 2.5.3)', () => {
+    expect(bg.achievement.figureLevel('II')).toBe(', ниво II');
+    expect(bg.achievement.figureNotStarted).toBe(', още не е започнато');
+    expect(en.achievement.figureLevel('II')).toBe(', level II');
+    expect(en.achievement.figureNotStarted).toBe(', not started');
   });
 
   it('words the visit cards and the visits browser', () => {
@@ -699,31 +701,8 @@ describe('the words of revision 3 (client-card-revision-3 §6.1)', () => {
       ),
     ).toEqual(['Ваучер', 'Печати', 'Ритъм']);
     expect(bg.loyalty.stampsOf(3, 10)).toBe('3 от 10');
-    expect(
-      bg.loyalty.cardName(
-        bg.loyalty.points(371),
-        'Стигат за безплатно оформяне на брада',
-        'Ваучер 25,00 €, печати 3 от 10, ритъм 9 посещения',
-      ),
-    ).toBe(
-      'Лоялност: 371 точки. Стигат за безплатно оформяне на брада. Ваучер 25,00 €, печати 3 от 10, ритъм 9 посещения.',
-    );
     expect(en.loyalty.points(1)).toBe('1 point');
     expect(en.loyalty.moreTo(42, 'a free cut')).toBe('42 more to a free cut');
-  });
-
-  it('drops an absent fact with its joint: no doubled space, no doubled stop, the money’s no-break space kept', () => {
-    const points = bg.loyalty.points(371);
-    expect(bg.loyalty.cardName(points, null, 'Ваучер 25,00 €')).toBe(
-      'Лоялност: 371 точки. Ваучер 25,00 €.',
-    );
-    expect(bg.loyalty.cardName(points, 'Стигат за фейд.', null)).toBe(
-      'Лоялност: 371 точки. Стигат за фейд.',
-    );
-    expect(bg.loyalty.cardName(points, null, null)).toBe(
-      'Лоялност: 371 точки.',
-    );
-    expect(bg.loyalty.cardName(points, '', '')).toBe('Лоялност: 371 точки.');
   });
 
   it('names the pass with the facts it has', () => {
@@ -1359,9 +1338,6 @@ describe('the gaps K1b fills (lead ruling G1-6)', () => {
   it('agrees every counted sentence of revision 3 at 1', () => {
     const page = bg.loyaltyPage;
     expect(bg.birthday.name(1)).toBe('Рожден ден днес, навършва 1 година');
-    expect(bg.birthday.giftName(1, '−20 %')).toBe(
-      'Рожден ден днес, навършва 1 година. Подарък: −20 %, използвай',
-    );
     expect(bg.birthday.name(21)).toBe('Рожден ден днес, навършва 21 години');
     expect(page.passName('Георги Петров', 'Злато', 1, null)).toBe(
       'Карта за лоялност: Георги Петров, Злато, 1 точка за размяна',
