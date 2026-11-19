@@ -9,6 +9,7 @@ import {
   computed,
   effect,
   inject,
+  input,
   signal,
 } from '@angular/core';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
@@ -35,29 +36,18 @@ import {
   UiStatusIndicator,
 } from '@creativo/ui/patterns';
 import type { Map as MapLibreMap, Marker as MapLibreMarker } from 'maplibre-gl';
-import {
-  LocalDate,
-  type TimeZone,
-  type UtcEpochMs,
-  Weekday,
-  defect,
-} from '@core/primitives';
-import {
-  DayHours,
-  type DayHoursInput,
-  E164,
-  OpeningState,
-  ShopOpening,
-} from '@core/components';
-import { RosterSystem, ShopReachSystem, ZonedTimeSystem } from '@core/systems';
+import { LocalDate, TimeZone, type UtcEpochMs } from '@core/primitives';
+import { ShopOpening } from '@core/components';
+import { RosterSystem, ZonedTimeSystem } from '@core/systems';
 import { CLOCK_PORTS } from '@creativo/infrastructure/firebase-app';
 import { ClockClosing, formatClock } from '@creativo/ui/wall-clock';
 import { ThemeService } from '@creativo/features/shared/shell';
-import { ShowcaseGalleryComponent } from '@creativo/features/shared/catalog';
 import {
-  LandingLocationId,
-  landingLocationZone,
-} from '../landing-location-zone';
+  CatalogWording,
+  ShowcaseGalleryComponent,
+} from '@creativo/features/shared/catalog';
+import { shopsHeadingKey } from './locations.presenter';
+import type { ShopVm } from './locations.vm';
 
 /** Theme-matched basemap styles (OpenFreeMap hosts both). */
 const MAP_STYLE_URLS = {
@@ -71,40 +61,6 @@ const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
 /** Display order for the week list — starts Monday, ends Sunday. */
 const WEEK_DISPLAY_ORDER = [1, 2, 3, 4, 5, 6, 0] as const;
 
-/** One day's hours as the week list prints them: «09:00» – «20:00». */
-interface HoursLine {
-  readonly open: string;
-  readonly close: string;
-}
-
-/** The week as the list prints it, Sunday first (the `WEEKDAY_KEYS` index); `null` a closed day. */
-type WeekSchedule = readonly [
-  HoursLine | null,
-  HoursLine | null,
-  HoursLine | null,
-  HoursLine | null,
-  HoursLine | null,
-  HoursLine | null,
-  HoursLine | null,
-];
-
-interface LocationItem {
-  /** The shop's `LOCATIONS` id — the join its zone is read through. */
-  readonly locationId: LandingLocationId;
-  /** The shop's IANA zone: its open/closed line runs on the SHOP's clock. */
-  readonly timeZone: TimeZone;
-  readonly nameKey: string;
-  readonly addressKey: string;
-  readonly phoneKey?: string;
-  /** The shop's week, Monday first, in minutes — what its open/closed line is judged on (`RosterSystem.shopOpeningAt`). */
-  readonly week: readonly DayHours[];
-  /** The same week as the list prints it (`displayWeek`). */
-  readonly schedule: WeekSchedule;
-  readonly gallery: readonly string[];
-  readonly lat: number;
-  readonly lng: number;
-}
-
 /**
  * What a shop's status line says: `RosterSystem.shopOpeningAt`'s tag
  * (`ShopOpening`, the field `shopOpening` — «Closes at 20:00», the
@@ -117,72 +73,6 @@ interface ShopOpeningLine {
   readonly time: string;
   readonly dayIndex: number;
 }
-
-/** An open day as authored here: from one whole hour to another. */
-const open = (from: number, to: number): DayHoursInput => ({
-  openingState: OpeningState.Open,
-  openMinutes: from * 60,
-  closeMinutes: to * 60,
-});
-const CLOSED: DayHoursInput = DayHours.closed();
-
-/** A shop's week (Monday first, the closed day kept), checked ONCE at module load with `DayHours.parseWeek`. */
-function weekOf(raw: readonly DayHoursInput[]): readonly DayHours[] {
-  const week = DayHours.parseWeek(raw);
-  return week.ok ? week.value : defect('a landing shop’s week is no week');
-}
-
-/**
- * The week as the list prints it, Sunday first: each open day's `HH:MM` pair
- * (`formatClock`, a midnight close as «24:00» — never a locale's «8:00 PM»),
- * `null` a closed one.
- */
-function displayWeek(week: readonly DayHours[]): WeekSchedule {
-  const at = (weekday: Weekday): HoursLine | null => {
-    const day = DayHours.forWeekday(week, weekday);
-    return day !== null && day.openingState === OpeningState.Open
-      ? {
-          open: formatClock(day.openMinutes, ClockClosing.EndOfDay),
-          close: formatClock(day.closeMinutes, ClockClosing.EndOfDay),
-        }
-      : null;
-  };
-  return [
-    at(Weekday.Sun),
-    at(Weekday.Mon),
-    at(Weekday.Tue),
-    at(Weekday.Wed),
-    at(Weekday.Thu),
-    at(Weekday.Fri),
-    at(Weekday.Sat),
-  ];
-}
-
-/** Center's week — the seed's `openingHours` for the shop (`tools/seed/fixtures/catalog.fixtures.ts`). */
-const CENTER_WEEK = weekOf([
-  open(9, 20),
-  open(9, 20),
-  open(9, 20),
-  open(9, 20),
-  open(9, 21),
-  open(10, 18),
-  CLOSED,
-]);
-
-/** Each shop's zone, checked ONCE at module load (no zone literal here). */
-const CENTER_ZONE = landingLocationZone(LandingLocationId.Center);
-const MLADOST_ZONE = landingLocationZone(LandingLocationId.Mladost);
-
-/** Mladost's week — the seed's `openingHours` for the shop. */
-const MLADOST_WEEK = weekOf([
-  CLOSED,
-  open(10, 19),
-  open(10, 19),
-  open(10, 19),
-  open(10, 19),
-  open(9, 16),
-  CLOSED,
-]);
 
 @Component({
   selector: 'cr-locations',
@@ -235,6 +125,19 @@ export class LocationsComponent implements AfterViewInit {
   // The DS's one way to MapLibre — the library AND its stylesheet, which
   // left the global bundle (2026-09-26) and now arrives with the map.
   private readonly mapLibre = inject(MapLibreLoader);
+  /** The catalogue's localized pairs, in the session's language. */
+  protected readonly words = inject(CatalogWording);
+
+  /**
+   * The ACTIVE shops, in their `sortOrder` — the stored `locations`
+   * (`shopVm`), never an authored list. The page draws this section only
+   * once the read has answered with a shop, so the map is built on a list
+   * that is there: its pins are placed once, when the map loads, while the
+   * rows and the sheet follow the list as it changes.
+   */
+  readonly shops = input.required<readonly ShopVm[]>();
+  /** «Лесно ще ни намериш.» for one shop, «Нашите локации.» for more. */
+  protected readonly headingKey = computed(() => shopsHeadingKey(this.shops()));
 
   private map: MapLibreMap | undefined;
   private markerElements: HTMLElement[] = [];
@@ -257,41 +160,6 @@ export class LocationsComponent implements AfterViewInit {
   /** The dictionary, for the template's status lines (never bare literals). */
   protected readonly ShopOpening = ShopOpening;
 
-  protected readonly locations: readonly LocationItem[] = [
-    {
-      locationId: LandingLocationId.Center,
-      timeZone: CENTER_ZONE,
-      nameKey: 'landing.location.center.name',
-      addressKey: 'landing.location.center.address',
-      phoneKey: 'landing.location.center.phone',
-      week: CENTER_WEEK,
-      schedule: displayWeek(CENTER_WEEK),
-      gallery: [
-        '/work/scissors-trim.jpg',
-        '/work/modern-cut.jpg',
-        '/work/finishing-touch.jpg',
-      ],
-      lat: 42.4271,
-      lng: 25.6366,
-    },
-    {
-      locationId: LandingLocationId.Mladost,
-      timeZone: MLADOST_ZONE,
-      nameKey: 'landing.location.mladost.name',
-      addressKey: 'landing.location.mladost.address',
-      phoneKey: 'landing.location.mladost.phone',
-      week: MLADOST_WEEK,
-      schedule: displayWeek(MLADOST_WEEK),
-      gallery: [
-        '/work/fade-styling.jpg',
-        '/work/classic-clippers.jpg',
-        '/work/beard-shave.jpg',
-      ],
-      lat: 42.46,
-      lng: 25.685,
-    },
-  ];
-
   protected readonly activeIndex = signal(0);
   protected readonly sheetOpen = signal(false);
   protected readonly sheetClosing = signal(false);
@@ -299,14 +167,13 @@ export class LocationsComponent implements AfterViewInit {
   private readonly now = signal<UtcEpochMs>(this.clock.nowUtcMs());
   /**
    * The open sheet's bold row: today on the ACTIVE shop's own calendar (the
-   * first shop's while the list is somehow empty — `activeLocation` falls
-   * back to it too).
+   * UTC calendar while the list is somehow empty).
    */
   protected readonly todayIndex = computed(
-    () => this.wallAt(this.activeLocation()?.timeZone ?? CENTER_ZONE).day,
+    () => this.wallAt(this.activeLocation()?.timeZone ?? TimeZone.UTC).day,
   );
-  protected readonly activeLocation = computed(
-    () => this.locations[this.activeIndex()] ?? this.locations[0],
+  protected readonly activeLocation = computed<ShopVm | undefined>(
+    () => this.shops()[this.activeIndex()] ?? this.shops()[0],
   );
 
   constructor() {
@@ -351,13 +218,27 @@ export class LocationsComponent implements AfterViewInit {
     const mapContainer = host.querySelector<HTMLElement>(
       '[data-locations-map]',
     );
-    if (mapContainer) {
+    const shops = this.shops();
+    const [first] = shops;
+    if (mapContainer && first) {
       try {
+        // Several shops frame their bounds; one shop has no bounds to
+        // frame (a zero-area box fits at the deepest zoom), so the map
+        // centres on its pin instead.
+        const view =
+          shops.length > 1
+            ? {
+                bounds: this.computeBounds(),
+                fitBoundsOptions: { padding: 56, duration: 0 },
+              }
+            : {
+                center: [first.longitude, first.latitude] as [number, number],
+                zoom: 13,
+              };
         const map = new maplibregl.Map({
           container: mapContainer,
           style: MAP_STYLE_URLS[this.theme.theme()],
-          bounds: this.computeBounds(),
-          fitBoundsOptions: { padding: 56, duration: 0 },
+          ...view,
           attributionControl: { compact: true },
           cooperativeGestures: true,
         });
@@ -369,10 +250,10 @@ export class LocationsComponent implements AfterViewInit {
 
         map.on('load', () => {
           if (this.destroyed) return;
-          this.locations.forEach((location, index) => {
+          shops.forEach((location, index) => {
             const element = this.createMarkerElement(index);
             new maplibregl.Marker({ element, anchor: 'bottom' })
-              .setLngLat([location.lng, location.lat])
+              .setLngLat([location.longitude, location.latitude])
               .addTo(map);
             element.addEventListener('click', () => this.openLocation(index));
             this.markerElements.push(element);
@@ -383,7 +264,7 @@ export class LocationsComponent implements AfterViewInit {
             '[data-locations-map-indicators]',
           );
           if (indicatorsContainer) {
-            this.setupOffscreenIndicators(map, indicatorsContainer);
+            this.setupOffscreenIndicators(map, indicatorsContainer, shops);
           }
         });
 
@@ -413,7 +294,7 @@ export class LocationsComponent implements AfterViewInit {
         const sheetMap = new maplibregl.Map({
           container: sheetMapContainer,
           style: MAP_STYLE_URLS[this.theme.theme()],
-          center: [location.lng, location.lat],
+          center: [location.longitude, location.latitude],
           zoom: 14.5,
           attributionControl: { compact: true },
           cooperativeGestures: true,
@@ -431,7 +312,7 @@ export class LocationsComponent implements AfterViewInit {
             element,
             anchor: 'bottom',
           })
-            .setLngLat([location.lng, location.lat])
+            .setLngLat([location.longitude, location.latitude])
             .addTo(sheetMap);
         });
 
@@ -472,10 +353,6 @@ export class LocationsComponent implements AfterViewInit {
     collapse();
   }
 
-  protected directionsUrl(location: LocationItem): string {
-    return `https://www.google.com/maps/search/?api=1&query=${location.lat},${location.lng}`;
-  }
-
   protected onCardKeydown(index: number, event: KeyboardEvent): void {
     if (event.key !== 'Enter' && event.key !== ' ') return;
     event.preventDefault();
@@ -489,13 +366,13 @@ export class LocationsComponent implements AfterViewInit {
     this.sheetClosing.set(false);
     // Scroller reset on open is ui-modal-sheet's own contract now.
 
-    const location = this.locations[index];
+    const location = this.shops()[index];
     if (!location) return;
 
     const reducedMotion = isPlatformBrowser(this.platformId)
       ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
       : false;
-    const center: [number, number] = [location.lng, location.lat];
+    const center: [number, number] = [location.longitude, location.latitude];
 
     if (this.map) {
       if (reducedMotion) {
@@ -521,13 +398,13 @@ export class LocationsComponent implements AfterViewInit {
     this.activeIndex.set(index);
     this.updateActiveMarker();
 
-    const location = this.locations[index];
+    const location = this.shops()[index];
     if (!location || !this.map) return;
 
     const reducedMotion = isPlatformBrowser(this.platformId)
       ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
       : false;
-    const center: [number, number] = [location.lng, location.lat];
+    const center: [number, number] = [location.longitude, location.latitude];
 
     if (reducedMotion) {
       this.map.jumpTo({ center, zoom: 13 });
@@ -553,7 +430,7 @@ export class LocationsComponent implements AfterViewInit {
    * on the SHOP's wall clock — the location's zone, never the visitor's
    * device (Law 7.2).
    */
-  protected statusFor(location: LocationItem): ShopOpeningLine {
+  protected statusFor(location: ShopVm): ShopOpeningLine {
     const { localDate, minute } = ZonedTimeSystem.toLocal(
       this.now(),
       location.timeZone,
@@ -586,20 +463,6 @@ export class LocationsComponent implements AfterViewInit {
     return { day: LocalDate.weekday(localDate) % 7 };
   }
 
-  /**
-   * `tel:` for a shop's DISPLAY number («+359 88 123 4567»): parsed once to
-   * its E.164 at this edge (the punctuation, there for reading, dropped;
-   * `E164.parse` — the catalogue text is foreign input, OR-48), then the one
-   * `tel:` form every surface dials (`ShopReachSystem.callHref`). `null` —
-   * no `tel:` link at all — when what is left is not an E.164 number.
-   */
-  protected phoneHref(phone: string): string | null {
-    const phoneE164 = E164.parse(phone.replace(/[^+\d]/g, ''));
-    return phoneE164.ok
-      ? ShopReachSystem.callHref({ phoneE164: phoneE164.value })
-      : null;
-  }
-
   /** Completes the close on the shell's exit-transition callback. */
   protected finishClosing(): void {
     this.sheetOpen.set(false);
@@ -617,8 +480,8 @@ export class LocationsComponent implements AfterViewInit {
   }
 
   private computeBounds(): [[number, number], [number, number]] {
-    const lngs = this.locations.map((location) => location.lng);
-    const lats = this.locations.map((location) => location.lat);
+    const lngs = this.shops().map((location) => location.longitude);
+    const lats = this.shops().map((location) => location.latitude);
     return [
       [Math.min(...lngs), Math.min(...lats)],
       [Math.max(...lngs), Math.max(...lats)],
@@ -679,11 +542,12 @@ export class LocationsComponent implements AfterViewInit {
   private setupOffscreenIndicators(
     map: MapLibreMap,
     container: HTMLElement,
+    shops: readonly ShopVm[],
   ): void {
     const EDGE_PADDING = 34;
     const BOTTOM_EDGE_PADDING = 56;
 
-    const indicators = this.locations.map((location, index) => {
+    const indicators = shops.map((location, index) => {
       const indicator = document.createElement('button');
       indicator.type = 'button';
       indicator.className = 'locations-map__indicator';
@@ -696,7 +560,7 @@ export class LocationsComponent implements AfterViewInit {
       indicator.setAttribute(
         'aria-label',
         this.transloco.translate('landing.location.showOnMap', {
-          location: this.transloco.translate(location.nameKey),
+          location: this.words.text(location.name),
         }),
       );
 
@@ -731,7 +595,7 @@ export class LocationsComponent implements AfterViewInit {
       const maxY = height - BOTTOM_EDGE_PADDING;
 
       for (const { element, arrow, location } of indicators) {
-        const point = map.project([location.lng, location.lat]);
+        const point = map.project([location.longitude, location.latitude]);
         const isVisible =
           point.x >= 0 && point.x <= width && point.y >= 0 && point.y <= height;
 

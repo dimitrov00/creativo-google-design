@@ -40,7 +40,7 @@ const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)';
  * `100vh + scrollDistance` tall; a sticky full-viewport stage inside it
  * translates the card strip left as the page scrolls, so vertical scroll
  * reads as horizontal motion. Per-card art direction (aspect box, parallax
- * drift, caption) comes from the content fixture; the caption swaps to
+ * drift, caption) rides each shot (`LANDING_WORK_SHOTS`); the caption swaps to
  * whichever card's center is nearest the viewport midpoint.
  *
  * Cards are native buttons on the shared `data-interactive` grammar; the

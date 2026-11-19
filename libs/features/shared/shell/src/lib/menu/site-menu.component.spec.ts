@@ -12,6 +12,7 @@ import {
   APPOINTMENT_READ_PORTS,
   AUTH_SESSION_PORTS,
   AVATAR_PORTS,
+  CATALOG_PORTS,
   CLOCK_PORTS,
   DEFAULT_LOCATION_PORTS,
   INBOX_PORTS,
@@ -21,6 +22,7 @@ import {
 import type {
   AppointmentReadPorts,
   AvatarPorts,
+  CatalogReadPorts,
   InboxPorts,
   LocationLoadPorts,
 } from '@core/ports';
@@ -37,7 +39,10 @@ import { RepositoryError } from '@core/errors';
 import { InboxStore } from '@creativo/features/client/notifications';
 import {
   appointmentFixture,
+  barberFixture,
   locationFixture,
+  memoryCatalogReadPorts,
+  serviceFixture,
   minute,
   memoryAppointmentReadPorts,
   memoryAuthSessionPorts,
@@ -164,6 +169,8 @@ describe('SiteMenuComponent', () => {
     locations?: LocationLoadPorts;
     /** The clock's pinned instant — the fixture instant unless given. */
     now?: UtcEpochMs;
+    /** The stored catalogue the site anchors follow — a fresh project's unless given. */
+    catalog?: CatalogReadPorts;
   }) {
     const principal: Principal = inputs.isAuthed
       ? ACTIVE_PRINCIPAL
@@ -173,6 +180,11 @@ describe('SiteMenuComponent', () => {
       providers: [
         provideRouter([]),
         ...provideTestI18n(),
+        // Which landing sections the site rows link to.
+        {
+          provide: CATALOG_PORTS,
+          useValue: inputs.catalog ?? memoryCatalogReadPorts(),
+        },
         {
           // The identity portrait reads name + channel off the session.
           provide: AUTH_SESSION_PORTS,
@@ -1206,6 +1218,53 @@ describe('SiteMenuComponent', () => {
       expect(row?.closest('ui-list-group')?.querySelectorAll('a').length).toBe(
         1,
       );
+    });
+  });
+  /**
+   * The «Site» rows link to the landing's sections — only to those the
+   * landing draws (`SiteSectionsService`): a fresh project shows none of
+   * them, and «Нашата работа» waits for photos of the shop's own work.
+   */
+  describe('the site anchors', () => {
+    function anchors(host: HTMLElement): readonly (string | null)[] {
+      return [...host.querySelectorAll('a[href^="/#"]')].map((link) =>
+        link.getAttribute('href'),
+      );
+    }
+
+    it('links no landing section while nothing is stored, and keeps the careers row', async () => {
+      const fixture = await render({ open: true });
+      const host: HTMLElement = fixture.nativeElement;
+
+      expect(anchors(host)).toEqual([]);
+      expect(host.querySelector('a[href="/careers"]')).not.toBeNull();
+    });
+
+    it('links the team, the services and the shops once each is stored — and never «Нашата работа»', async () => {
+      const fixture = await render({
+        open: true,
+        catalog: memoryCatalogReadPorts({
+          barbers: [barberFixture()],
+          services: [serviceFixture()],
+          locations: [locationFixture()],
+        }),
+      });
+      const host: HTMLElement = fixture.nativeElement;
+
+      expect(anchors(host)).toEqual(['/#team', '/#services', '/#visit']);
+    });
+
+    it('leaves the services out while the barbers who perform them are not public', async () => {
+      const fixture = await render({
+        open: true,
+        catalog: memoryCatalogReadPorts({
+          services: [serviceFixture()],
+          locations: [locationFixture()],
+        }),
+      });
+      const host: HTMLElement = fixture.nativeElement;
+
+      expect(anchors(host)).toEqual(['/#visit']);
     });
   });
 });

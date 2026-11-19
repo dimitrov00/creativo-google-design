@@ -17,6 +17,7 @@ import {
 } from '@creativo/features/shared/shell';
 import { UiSkeleton } from '@creativo/ui/controls';
 import { UiFrameDirective } from '@creativo/ui/modifiers';
+import { ShopReachSystem } from '@core/systems';
 import { CoursesSectionComponent } from '../../sections/courses/courses-section.component';
 import { LandingHeroComponent } from '../../sections/hero/landing-hero.component';
 import { HiringSectionComponent } from '../../sections/hiring/hiring-section.component';
@@ -27,14 +28,19 @@ import { WorkGalleryComponent } from '../../sections/work-gallery/work-gallery.c
 import { LandingContentService } from '../../content/landing-content.service';
 import { CatalogNavigationService } from '../../shared/catalog-navigation.service';
 import { ServiceDetailSheetComponent } from '@creativo/features/shared/catalog';
+import { shopVm } from './locations/locations.presenter';
+import type { ShopVm } from './locations/locations.vm';
 
 /**
  * The marketing landing — a 1:1 port of v2's `routes/index.tsx` composition:
  * fixed AppHeader (hero treatment) → inset video hero → the anchored section
- * run (work · team · services · hiring · visit) inside the centred app
- * column → sitemap footer. The installed-PWA active-user
- * redirect lives in `apps/web` `homeGuard` (v2's `isStandalone && settled
- * === 'active'` check).
+ * run (work · services · team · visit · courses · hiring) inside the
+ * centred app column → sitemap footer. Every section that shows the shop —
+ * its work, services, team and shops — draws what is STORED, and is not
+ * drawn while there is nothing stored to show (`LandingContentService`'s
+ * `shows*` signals, which also wait for each read to answer). The
+ * installed-PWA active-user redirect lives in `apps/web` `homeGuard` (v2's
+ * `isStandalone && settled === 'active'` check).
  */
 @Component({
   selector: 'cr-home-page',
@@ -70,14 +76,29 @@ export class HomePage {
   // its own — that decoupling is what lets onboarding reuse it.
   protected readonly content = inject(LandingContentService);
 
-  /** The flagship shop for the footer's Visit column (directions/call rows) — the site-wide `cr-site-footer` takes this as an input rather than reaching into landing's own content service itself. */
+  /**
+   * The flagship shop for the footer's Visit column (directions/call rows):
+   * the first stored shop by `sortOrder` — `null`, and those two rows not
+   * drawn, while none is known. The site-wide `cr-site-footer` takes this as
+   * an input rather than reaching into the landing's content itself.
+   */
   protected readonly flagshipLocation = computed<FooterFlagshipLocation | null>(
     () => {
-      const location = this.content.locations.at(0);
+      const location = this.content.flagship();
       return location
-        ? { mapUrl: location.mapUrl, phoneE164: location.phoneE164 }
+        ? {
+            mapUrl: ShopReachSystem.mapHref(location),
+            phoneE164: location.phoneE164,
+          }
         : null;
     },
+  );
+
+  /** The stored shops as the «Visit» section draws them, photos resolved. */
+  protected readonly shops = computed<readonly ShopVm[]>(() =>
+    this.content
+      .shops()
+      .map((location) => shopVm(location, this.content.shopPhotos(location))),
   );
 
   constructor() {

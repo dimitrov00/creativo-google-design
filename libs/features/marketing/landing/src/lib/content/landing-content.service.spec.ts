@@ -12,10 +12,17 @@ import type {
   MediaVariant,
 } from '@core/ports';
 import type { Barber, Service } from '@core/entities';
-import { BarberId, MediaRefId, Result, ServiceId } from '@core/primitives';
+import {
+  BarberId,
+  LocationId,
+  MediaRefId,
+  Result,
+  ServiceId,
+} from '@core/primitives';
 import { MediaError, type RepositoryError } from '@core/errors';
 import {
   barberFixture,
+  locationFixture,
   memoryCatalogReadPorts,
   serviceFixture,
   FIXTURE_TERMS,
@@ -258,5 +265,64 @@ describe('LandingContentService — media', () => {
     TestBed.resetTestingModule();
     await vi.advanceTimersByTimeAsync(10 * 60_000);
     expect(reader.callsFor(cover)).toBe(1);
+  });
+});
+
+/**
+ * What the page draws: a section of the shop's own only with something
+ * stored for it, and only once its read has answered.
+ */
+describe('LandingContentService — what is drawn', () => {
+  afterEach(() => TestBed.resetTestingModule());
+
+  function setUp(catalog: CatalogReadPorts): LandingContentService {
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: LanguageService, useValue: { activeLang: signal('bg') } },
+        { provide: CATALOG_PORTS, useValue: catalog },
+        {
+          provide: MEDIA_RESOLVE_PORTS,
+          useValue: scriptedMedia({}),
+        },
+      ],
+    });
+    return TestBed.inject(LandingContentService);
+  }
+
+  it('draws nothing of the shop’s own for a fresh project — and no work strip without the shop’s own photos', () => {
+    const landing = setUp(memoryCatalogReadPorts());
+
+    expect(landing.showsWork).toBe(false);
+    expect(landing.showsServices()).toBe(false);
+    expect(landing.showsTeam()).toBe(false);
+    expect(landing.showsShops()).toBe(false);
+    expect(landing.flagship()).toBeNull();
+  });
+
+  it('draws the team, the shelf and the shops once each is stored, the flagship the first shop by sortOrder', () => {
+    const second = locationFixture({
+      id: LocationId.of('loc-second'),
+      sortOrder: 2,
+    });
+    const first = locationFixture({ sortOrder: 1 });
+    const landing = setUp(
+      memoryCatalogReadPorts({
+        barbers: [ivan],
+        services: [fade],
+        locations: [second, first],
+      }),
+    );
+
+    expect(landing.showsTeam()).toBe(true);
+    expect(landing.showsServices()).toBe(true);
+    expect(landing.showsShops()).toBe(true);
+    expect(landing.flagship()?.id).toBe(first.id);
+  });
+
+  it('keeps the shelf hidden while only barbers off the public list perform its services', () => {
+    const landing = setUp(memoryCatalogReadPorts({ services: [fade] }));
+
+    expect(landing.showsTeam()).toBe(false);
+    expect(landing.showsServices()).toBe(false);
   });
 });

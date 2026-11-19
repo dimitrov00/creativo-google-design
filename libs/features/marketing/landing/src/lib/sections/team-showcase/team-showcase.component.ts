@@ -16,13 +16,12 @@ import {
 } from '@creativo/ui/modifiers';
 import {
   UiListGroup,
-  UiRating,
   UiSectionHeader,
   UiSheetActionBar,
 } from '@creativo/ui/patterns';
 import { UiModalSheet } from '@creativo/ui/controls';
-import { BarberId } from '@core/primitives';
 import {
+  type BarberVm,
   CatalogWording,
   ServiceRowComponent,
   type ServiceVm,
@@ -32,22 +31,17 @@ import {
 import { LandingContentService } from '../../content/landing-content.service';
 import { CatalogNavigationService } from '../../shared/catalog-navigation.service';
 
-interface BarberItem {
-  /**
-   * Matches the catalog's barber id — the key the price list derives from
-   * (an authored literal of the catalogue's own ids, so a brand by
-   * construction).
-   */
-  readonly id: BarberId;
-  readonly nameKey: string;
-  readonly image: string;
-  readonly roleKey: string;
-  readonly specialtyKey: string;
-  readonly aboutKey?: string;
-  readonly rating?: number;
-  readonly gallery: readonly string[];
-}
-
+/**
+ * The team — the catalogue's PUBLIC barbers in their `sortOrder`
+ * (`LandingContentService.barbers`, the same view models `/book` reads):
+ * each card is the barber's avatar, their title as the role line and their
+ * name; the sheet adds their bio, their price list and — when art direction
+ * gives one (`CATALOG_ART`) — a specialty line and a gallery. Nothing here
+ * is authored: a barber the owner adds through Team appears, one who leaves
+ * the public list disappears, and the page hides the section while there is
+ * nobody to show. No rating: the catalogue has no reviews, and a rating is
+ * never authored (EU rules on fake reviews and ratings).
+ */
 @Component({
   selector: 'cr-team-showcase',
   imports: [
@@ -62,7 +56,6 @@ interface BarberItem {
     ServiceRowComponent,
     UiListGroup,
     UiRadiusDirective,
-    UiRating,
     UiSectionHeader,
     UiSheetActionBar,
     UiSpacer,
@@ -87,51 +80,8 @@ export class TeamShowcaseComponent {
   /** Held across the exit — see `openService`. */
   private handoff: ServiceVm | null = null;
 
-  protected readonly barbers: readonly BarberItem[] = [
-    {
-      id: BarberId.of('ivan'),
-      nameKey: 'landing.barbers.ivan.name',
-      image: '/barbers/ivan.jpg',
-      roleKey: 'landing.barbers.ivan.role',
-      specialtyKey: 'landing.barbers.ivan.specialty',
-      aboutKey: 'landing.barbers.ivan.about',
-      rating: 4.9,
-      gallery: [
-        '/work/scissors-trim.jpg',
-        '/work/modern-cut.jpg',
-        '/work/finishing-touch.jpg',
-        '/work/classic-clippers.jpg',
-      ],
-    },
-    {
-      id: BarberId.of('niko'),
-      nameKey: 'landing.barbers.niko.name',
-      image: '/barbers/niko.jpg',
-      roleKey: 'landing.barbers.niko.role',
-      specialtyKey: 'landing.barbers.niko.specialty',
-      aboutKey: 'landing.barbers.niko.about',
-      rating: 4.8,
-      gallery: [
-        '/work/fade-styling.jpg',
-        '/work/classic-clippers.jpg',
-        '/work/modern-cut.jpg',
-        '/work/finishing-touch.jpg',
-      ],
-    },
-    {
-      id: BarberId.of('stefan'),
-      nameKey: 'landing.barbers.stefan.name',
-      image: '/barbers/stefan.jpg',
-      roleKey: 'landing.barbers.stefan.role',
-      specialtyKey: 'landing.barbers.stefan.specialty',
-      gallery: [
-        '/work/beard-shave.jpg',
-        '/work/classic-clippers.jpg',
-        '/work/scissors-trim.jpg',
-        '/work/fade-styling.jpg',
-      ],
-    },
-  ];
+  /** The public barbers, in their `sortOrder`. */
+  protected readonly barbers = this.content.barbers;
 
   /**
    * WHICH barber the sheet shows is shared state, because a performer in
@@ -140,7 +90,7 @@ export class TeamShowcaseComponent {
    */
   protected readonly activeBarber = computed(
     () =>
-      this.barbers.find((barber) => barber.id === this.catalog.barberId()) ??
+      this.barbers().find((barber) => barber.id === this.catalog.barberId()) ??
       null,
   );
   protected readonly sheetOpen = computed(() => this.activeBarber() !== null);
@@ -158,7 +108,7 @@ export class TeamShowcaseComponent {
     return this.content.barberPrices(barber.id);
   });
 
-  protected openBarber(barber: BarberItem): void {
+  protected openBarber(barber: BarberVm): void {
     this.sheetClosing.set(false);
     this.catalog.openBarber(barber.id);
   }

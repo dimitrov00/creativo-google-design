@@ -589,47 +589,47 @@
               uiRevealTrigger="mount"
               [uiRevealDelay]="180"
             >
+              <!-- Only the sections the landing draws (SiteSectionsService):
+                   «Нашата работа» waits for photos of the shop's own work,
+                   and the team, the services and the shops for what is
+                   stored. -->
               <ui-list-group>
-                <a
-                  href="/#work"
-                  uiListRow
-                  uiSize="large"
-                  [uiInteractive]="true"
-                  (click)="close()"
-                >
-                  <ui-icon uiLeading uiName="nav.work" uiScale="medium" />
-                  {{ t('landing.footer.nav.work') }}
-                </a>
-                <a
-                  href="/#team"
-                  uiListRow
-                  uiSize="large"
-                  [uiInteractive]="true"
-                  (click)="close()"
-                >
-                  <ui-icon uiLeading uiName="nav.team" uiScale="medium" />
-                  {{ t('landing.footer.nav.team') }}
-                </a>
-                <a
-                  href="/#services"
-                  uiListRow
-                  uiSize="large"
-                  [uiInteractive]="true"
-                  (click)="close()"
-                >
-                  <ui-icon uiLeading uiName="nav.services" uiScale="medium" />
-                  {{ t('landing.footer.nav.services') }}
-                </a>
-                <a
-                  href="/#visit"
-                  uiListRow
-                  uiSize="large"
-                  [uiInteractive]="true"
-                  (click)="close()"
-                >
-                  <ui-icon uiLeading uiName="nav.visit" uiScale="medium" />
-                  {{ t('landing.footer.nav.visit') }}
-                </a>
+                @if (sections().team) {
+                  <a
+                    href="/#team"
+                    uiListRow
+                    uiSize="large"
+                    [uiInteractive]="true"
+                    (click)="close()"
+                  >
+                    <ui-icon uiLeading uiName="nav.team" uiScale="medium" />
+                    {{ t('landing.footer.nav.team') }}
+                  </a>
+                }
+                @if (sections().services) {
+                  <a
+                    href="/#services"
+                    uiListRow
+                    uiSize="large"
+                    [uiInteractive]="true"
+                    (click)="close()"
+                  >
+                    <ui-icon uiLeading uiName="nav.services" uiScale="medium" />
+                    {{ t('landing.footer.nav.services') }}
+                  </a>
+                }
+                @if (sections().visit) {
+                  <a
+                    href="/#visit"
+                    uiListRow
+                    uiSize="large"
+                    [uiInteractive]="true"
+                    (click)="close()"
+                  >
+                    <ui-icon uiLeading uiName="nav.visit" uiScale="medium" />
+                    {{ t('landing.footer.nav.visit') }}
+                  </a>
+                }
                 <a
                   routerLink="/careers"
                   uiListRow

@@ -28,12 +28,7 @@ import {
   UiMultilineTextAlignmentDirective,
   UiTextDirective,
 } from '@creativo/ui/modifiers';
-import {
-  UiCard,
-  UiListGroup,
-  UiListRow,
-  UiRating,
-} from '@creativo/ui/patterns';
+import { UiCard, UiListGroup, UiListRow } from '@creativo/ui/patterns';
 import { CatalogContentService } from '../content/catalog-content.service';
 import { CatalogWording } from '../content/catalog-wording.service';
 import {
@@ -93,7 +88,6 @@ interface PerformerVm {
     UiListGroup,
     UiListRow,
     UiMultilineTextAlignmentDirective,
-    UiRating,
     UiSpacer,
     UiStack,
     UiTextDirective,

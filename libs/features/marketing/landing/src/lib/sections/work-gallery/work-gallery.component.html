@@ -45,7 +45,9 @@
             uiFont="title"
             data-testid="work-gallery-caption"
           >
-            {{ t(shots[index]?.captionKey ?? '') }}
+            @if (shots[index]; as shot) {
+              {{ words.text(shot.caption) }}
+            }
           </p>
         }
       </div>

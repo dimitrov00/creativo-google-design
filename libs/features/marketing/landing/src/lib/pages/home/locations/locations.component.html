@@ -8,7 +8,7 @@
           {{ t('landing.location.eyebrow') }}
         </p>
         <h2 id="locations-title" uiTitle>
-          {{ t('landing.location.titleMulti') }}
+          {{ t(headingKey()) }}
         </h2>
         <p uiLede>{{ t('landing.location.intro') }}</p>
       </ui-section-header>
@@ -25,11 +25,7 @@
                ul/li: a li[role="button"] is no longer a listitem, and a
                <ul> whose children aren't listitems is a list that lies. -->
           <ui-list-group class="locations__list">
-            @for (
-              location of locations;
-              track location.nameKey;
-              let index = $index
-            ) {
+            @for (location of shops(); track location.id; let index = $index) {
               @let status = statusFor(location);
               <ui-list-row
                 [uiInteractive]="true"
@@ -38,7 +34,7 @@
                 tabindex="0"
                 [attr.aria-label]="
                   t('landing.location.exploreLocation', {
-                    location: t(location.nameKey),
+                    location: words.text(location.name),
                   })
                 "
                 aria-haspopup="dialog"
@@ -58,10 +54,10 @@
                   class="location-card__copy"
                 >
                   <h3 uiText uiFont="headline">
-                    {{ t(location.nameKey) }}
+                    {{ words.text(location.name) }}
                   </h3>
                   <p uiText uiFont="footnote" uiForegroundStyle="secondary">
-                    {{ t(location.addressKey) }}
+                    {{ words.text(location.address) }}
                   </p>
 
                   <ui-status-indicator
@@ -121,38 +117,33 @@
                      ui-spacer needed — ui-list-row's label is the flexible
                      column and the slot never shrinks). -->
                 <span uiTrailing class="location-card__actions">
-                  @if (
-                    location.phoneKey && phoneHref(t(location.phoneKey));
-                    as callHref
-                  ) {
-                    <a
-                      uiButton
-                      uiButtonStyle="bordered"
-                      uiTint="neutral"
-                      [uiIconOnly]="true"
-                      [href]="callHref"
-                      [attr.aria-label]="
-                        t('landing.location.callAria', {
-                          location: t(location.nameKey),
-                        })
-                      "
-                      (click)="$event.stopPropagation()"
-                    >
-                      <ui-icon uiName="location.call" />
-                    </a>
-                  }
+                  <a
+                    uiButton
+                    uiButtonStyle="bordered"
+                    uiTint="neutral"
+                    [uiIconOnly]="true"
+                    [href]="location.callHref"
+                    [attr.aria-label]="
+                      t('landing.location.callAria', {
+                        location: words.text(location.name),
+                      })
+                    "
+                    (click)="$event.stopPropagation()"
+                  >
+                    <ui-icon uiName="location.call" />
+                  </a>
 
                   <a
                     uiButton
                     uiButtonStyle="bordered"
                     [uiIconOnly]="true"
                     class="location-card__maps"
-                    [href]="directionsUrl(location)"
+                    [href]="location.directionsHref"
                     target="_blank"
                     rel="noopener"
                     [attr.aria-label]="
                       t('landing.location.directionsAria', {
-                        location: t(location.nameKey),
+                        location: words.text(location.name),
                       })
                     "
                     (click)="$event.stopPropagation()"
@@ -205,7 +196,7 @@
          shell reveals it off the uiSheetLargeTitle sentinel below. -->
     <span sheet-title>
       @if (activeLocation(); as location) {
-        {{ t(location.nameKey) }}
+        {{ words.text(location.name) }}
       }
     </span>
 
@@ -220,7 +211,7 @@
               data-location-sheet-map
               [attr.aria-label]="
                 t('landing.location.sheetMapAria', {
-                  location: t(location.nameKey),
+                  location: words.text(location.name),
                 })
               "
               role="img"
@@ -245,7 +236,7 @@
                     uiText
                     uiFont="extraLargeTitle"
                   >
-                    {{ t(location.nameKey) }}
+                    {{ words.text(location.name) }}
                   </h2>
                   <ui-stack uiSpacing="compact" uiAlignment="leading">
                     <p
@@ -256,19 +247,17 @@
                       uiForegroundStyle="secondary"
                     >
                       <ui-icon uiName="location.place" />
-                      {{ t(location.addressKey) }}
+                      {{ words.text(location.address) }}
                     </p>
-                    @if (location.phoneKey) {
-                      <a
-                        class="location-sheet__phone-line"
-                        uiText
-                        uiFont="caption"
-                        [attr.href]="phoneHref(t(location.phoneKey))"
-                      >
-                        <ui-icon uiName="location.call" />
-                        {{ t(location.phoneKey) }}
-                      </a>
-                    }
+                    <a
+                      class="location-sheet__phone-line"
+                      uiText
+                      uiFont="caption"
+                      [attr.href]="location.callHref"
+                    >
+                      <ui-icon uiName="location.call" />
+                      {{ location.phoneDisplay }}
+                    </a>
                   </ui-stack>
                 </ui-stack>
               </header>
@@ -372,26 +361,30 @@
           </article>
         </div>
 
-        <section class="location-sheet__gallery">
-          <header class="location-sheet__gallery-heading">
-            <h3 uiText uiFont="title">
-              {{ t('landing.location.galleryHeading') }}
-            </h3>
-          </header>
-          <cr-showcase-gallery
-            [images]="location.gallery"
-            [imageAlt]="t(location.nameKey)"
-            [ariaLabel]="
-              t('landing.location.galleryLabel', {
-                location: t(location.nameKey),
-              })
-            "
-            [gridViewLabel]="t('marketing.gallery.gridView')"
-            [carouselViewLabel]="t('marketing.gallery.carouselView')"
-            [expanded]="true"
-            [showToggle]="false"
-          />
-        </section>
+        <!-- The shop's own stored photos (`ShopLocation.photos`); a shop
+             with none has no gallery. -->
+        @if (location.gallery.length > 0) {
+          <section class="location-sheet__gallery">
+            <header class="location-sheet__gallery-heading">
+              <h3 uiText uiFont="title">
+                {{ t('landing.location.galleryHeading') }}
+              </h3>
+            </header>
+            <cr-showcase-gallery
+              [images]="location.gallery"
+              [imageAlt]="words.text(location.name)"
+              [ariaLabel]="
+                t('landing.location.galleryLabel', {
+                  location: words.text(location.name),
+                })
+              "
+              [gridViewLabel]="t('marketing.gallery.gridView')"
+              [carouselViewLabel]="t('marketing.gallery.carouselView')"
+              [expanded]="true"
+              [showToggle]="false"
+            />
+          </section>
+        }
       </div>
     }
 
@@ -405,38 +398,33 @@
       [uiVisible]="true"
     >
       @if (activeLocation(); as location) {
-        @if (
-          location.phoneKey && phoneHref(t(location.phoneKey));
-          as callHref
-        ) {
-          <a
-            uiButton
-            uiButtonStyle="strokedBorder"
-            uiControlSize="large"
-            uiMaterial="regular"
-            [uiIconOnly]="true"
-            [href]="callHref"
-            [attr.aria-label]="
-              t('landing.location.callAria', {
-                location: t(location.nameKey),
-              })
-            "
-          >
-            <ui-icon uiName="location.call" />
-          </a>
-        }
         <a
           uiButton
           uiButtonStyle="strokedBorder"
           uiControlSize="large"
           uiMaterial="regular"
           [uiIconOnly]="true"
-          [href]="directionsUrl(location)"
+          [href]="location.callHref"
+          [attr.aria-label]="
+            t('landing.location.callAria', {
+              location: words.text(location.name),
+            })
+          "
+        >
+          <ui-icon uiName="location.call" />
+        </a>
+        <a
+          uiButton
+          uiButtonStyle="strokedBorder"
+          uiControlSize="large"
+          uiMaterial="regular"
+          [uiIconOnly]="true"
+          [href]="location.directionsHref"
           target="_blank"
           rel="noopener"
           [attr.aria-label]="
             t('landing.location.directionsAria', {
-              location: t(location.nameKey),
+              location: words.text(location.name),
             })
           "
         >
@@ -450,7 +438,9 @@
           class="location-sheet__toolbar-book"
           href="/client"
           [attr.aria-label]="
-            t('landing.location.bookAt', { location: t(location.nameKey) })
+            t('landing.location.bookAt', {
+              location: words.text(location.name),
+            })
           "
           uiButton
           uiButtonStyle="borderedProminent"

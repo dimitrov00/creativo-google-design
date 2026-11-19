@@ -12,6 +12,7 @@ import {
   APPOINTMENT_READ_PORTS,
   AUTH_SESSION_PORTS,
   AVATAR_PORTS,
+  CATALOG_PORTS,
   CLOCK_PORTS,
   DEFAULT_LOCATION_PORTS,
   INBOX_PORTS,
@@ -26,6 +27,7 @@ import {
   memoryAppointmentReadPorts,
   memoryAuthSessionPorts,
   memoryAvatarPorts,
+  memoryCatalogReadPorts,
   memoryClockPorts,
   memoryDefaultLocationPorts,
   memoryInboxPorts,
@@ -113,6 +115,8 @@ async function configure(
     providers: [
       provideRouter([]),
       ...provideTestI18n(),
+      // Which landing sections the menu links to (`SiteSectionsService`).
+      { provide: CATALOG_PORTS, useValue: memoryCatalogReadPorts() },
       // The session (principal, name + channel for the identity portrait).
       {
         provide: AUTH_SESSION_PORTS,

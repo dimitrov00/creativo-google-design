@@ -66,9 +66,9 @@
   white-space: nowrap;
 }
 
-/* Metadata subtitle — role · rating · duration on one secondary line.
-   The role is the only flexible part (it ellipsizes rather than pushing
-   the stats off the row); separators, rating and duration never shrink. */
+/* Metadata subtitle — role · duration on one secondary line. The role is
+   the only flexible part (it ellipsizes rather than pushing the duration
+   off the row); separators and duration never shrink. */
 .service-performer__meta {
   min-inline-size: 0;
 }
@@ -81,15 +81,8 @@
 }
 
 .service-performer__meta > .service-performer__sep,
-.service-performer__meta > .service-performer__duration,
-.service-performer__meta .ui-rating {
+.service-performer__meta > .service-performer__duration {
   flex: 0 0 auto;
-}
-
-/* The rating is metadata here, not a stat callout: it drops the pattern's
-   bold so the whole subtitle reads at one weight and one ink. */
-.service-performer__meta .ui-rating {
-  font-weight: inherit;
 }
 
 .service-performer__duration {
