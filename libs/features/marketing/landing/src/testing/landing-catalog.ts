@@ -1,10 +1,17 @@
 /**
  * The landing's demo catalogue as AUTHORED, transcribed from v2's demo seed
  * — test support, never production content: `provideTestCatalog`
- * (`test-catalog.providers.ts`) turns each entry into a `Barber` or
- * `Service` entity behind the catalogue's ports, and the figures a surface
- * prints are `CatalogPricingSystem`'s answers on those. Prices are EUR
- * cents and durations minutes.
+ * (`test-catalog.providers.ts`) turns each entry into a `Barber`, `Service`
+ * or `ShopLocation` entity behind the catalogue's ports, and the figures a
+ * surface prints are `CatalogPricingSystem`'s answers on those. Prices are
+ * EUR cents and durations minutes. The demo people, shops and photos are
+ * invented (owner, 2026-11-19): production reads the stored catalogue, and
+ * shows a section only when something is stored for it.
+ *
+ * The demo ART — a barber's specialty and gallery, a service's gallery, the
+ * work strip — is test support too: `provideTestCatalog` serves it through
+ * `CATALOG_ART` and `LANDING_WORK_SHOTS`, the seams production leaves
+ * empty.
  *
  * The shelf is written in its OWN raw input types (below), not the
  * catalogue's view models: its ids stay the literals they were authored as,
@@ -12,11 +19,18 @@
  * entities (`BarberId.of`, `ServiceId.of`, the catalogue's parse guards).
  */
 
-import { CompositionKind, type LocalizedText } from '@core/components';
+import {
+  CompositionKind,
+  type DayHoursInput,
+  DayHours,
+  type LocalizedText,
+  OpeningState,
+} from '@core/components';
 import {
   type ServiceSourceVm,
   VariantIcon,
 } from '@creativo/features/shared/catalog';
+import type { WorkShotVm } from '../lib/content/landing-content';
 
 const lt = (en: string, bg: string): LocalizedText => ({ en, bg });
 
@@ -28,7 +42,6 @@ export interface AuthoredBarber {
   readonly bio: LocalizedText;
   readonly avatarSrc: string;
   readonly objectPosition: string;
-  readonly rating?: number;
   readonly specialty: LocalizedText;
   readonly gallery: readonly string[];
 }
@@ -89,9 +102,8 @@ export const BARBERS: readonly AuthoredBarber[] = [
       '/work/finishing-touch.jpg',
       '/work/classic-clippers.jpg',
     ],
-    avatarSrc: '/barbers/ivan.jpg',
+    avatarSrc: 'https://example.test/barbers/ivan.jpg',
     objectPosition: '50% 25%',
-    rating: 4.9,
   },
   {
     id: 'niko',
@@ -111,9 +123,8 @@ export const BARBERS: readonly AuthoredBarber[] = [
       '/work/modern-cut.jpg',
       '/work/finishing-touch.jpg',
     ],
-    avatarSrc: '/barbers/niko.jpg',
+    avatarSrc: 'https://example.test/barbers/niko.jpg',
     objectPosition: '50% 25%',
-    rating: 4.8,
   },
   {
     id: 'stefan',
@@ -133,7 +144,7 @@ export const BARBERS: readonly AuthoredBarber[] = [
       '/work/scissors-trim.jpg',
       '/work/fade-styling.jpg',
     ],
-    avatarSrc: '/barbers/stefan.jpg',
+    avatarSrc: 'https://example.test/barbers/stefan.jpg',
     objectPosition: '50% 25%',
   },
 ];
@@ -378,5 +389,149 @@ export const SERVICES: readonly AuthoredService[] = [
       { barberId: 'niko', base: t(300, 5) },
       { barberId: 'stefan', base: t(300, 5) },
     ],
+  },
+];
+
+/** A shop as authored — the catalogue's `ShopLocation` fields, its values raw. */
+export interface AuthoredShop {
+  readonly id: string;
+  readonly name: LocalizedText;
+  readonly address: LocalizedText;
+  readonly phoneE164: string;
+  readonly phoneDisplay: string;
+  readonly latitude: number;
+  readonly longitude: number;
+  /** Monday first, the closed day kept — `DayHours.parseWeek`'s input. */
+  readonly week: readonly DayHoursInput[];
+  /** Storage paths of the shop's own photos. */
+  readonly photos: readonly string[];
+}
+
+/** An open day as authored here: from one whole hour to another. */
+const open = (from: number, to: number): DayHoursInput => ({
+  openingState: OpeningState.Open,
+  openMinutes: from * 60,
+  closeMinutes: to * 60,
+});
+const CLOSED: DayHoursInput = DayHours.closed();
+
+/**
+ * The demo shops as AUTHORED — the dev seed's two
+ * (`tools/seed/fixtures/catalog.fixtures.ts`), in their `sortOrder`.
+ */
+export const SHOPS: readonly AuthoredShop[] = [
+  {
+    id: 'loc-center',
+    name: lt('Creativo · Center', 'Креативо · Център'),
+    address: lt(
+      '120 Tsar Simeon Veliki Blvd, Stara Zagora',
+      'бул. „Цар Симеон Велики“ 120, Стара Загора',
+    ),
+    phoneE164: '+359881234567',
+    phoneDisplay: '+359 88 123 4567',
+    latitude: 42.4271,
+    longitude: 25.6366,
+    week: [
+      open(9, 20),
+      open(9, 20),
+      open(9, 20),
+      open(9, 20),
+      open(9, 21),
+      open(10, 18),
+      CLOSED,
+    ],
+    photos: ['/work/scissors-trim.jpg', '/work/modern-cut.jpg'],
+  },
+  {
+    id: 'loc-mladost',
+    name: lt('Creativo · Mladost', 'Креативо · Младост'),
+    address: lt(
+      '14 Armeyska St, Mladost, Stara Zagora',
+      'ул. „Армейска“ 14, Младост, Стара Загора',
+    ),
+    phoneE164: '+359887654321',
+    phoneDisplay: '+359 88 765 4321',
+    latitude: 42.46,
+    longitude: 25.685,
+    week: [
+      CLOSED,
+      open(10, 19),
+      open(10, 19),
+      open(10, 19),
+      open(10, 19),
+      open(9, 16),
+      CLOSED,
+    ],
+    photos: [],
+  },
+];
+
+/** The demo work strip — six art-directed shots (v2 `work-gallery.tsx` ART_DIRECTION). */
+export const WORK_SHOTS: readonly WorkShotVm[] = [
+  {
+    id: 'work-scissors-trim',
+    src: '/work/scissors-trim.jpg',
+    alt: lt(
+      'Scissor-over-comb trim in progress on the salon chair',
+      'Подстригване с ножица върху гребен в салонния стол',
+    ),
+    aspectRatio: '4/5',
+    driftY: 28,
+    caption: lt('The precise trim.', 'Прецизна подрезка.'),
+  },
+  {
+    id: 'work-modern-cut',
+    src: '/work/modern-cut.jpg',
+    alt: lt(
+      'Modern textured crop with a clean taper, styled matte',
+      'Модерна текстурирана подстрижка с чист преход, матов стайлинг',
+    ),
+    aspectRatio: '1/1',
+    driftY: -36,
+    caption: lt('Modern texture.', 'Модерна текстура.'),
+  },
+  {
+    id: 'work-classic-clippers',
+    src: '/work/classic-clippers.jpg',
+    alt: lt(
+      'Classic clipper work shaping a low fade at the station',
+      'Класическа работа с машинка — оформяне на нисък фейд на стола',
+    ),
+    aspectRatio: '4/5',
+    driftY: 16,
+    caption: lt('Classic taper.', 'Класически конус.'),
+  },
+  {
+    id: 'work-fade-styling',
+    src: '/work/fade-styling.jpg',
+    alt: lt(
+      'High skin fade blended to nothing, finished with styling paste',
+      'Висок skin фейд, прелят до нула и завършен със стайлинг паста',
+    ),
+    aspectRatio: '3/4',
+    driftY: -28,
+    caption: lt('The defining fade.', 'Определящият фейд.'),
+  },
+  {
+    id: 'work-beard-shave',
+    src: '/work/beard-shave.jpg',
+    alt: lt(
+      'Hot towel straight-razor shave with lather brush',
+      'Бръснене с право острие и топла кърпа, пяна с четка',
+    ),
+    aspectRatio: '4/5',
+    driftY: 36,
+    caption: lt('The close shave.', 'Бръснене наблизо.'),
+  },
+  {
+    id: 'work-finishing-touch',
+    src: '/work/finishing-touch.jpg',
+    alt: lt(
+      'Straight-razor edge-up finishing a fresh haircut',
+      'Финален контур с право острие след прясно подстригване',
+    ),
+    aspectRatio: '3/4',
+    driftY: -16,
+    caption: lt('Finishing detail.', 'Финалният щрих.'),
   },
 ];

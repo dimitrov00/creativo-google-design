@@ -136,8 +136,10 @@ export function barberToVm(
     bio: barber.bio,
     avatarSrc: avatarSrc ?? '',
     objectPosition: art?.objectPosition ?? DEFAULT_OBJECT_POSITION,
-    // No `rating` — see the note at the top of this file.
-    specialty: art?.specialty ?? barber.title,
+    // No `rating` — see the note at the top of this file. No title
+    // stand-in for the specialty either: the title is the card's role line
+    // already, and the same words twice is no summary.
+    specialty: art?.specialty ?? null,
     gallery: art?.gallery ?? [],
   };
 }

@@ -419,7 +419,13 @@ for (const exception of scheduleExceptionsFor(calendar)) {
   console.log(`seeded ${path} (${exception.exceptionEffect})`);
 }
 
-const barbersDir = join(publicDir, 'barbers');
+// The demo portraits are the seed's own media, never the web app's public
+// files: Hosting served `apps/web/public/barbers/*` to anyone, faces of
+// people who do not work at the shop (removed 2026-11-19).
+const barbersDir = join(
+  dirname(fileURLToPath(import.meta.url)),
+  'seed/media/barbers',
+);
 for (const barber of BARBERS) {
   await upload(barbersDir, barber.file, barber.body.avatarMediaPath);
   await db.doc(`barbers/${barber.id}`).set(barber.body);

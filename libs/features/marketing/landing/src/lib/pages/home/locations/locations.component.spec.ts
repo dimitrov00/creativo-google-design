@@ -2,13 +2,35 @@ import { TestBed } from '@angular/core/testing';
 import { onTestFinished, vi } from 'vitest';
 import { MAPLIBRE_SOURCES, type MapLibreSources } from '@creativo/ui/controls';
 import { CLOCK_PORTS } from '@creativo/infrastructure/firebase-app';
+import type { ShopLocation } from '@core/entities';
 import type { UtcEpochMs } from '@core/primitives';
 import { memoryClockPorts, utcMs } from '@core/testing';
 import {
   provideTestCatalog,
   provideTestI18n,
+  testShops,
 } from '@creativo/features/marketing/landing/testing';
 import { LocationsComponent } from './locations.component';
+import { shopVm } from './locations.presenter';
+
+/**
+ * The section as the page mounts it: the stored shops (the demo
+ * catalogue's two, in their `sortOrder`), each photo resolved to its own
+ * path as the test media port does.
+ */
+function mount(shops: readonly ShopLocation[] = testShops()) {
+  const fixture = TestBed.createComponent(LocationsComponent);
+  fixture.componentRef.setInput(
+    'shops',
+    shops.map((shop) =>
+      shopVm(
+        shop,
+        shop.photos.map((photo) => photo.mediaPath),
+      ),
+    ),
+  );
+  return fixture;
+}
 
 describe('LocationsComponent', () => {
   it('renders every location as an explorable card and opens its detail sheet', async () => {
@@ -21,7 +43,7 @@ describe('LocationsComponent', () => {
       ],
     }).compileComponents();
 
-    const fixture = TestBed.createComponent(LocationsComponent);
+    const fixture = mount();
     fixture.detectChanges();
     await fixture.whenStable();
     const host: HTMLElement = fixture.nativeElement;
@@ -121,6 +143,82 @@ describe('LocationsComponent', () => {
     ).not.toBeNull();
   });
 
+  it('prints each stored shop’s own name, address, number and map link, and its own photos — none for a shop with none', async () => {
+    await TestBed.configureTestingModule({
+      imports: [LocationsComponent],
+      providers: [
+        ...provideTestI18n(),
+        ...provideTestCatalog(),
+        { provide: CLOCK_PORTS, useValue: memoryClockPorts() },
+      ],
+    }).compileComponents();
+
+    const fixture = mount();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const host: HTMLElement = fixture.nativeElement;
+
+    expect(host.querySelector('#locations-title')?.textContent?.trim()).toBe(
+      'Нашите локации.',
+    );
+    const cards = host.querySelectorAll<HTMLElement>('.location-card');
+    expect(cards[0]?.querySelector('h3')?.textContent?.trim()).toBe(
+      'Креативо · Център',
+    );
+    expect(cards[1]?.textContent).toContain(
+      'ул. „Армейска“ 14, Младост, Стара Загора',
+    );
+    expect(
+      cards[1]?.querySelector('a[href^="tel:"]')?.getAttribute('href'),
+    ).toBe('tel:+359887654321');
+    // No stored map link: «directions» leads to the shop's coordinates.
+    expect(
+      cards[0]?.querySelector('.location-card__maps')?.getAttribute('href'),
+    ).toBe(
+      'https://www.google.com/maps/dir/?api=1&destination=42.4271,25.6366',
+    );
+
+    // The centre stores two photos: its sheet shows them, and its number
+    // as the shop prints it.
+    cards[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(
+      host.querySelectorAll('.location-sheet__gallery .showcase-gallery figure')
+        .length,
+    ).toBe(2);
+    expect(
+      host.querySelector('.location-sheet__phone-line')?.textContent?.trim(),
+    ).toBe('+359 88 123 4567');
+
+    // Mladost stores none: its sheet has no gallery at all.
+    cards[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(host.querySelector('.location-sheet__gallery')).toBeNull();
+  });
+
+  it('heads one stored shop as the one place to find, and centres the map on it', async () => {
+    await TestBed.configureTestingModule({
+      imports: [LocationsComponent],
+      providers: [
+        ...provideTestI18n(),
+        ...provideTestCatalog(),
+        { provide: CLOCK_PORTS, useValue: memoryClockPorts() },
+      ],
+    }).compileComponents();
+
+    const fixture = mount(testShops().slice(0, 1));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    const host: HTMLElement = fixture.nativeElement;
+
+    expect(host.querySelector('#locations-title')?.textContent?.trim()).toBe(
+      'Един адрес.',
+    );
+    expect(host.querySelectorAll('.location-card').length).toBe(1);
+  });
+
   it('fails soft when MapLibre cannot be fetched — logs, keeps the list, rejects nothing', async () => {
     const logged = vi
       .spyOn(console, 'error')
@@ -144,7 +242,7 @@ describe('LocationsComponent', () => {
       ],
     }).compileComponents();
 
-    const fixture = TestBed.createComponent(LocationsComponent);
+    const fixture = mount();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -165,8 +263,8 @@ describe('LocationsComponent', () => {
 
   /**
    * The open/closed line and the sheet's bold «today» row run on the SHOP's
-   * clock — each location's zone (Europe/Sofia, from the static landing
-   * content), read through the injected clock — never the visitor's device.
+   * clock — each stored shop's own zone (Europe/Sofia), read through the
+   * injected clock — never the visitor's device.
    * Pinned at four Sofia instants (EEST, UTC+3), one per status line.
    */
   describe('on the shop clock', () => {
@@ -179,7 +277,7 @@ describe('LocationsComponent', () => {
           { provide: CLOCK_PORTS, useValue: memoryClockPorts(now) },
         ],
       }).compileComponents();
-      const fixture = TestBed.createComponent(LocationsComponent);
+      const fixture = mount();
       fixture.detectChanges();
       await fixture.whenStable();
       return fixture;
