@@ -14,6 +14,7 @@ import { dirname, join } from 'node:path';
 import { describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { FUNCTIONS_REGION, functionsHost } from './check-csp.mjs';
+import { opsNamesOf } from '../preflight/preflight.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const read = (path) => readFileSync(join(ROOT, path), 'utf8');
@@ -115,5 +116,32 @@ describe('the functions’ region (ADR 2026-11-18, europe-west8)', () => {
       ),
     );
     assert.deepEqual(offenders, []);
+  });
+});
+
+// The same global options name the account every function runs as (ADR
+// docs/architecture/decisions/2026-11-19-functions-runtime-identity.md, I1):
+// the one tools/ops/deploy-identity.sh makes, by names.env's id.
+describe('the functions’ runtime account (ADR 2026-11-19, I1)', () => {
+  it('runs the functions as the account it makes — the global options name names.env’s runtime account id', () => {
+    const names = opsNamesOf(read('tools/ops/names.env'));
+    assert.equal(names.RUNTIME_SERVICE_ACCOUNT_ID, 'creativo-functions');
+    const account = read('apps/functions/src/lib/runtime-account.ts');
+    assert.equal(
+      /^export const FUNCTIONS_SERVICE_ACCOUNT_ID = '([^']*)';$/m.exec(
+        account,
+      )?.[1],
+      names.RUNTIME_SERVICE_ACCOUNT_ID,
+    );
+    // The full address, resolved per project at deploy — never the `name@`
+    // shorthand, which Cloud Scheduler would receive unexpanded.
+    assert.match(
+      account,
+      /^export const FUNCTIONS_SERVICE_ACCOUNT = expr`\$\{FUNCTIONS_SERVICE_ACCOUNT_ID\}@\$\{projectID\}\.iam\.gserviceaccount\.com`;$/m,
+    );
+    assert.match(
+      read('apps/functions/src/main.ts'),
+      /^setGlobalOptions\(\{\n {2}region: FUNCTIONS_REGION,\n {2}serviceAccount: FUNCTIONS_SERVICE_ACCOUNT,\n\}\);$/m,
+    );
   });
 });

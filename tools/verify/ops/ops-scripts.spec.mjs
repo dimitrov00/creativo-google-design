@@ -879,28 +879,6 @@ describe('tools/ops/deploy-identity.sh — Workload Identity Federation per envi
     );
   });
 
-  it('runs the functions as the account it makes — the global options name names.env’s runtime account id', () => {
-    const names = opsNamesOf(read('tools/ops/names.env'));
-    assert.equal(names.RUNTIME_SERVICE_ACCOUNT_ID, 'creativo-functions');
-    const account = read('apps/functions/src/lib/runtime-account.ts');
-    assert.equal(
-      /^export const FUNCTIONS_SERVICE_ACCOUNT_ID = '([^']*)';$/m.exec(
-        account,
-      )?.[1],
-      names.RUNTIME_SERVICE_ACCOUNT_ID,
-    );
-    // The full address, resolved per project at deploy — never the `name@`
-    // shorthand, which Cloud Scheduler would receive unexpanded.
-    assert.match(
-      account,
-      /^export const FUNCTIONS_SERVICE_ACCOUNT = expr`\$\{FUNCTIONS_SERVICE_ACCOUNT_ID\}@\$\{projectID\}\.iam\.gserviceaccount\.com`;$/m,
-    );
-    assert.match(
-      read('apps/functions/src/main.ts'),
-      /^setGlobalOptions\(\{\n {2}region: FUNCTIONS_REGION,\n {2}serviceAccount: FUNCTIONS_SERVICE_ACCOUNT,\n\}\);$/m,
-    );
-  });
-
   it('lets the deploy account act as the App Engine default account when there is one — firebase-tools checks it before every functions deploy', () => {
     const { out } = dryRun(SCRIPT, args('staging'));
     const appspot = 'creativo-v2-prod@appspot.gserviceaccount.com';

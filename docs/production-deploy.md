@@ -270,11 +270,12 @@ firebase functions:artifacts:setpolicy --location europe-west8 --project "$PROJE
       running as a default account loses Firestore, Auth and its secrets
       the moment Editor goes.
   1. **Before the PR that moves the functions to the runtime account
-     merges** (the one that added this step), run step 6's two staging
-     commands from that PR's branch. They create the runtime account and
-     its grants, give the build account its role, and take nothing away.
-     The merge then deploys every function onto the runtime account. A
-     deploy that names an account that does not exist yet fails.
+     merges**, run step 6's two staging commands from an up-to-date
+     `main`: the script landed there first, in a PR of its own, so it
+     never runs from an unmerged branch. They create the runtime account
+     and its grants, give the build account its role, and take nothing
+     away. The merge then deploys every function onto the runtime account.
+     A deploy that names an account that does not exist yet fails.
   2. **Merge it**, let Deploy staging finish, and check staging (section
      4). Each line of the listing below should now name
      `creativo-functions@…`. The Scheduler jobs keep calling with
