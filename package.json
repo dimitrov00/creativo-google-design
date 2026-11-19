@@ -41,7 +41,7 @@
     "@angular/compiler-cli": "~22.2.5",
     "@angular/language-service": "~22.2.5",
     "@angular/pwa": "^22.2.6",
-    "@axe-core/playwright": "4.13.0",
+    "@axe-core/playwright": "4.14.0",
     "@commitlint/cli": "^21.2.4",
     "@commitlint/config-conventional": "^21.2.4",
     "@eslint/js": "^9.8.0",
@@ -136,7 +136,8 @@
     ],
     "overrides": {
       "@firebase/firestore@4.17.2>@grpc/grpc-js": "^1.14.6",
-      "nx@23.3.1>undici": "^7.30.1"
+      "nx@23.3.1>undici": "^7.30.1",
+      "@axe-core/playwright@4.14.0>axe-core": "4.14.0"
     }
   },
   "engines": {

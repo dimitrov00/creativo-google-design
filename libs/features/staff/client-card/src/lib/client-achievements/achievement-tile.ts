@@ -29,8 +29,9 @@ import type { AchievementTileVm } from '../client-pages.vm';
  * and the sentence are the presenter's; this adds only the one decoration
  * the DS places — the quiet «Ново» over the ring for a level earned since
  * the previous visit (never a celebration on a staff surface), in the band
- * its own row makes for it. It is decoration: the medal's sentence already
- * says «ново». A day group counts its other levels once, on its title
+ * its own row makes for it. It is decoration: the figure's words
+ * (`figureName`) say «ново» in the button's name, after its title and
+ * caption (WCAG 2.5.3: the tile is named by the words it prints). A day group counts its other levels once, on its title
  * («Лятна събота +1»), never again on the disc; its medal is the DS's
  * stack (`uiStacked`: a second ring behind the face), so it never reads
  * as one family beside its neighbours — a tap opens the day's levels, not
@@ -61,6 +62,7 @@ import type { AchievementTileVm } from '../client-pages.vm';
       [uiValueText]="vm.medal.valueText"
       [uiStacked]="vm.opens?.achievementScope === AchievementScope.Day"
       [uiLabel]="vm.medal.accessibleName"
+      [uiFigureLabel]="vm.medal.figureName"
       [attr.data-testid]="testId()"
       (click)="open.emit(vm)"
     >

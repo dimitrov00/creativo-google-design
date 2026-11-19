@@ -58,9 +58,11 @@ import {
   styleUrl: './visit-row-text.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
   encapsulation: ViewEncapsulation.None,
+  // Whether a reader hears these words is the row's to say
+  // (`VisitRow.wordsHidden`): hidden under a static row's sentence, the
+  // name itself on a row that is a button.
   host: {
     class: 'visit-row-words',
-    'aria-hidden': 'true',
     '[attr.data-lead-whole]': "leadWhole() ? '' : null",
   },
 })

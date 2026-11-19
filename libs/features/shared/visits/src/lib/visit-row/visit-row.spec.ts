@@ -569,7 +569,7 @@ describe('VisitRow · the staff row’s words, laid out', () => {
 });
 
 describe('VisitRow · the element is the host’s to say', () => {
-  it('makes a staff row the control when its host asks: a DS row button, named by its sentence', async () => {
+  it('makes a staff row the control when its host asks: a DS row button, named by the words it prints', async () => {
     const vm = staffRow('appt-sep');
     const { fixture, q } = await mount(vm, VisitPerspective.Staff, true);
 
@@ -578,9 +578,14 @@ describe('VisitRow · the element is the host’s to say', () => {
     expect(row?.type).toBe('button');
     expect(row?.classList.contains('ui-list-row')).toBe(true);
     expect(row?.hasAttribute('data-interactive')).toBe(true);
-    expect(row?.getAttribute('aria-label')).toBe(vm.accessibleName);
-    // The button's name says it all: no second reading inside it.
-    expect(q('[data-visually-hidden]')).toBeNull();
+    // WCAG 2.5.3: no aria-label over the words. They are the name, read
+    // first, and the day the tile draws follows them.
+    expect(row?.hasAttribute('aria-label')).toBe(false);
+    expect(q('lib-visit-row-words')?.hasAttribute('aria-hidden')).toBe(false);
+    expect(q('.visit-row__lead')?.getAttribute('aria-hidden')).toBe('true');
+    expect(q('.visit-row__face')?.getAttribute('aria-hidden')).toBe('true');
+    expect(vm.drawnName).toBe(', 4 септември');
+    expect(q('[data-visually-hidden]')?.textContent?.trim()).toBe(vm.drawnName);
     // Still a staff row: the fact on its second line, the face trailing.
     expect(q('.visit-row-words__end [data-fact="amount"]')).not.toBeNull();
     expect(q('.visit-row__face [data-trailing="barber"]')).not.toBeNull();
@@ -716,7 +721,13 @@ describe('VisitRow · «Моите часове»', () => {
     expect(row?.hasAttribute('data-interactive')).toBe(true);
     expect(row?.getAttribute('data-appointment-id')).toBe('appt-oct');
     expect(row?.getAttribute('data-status')).toBe('PENDING');
-    expect(row?.getAttribute('aria-label')).toBe(vm.accessibleName);
+    // WCAG 2.5.3: the row is named by the words it prints — the head is
+    // not hidden, no aria-label stands over it — and then by the day its
+    // tile draws, which the words leave to the drawing.
+    expect(row?.hasAttribute('aria-label')).toBe(false);
+    expect(q('.visit-row__head')?.hasAttribute('aria-hidden')).toBe(false);
+    expect(q('.visit-row__lead')?.getAttribute('aria-hidden')).toBe('true');
+    expect(q('[data-visually-hidden]')?.textContent?.trim()).toBe(vm.drawnName);
     expect(q('lib-visit-row')?.getAttribute('role')).toBe('listitem');
 
     row?.click();
@@ -743,7 +754,11 @@ describe('VisitRow · «Моите часове»', () => {
         'data-trailing-prominence',
       ),
     ).toBe(false);
-    expect(q('[data-visually-hidden]')).toBeNull();
+    // The one hidden line is what the drawing says: the tile's day, and
+    // the state the row draws but does not write.
+    expect(q('[data-visually-hidden]')?.textContent?.trim()).toBe(
+      ', 2 октомври, Заявен',
+    );
   });
 
   it('gives a party cut by several the “anyone” glyph on the same disc', async () => {

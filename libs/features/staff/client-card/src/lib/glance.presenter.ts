@@ -65,7 +65,6 @@ import {
   inSentence,
   monthYearLong,
   quietRun,
-  runningCase,
   runsOf,
   shopDayOf,
 } from './client-card.format';
@@ -387,12 +386,14 @@ export function birthdayVm(input: BirthdayInput): BirthdayVm | null {
       title: age === null ? words.birthday.today : words.birthday.todayAge(age),
       gift,
       giftLabel: words.birthday.gift,
+      // The held gift is a button named by the words it prints (WCAG
+      // 2.5.3): the band, the label, the figure, «Използвай».
       accessibleName:
         gift === null || worth === null
           ? words.birthday.name(age)
           : gift.applied
             ? words.birthday.giftAppliedName(age, worth)
-            : words.birthday.giftName(age, worth),
+            : null,
     };
   }
 
@@ -571,11 +572,6 @@ export interface LoyaltyGlanceInput extends LoyaltyTilesInput {
   readonly heldCouponIds?: readonly CouponId[];
 }
 
-/** One holding, and how a reader hears it after its label («9 посещения»). */
-interface Holding extends HoldingFactVm {
-  readonly spoken: string;
-}
-
 /** The joint between two currencies' sums in the vouchers' fact. */
 const SUMS_JOINT = ' · ';
 
@@ -589,7 +585,7 @@ const SUMS_JOINT = ' · ';
 function voucherHolding(
   held: GlanceHoldings,
   words: ClientCardWords,
-): Holding | null {
+): HoldingFactVm | null {
   if (held.vouchers.length === 0) return null;
   const value = held.vouchers
     .map((sum) => formatCents(sum.amountCents, sum.currency, words.lang))
@@ -598,7 +594,6 @@ function voucherHolding(
     id: LoyaltyHoldingWord.Voucher,
     label: words.loyalty.holding(LoyaltyHoldingWord.Voucher),
     value,
-    spoken: value,
   };
 }
 
@@ -610,7 +605,7 @@ function voucherHolding(
  * client (the rhythm is frozen: the wallet says so, the glance says
  * nothing). Which facts, and their figures, are `ClientGlanceSystem.holdings`.
  */
-function holdingsOf(input: LoyaltyGlanceInput): readonly Holding[] {
+function holdingsOf(input: LoyaltyGlanceInput): readonly HoldingFactVm[] {
   const { account, flags, words } = input;
   const state = rhythmStateOf(account, input.rhythm);
   // The rhythm counts under `loyalty.streaks` and its rule in force, on
@@ -627,7 +622,7 @@ function holdingsOf(input: LoyaltyGlanceInput): readonly Holding[] {
     paused: input.paused,
     today: input.today,
   });
-  const holdings: Holding[] = [];
+  const holdings: HoldingFactVm[] = [];
 
   const voucher = voucherHolding(held, words);
   if (voucher !== null) holdings.push(voucher);
@@ -638,7 +633,6 @@ function holdingsOf(input: LoyaltyGlanceInput): readonly Holding[] {
       id: LoyaltyHoldingWord.Stamps,
       label: words.loyalty.holding(LoyaltyHoldingWord.Stamps),
       value,
-      spoken: value,
     });
   }
 
@@ -648,30 +642,9 @@ function holdingsOf(input: LoyaltyGlanceInput): readonly Holding[] {
       id: LoyaltyHoldingWord.Rhythm,
       label: words.loyalty.holding(LoyaltyHoldingWord.Rhythm),
       value,
-      spoken: `${value} ${words.loyalty.rhythmUnit(held.rhythm)}`,
     });
   }
   return holdings;
-}
-
-/**
- * The holdings as a reader hears them: «Ваучер 25,00 €, печати 3 от 10,
- * ритъм 9 посещения». The first label opens a sentence of its own after
- * the points; without them the list runs on from «Лоялност: » and every
- * label is in the running case.
- */
-function holdingsSpoken(
-  holdings: readonly Holding[],
-  running: boolean,
-  lang: string,
-): string | null {
-  if (holdings.length === 0) return null;
-  return holdings
-    .map(({ label, spoken }, index) => {
-      const word = index > 0 || running ? runningCase(label, lang) : label;
-      return `${word} ${spoken}`;
-    })
-    .join(', ');
 }
 
 /**
@@ -727,23 +700,12 @@ export function loyaltyGlanceVm(
   input: LoyaltyGlanceInput,
 ): LoyaltyGlanceVm | null {
   const { account, words } = input;
-  const held = holdingsOf(input);
-  const holdings = held.map(({ id, label, value }) => ({ id, label, value }));
+  const holdings = holdingsOf(input);
 
   if (!input.flags.points) {
-    const first = held[0];
+    const first = holdings[0];
     if (first === undefined) return null;
-    return {
-      figure: first.value,
-      unit: null,
-      sentence: null,
-      holdings,
-      accessibleName: words.loyalty.cardName(
-        holdingsSpoken(held, true, words.lang) ?? '',
-        null,
-        null,
-      ),
-    };
+    return { figure: first.value, unit: null, sentence: null, holdings };
   }
 
   const sentence =
@@ -753,11 +715,6 @@ export function loyaltyGlanceVm(
     unit: words.loyalty.pointsWord(account.balance),
     sentence,
     holdings,
-    accessibleName: words.loyalty.cardName(
-      words.loyalty.points(account.balance),
-      sentence,
-      holdingsSpoken(held, false, words.lang),
-    ),
   };
 }
 

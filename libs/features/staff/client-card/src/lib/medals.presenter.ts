@@ -30,6 +30,7 @@ import {
   familiesOf,
   familyOfMedal,
   localeOf,
+  medalFigureName,
   medalVm,
   progressList,
   progressOf,
@@ -205,11 +206,13 @@ export function medalRingVm(
         }`
       : built.accessibleName;
 
+  const level = single ? null : built.level;
   if (ring === MedalRingState.Complete) {
+    const state = MEDAL_RING_STATES[MedalRingState.Complete];
     return {
       ...built,
-      state: MEDAL_RING_STATES[MedalRingState.Complete],
-      level: single ? null : built.level,
+      state,
+      level,
       caption,
       value: 1,
       // One level earned is a single act's words, its day (`stateLineOf`).
@@ -221,13 +224,14 @@ export function medalRingVm(
             )
           : words.achievements.complete,
       accessibleName,
+      figureName: medalFigureName({ state, level, isNew: built.isNew }, ctx),
     };
   }
   // Short of complete, a ring's state is its face's (`BadgeSystem.ringState`),
   // which the built medal already wears.
   return {
     ...built,
-    level: single ? null : built.level,
+    level,
     caption,
     // The built meter ran from zero; the ring runs from the level won. A
     // level this visit completes stands where the visit takes it: all but
@@ -239,6 +243,7 @@ export function medalRingVm(
           ? PENDING_RING
           : (BadgeSystem.ringFraction(series, standing) ?? built.value),
     accessibleName,
+    figureName: medalFigureName({ ...built, level }, ctx),
   };
 }
 
@@ -287,20 +292,17 @@ export function recordCardVm(
   if (!RecordsSystem.isHeld(record)) return null;
   let value: string;
   let detail: string | null;
-  let spoken: string;
   let src: string | null = null;
   switch (record.personalRecordKind) {
     case PersonalRecordKind.LongestRhythm:
       value = formatCount(record.value, lang);
       detail = record.on === null ? null : monthYearLong(record.on, lang);
-      spoken = words.visitsModule.sectionVisits(record.value);
       break;
     case PersonalRecordKind.MostVisitsInYear:
       value = formatCount(record.value, lang);
       detail = words.records.yearValue(
         String(record.year ?? defect('a best year held without its year')),
       );
-      spoken = words.visitsModule.sectionVisits(record.value);
       break;
     case PersonalRecordKind.FavouriteService: {
       const serviceId =
@@ -309,7 +311,6 @@ export function recordCardVm(
       if (name === null) return null;
       value = name;
       detail = words.records.times(record.value);
-      spoken = name;
       src = ctx.catalog.serviceCoverSrc(serviceId);
       break;
     }
@@ -319,7 +320,6 @@ export function recordCardVm(
       // day is read against itself, so no year rides on the figure.
       value = formatDayLong(on, on, lang);
       detail = yearAlone(on, lang);
-      spoken = value;
       break;
     }
   }
@@ -335,7 +335,6 @@ export function recordCardVm(
     icon: RECORD_ICONS[kind],
     src,
     isNew,
-    accessibleName: words.achievements.recordName(label, spoken, detail, isNew),
   };
 }
 

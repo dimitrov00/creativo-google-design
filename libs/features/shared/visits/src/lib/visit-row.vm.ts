@@ -232,11 +232,20 @@ export interface VisitRowFields {
    */
   readonly bookingStatus: BookingStatus | null;
   /**
-   * The row as one sentence — every fact, the status word, the price and
-   * the whole quote included, since no row carries a visible `›` or a
-   * tooltip to say the rest.
+   * The STATIC row as one sentence — every fact, the status word, the price
+   * and the whole quote included, since no row carries a visible `›` or a
+   * tooltip to say the rest. A row that is a button does not wear it: it is
+   * named by the words it prints, then {@link drawnName} (WCAG 2.5.3).
    */
   readonly accessibleName: string;
+  /**
+   * What the row DRAWS but does not write, worded to follow its words in a
+   * button's name, carrying its own leading «, »: the tile's day, and on
+   * the client's row the state its struck title shows — «, 1 юни 2030 г.,
+   * отменен от салона». `null` when the words say it all (a waiting
+   * request: its glyph is decoration).
+   */
+  readonly drawnName: string | null;
   readonly testId: string;
 }
 

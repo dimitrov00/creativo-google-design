@@ -43,18 +43,25 @@
           [uiIconOnly]="true"
           [uiSelected]="menuOpen()"
           data-testid="nav-menu-trigger"
-          [attr.aria-label]="
-            menuOpen() ? t('landing.nav.close') : t('landing.nav.menu')
-          "
           [attr.aria-expanded]="menuOpen()"
           (click)="toggleMenu()"
         >
+          <!-- The trigger's NAME is this word, never an aria-label over
+               what it draws: the face below is an identity, not a label
+               (WCAG 2.5.3), and a label over its initials would name the
+               button with words it does not show. -->
+          <span uiVisuallyHidden>{{
+            menuOpen() ? t('landing.nav.close') : t('landing.nav.menu')
+          }}</span>
           @if (isAuthed() && !menuOpen()) {
             <!-- Signed-in trigger = the account monogram (Apple HIG:
                  App-Store-style profile circle, initials fallback) —
-                 morphs back to the ✕ while the menu is open. -->
+                 morphs back to the ✕ while the menu is open. Hidden from
+                 a reader: the word above names the button, and a photo's
+                 alt would add the account's name to it. -->
             <ui-avatar
               class="cr-header__monogram"
+              aria-hidden="true"
               [uiSrc]="identity.avatarUrl()"
               [uiName]="identity.displayName()"
               uiControlSize="regular"

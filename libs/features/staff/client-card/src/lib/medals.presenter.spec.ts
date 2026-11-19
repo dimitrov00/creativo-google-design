@@ -228,6 +228,7 @@ describe('medalRingVm', () => {
       isNew: false,
       accessibleName:
         'Фейд, ниво II, спечелено на 22 септември 2025 г., 24 от 25 до ниво III',
+      figureName: ', ниво II',
     });
   });
 
@@ -522,9 +523,12 @@ describe('records', () => {
       icon: 'loyalty.record.longestRhythm',
       src: null,
       isNew: true,
-      accessibleName:
-        'Най-дълъг ритъм: 24 посещения, септември 2026 г., нов рекорд',
     });
+    // A card has no sentence of its own: it is a button, named by these
+    // words (WCAG 2.5.3).
+    expect(
+      recordCardVm(record('longestRhythm'), GEORGI, SETTLED),
+    ).not.toHaveProperty('accessibleName');
   });
 
   it('words the best year: the count, the year', () => {
@@ -537,7 +541,6 @@ describe('records', () => {
       icon: 'loyalty.record.mostVisitsInYear',
       src: null,
       isNew: false,
-      accessibleName: 'Най-много за година: 13 посещения, 2025 г.',
     });
   });
 
@@ -551,7 +554,6 @@ describe('records', () => {
       icon: 'loyalty.record.favouriteService',
       src: 'https://example.test/covers/fade.jpg',
       isNew: false,
-      accessibleName: 'Любима услуга: Фейд, 24 пъти',
     });
     // A service without a cover draws the glyph.
     expect(
@@ -564,7 +566,6 @@ describe('records', () => {
       value: 'Класическа подстрижка',
       detail: '1 път',
       src: null,
-      accessibleName: 'Любима услуга: Класическа подстрижка, 1 път',
     });
   });
 
@@ -578,7 +579,6 @@ describe('records', () => {
       icon: 'loyalty.record.firstVisit',
       src: null,
       isNew: false,
-      accessibleName: 'Първо посещение: 6 март, 2025 г.',
     });
     expect(
       recordCardVm(record('firstVisit', { on: '2026-09-02' }), GEORGI, SETTLED),
@@ -596,7 +596,6 @@ describe('records', () => {
       value: '1',
       detail: 'март 2025 г.',
       isNew: false,
-      accessibleName: 'Най-дълъг ритъм: 1 посещение, март 2025 г.',
     });
   });
 
@@ -619,7 +618,6 @@ describe('records', () => {
       value: '24',
       detail: null,
       isNew: false,
-      accessibleName: 'Най-дълъг ритъм: 24 посещения',
     });
   });
 

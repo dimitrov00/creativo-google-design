@@ -47,7 +47,9 @@
 } @else {
 <!-- (a) · TODAY, THE GIFT HELD — the band heads the ticket; under the
      perforation the figure in the accent, the label, the chip, and the
-     decorative pill every ticket wears. The ticket is the one control. -->
+     decorative pill every ticket wears. The ticket is the one control,
+     named by the words it prints: the band, the label, the figure and
+     «Използвай» (WCAG 2.5.3). -->
 <button
   type="button"
   uiCouponCard
@@ -56,7 +58,6 @@
   [uiTitle]="gift.value === null ? gift.title : card.giftLabel"
   [uiValue]="gift.value"
   [uiDetail]="gift.detail"
-  [attr.aria-label]="card.accessibleName"
   data-testid="client-birthday-gift"
   (click)="useGift.emit(gift.grantId)"
 >
@@ -71,7 +72,6 @@
     uiButton
     uiButtonStyle="borderedProminent"
     uiControlSize="small"
-    aria-hidden="true"
     >{{ w.reward.use }}</span
   >
 </button>

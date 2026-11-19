@@ -253,9 +253,7 @@ describe('UiCouponCard, the paper and the figure', () => {
           <span uiOccasionGlyph>🎂</span>
         </ui-occasion-band>
       }
-      <span uiCouponAction aria-hidden="true" data-testid="pill"
-        >Използвай</span
-      >
+      <span uiCouponAction data-testid="pill">Използвай</span>
     </button>
   `,
 })
@@ -314,8 +312,22 @@ describe('UiCouponCard with an occasion', () => {
     const pill = card.querySelector('[data-testid="pill"]');
     expect(pill?.closest('.ui-coupon-card__foot')).not.toBeNull();
     // Dress, not a second control: nothing inside the ticket takes focus.
-    expect(pill?.getAttribute('aria-hidden')).toBe('true');
     expect(card.querySelectorAll('button, a, [tabindex]')).toHaveLength(0);
+    // Its word is the call a speech user says, so it stays in the ticket's
+    // name: the ticket is named by the words it prints, in reading order,
+    // and no aria-label stands over them (WCAG 2.5.3).
+    expect(pill?.hasAttribute('aria-hidden')).toBe(false);
+    expect(card.hasAttribute('aria-label')).toBe(false);
+    const words = card.textContent ?? '';
+    const order = [
+      'Рожден ден · 34 г.',
+      'Подарък от салона',
+      '−20 %',
+      'до 28.10',
+      'Използвай',
+    ].map((part) => words.indexOf(part));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
     card.click();
     expect(fixture.componentInstance.taps).toBe(1);
   });

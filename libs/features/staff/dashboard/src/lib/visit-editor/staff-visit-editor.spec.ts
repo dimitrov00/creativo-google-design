@@ -8650,10 +8650,13 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
     await openCard(GEORGI);
     expect(find('client-reward-ready')).not.toBeNull();
     // The name already says the rule: the ticket is the name alone, no
-    // value line to repeat it (§3.1 E, WP7 review r6).
-    expect(find('client-reward-ready')?.getAttribute('aria-label')).toBe(
-      'Безплатно подстригване, използвай',
-    );
+    // value line to repeat it (§3.1 E, WP7 review r6). It is named by what
+    // it prints, the title and the call, never an aria-label (WCAG 2.5.3).
+    expect(find('client-reward-ready')?.hasAttribute('aria-label')).toBe(false);
+    expect(
+      find('client-reward-ready')?.querySelector('.ui-coupon-card__title')
+        ?.textContent,
+    ).toContain('Безплатно подстригване');
     expect(
       find('client-reward-ready')?.querySelector('.ui-coupon-card__value'),
     ).toBeNull();
@@ -9183,9 +9186,8 @@ describe('StaffVisitEditor — the client card (client.profile on)', () => {
       '[data-testid="client-reward-ready"]',
     );
     expect(tickets.length).toBe(1);
-    expect(tickets[0]?.getAttribute('aria-label')).toBe(
-      'Безплатно подстригване, използвай',
-    );
+    expect(tickets[0]?.hasAttribute('aria-label')).toBe(false);
+    expect(tickets[0]?.textContent).toContain('Безплатно подстригване');
     expect(tickets[0]?.textContent).not.toContain('Рожден ден');
     expect(chipOf(tickets[0] as HTMLElement)).toBe('до 31.12');
 

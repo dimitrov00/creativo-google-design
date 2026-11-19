@@ -1762,8 +1762,6 @@
     "reward": {
       "until": "until {{date}}",
       "more": "· {{count}} more",
-      "name": "{{title}}, {{value}}, use",
-      "nameBare": "{{title}}, use",
       "appliedName": "{{title}}, {{value}}, with this visit",
       "appliedNameBare": "{{title}}, with this visit",
       "stack": "×{{count}}"
@@ -1805,8 +1803,7 @@
         "stamps": "Stamps",
         "rhythm": "Rhythm"
       },
-      "stampsOf": "{{filled}} of {{size}}",
-      "cardName": "Loyalty: {{points}}. {{sentence}} {{holdings}}"
+      "stampsOf": "{{filled}} of {{size}}"
     },
     "achievements": {
       "title": "Achievements",
@@ -2091,6 +2088,8 @@
       "medalProgressName": "{{title}}, {{value}} of {{target}} to level {{level}}",
       "medalNotStartedName": "{{title}}, not started: {{requirement}}",
       "newSuffix": ", new",
+      "figureLevel": ", level {{level}}",
+      "figureNotStarted": ", not started",
       "nextSuffix": ", {{value}} of {{target}} to level {{level}}",
       "nextOnSuffix": ", level {{level}} on {{date}}",
       "levelSince": "Level {{level}} · since {{date}}",
@@ -2266,7 +2265,6 @@
         "one": ", turning {{age}}",
         "other": ", turning {{age}}"
       },
-      "giftName": "Birthday today{{age}}. Gift: {{value}}, use",
       "giftAppliedName": "Birthday today{{age}}. Gift: {{value}}, with this visit"
     },
     "ledgerPage": {

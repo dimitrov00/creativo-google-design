@@ -167,6 +167,17 @@ tabular-nums` on every element because the `font` shorthand resets it. An
 var(--sys-color-ring)` at `--sys-focus-ring-offset`, ink and not a hue —
   and one field glow (`--sys-focus-glow-*`). Always `:focus-visible`, never
   a bare `:focus`.
+- **A control is named by the words it prints** (WCAG 2.5.3, «label in
+  name»; axe's `label-content-name-mismatch` holds it in e2e). A pressable
+  card, row, ticket or tile that prints words carries no `aria-label` or
+  `aria-labelledby` over them: its words, in reading order, are its name,
+  and a decorative pill inside it (`span[uiButton]`) stays readable, since
+  its word is the one a speech user says. Only drawings are hidden (a face,
+  a date tile, a medal's figure); what a drawing alone says follows the
+  words as a short `uiVisuallyHidden` phrase the presenter words (the
+  visit row's `drawnName`, the medal's `uiFigureLabel`). A one-sentence
+  name stays for what is not a control (an image, a group, an article) and
+  for an icon-only button — whose avatar is an identity, not a label.
 - **Links:** a prose link is the ink around it on an accent underline (each
   app's `sys-base` rule); an inline link inside running copy is `uiLink`
   (secondary ink at rest, primary on hover and press). A DS-control anchor

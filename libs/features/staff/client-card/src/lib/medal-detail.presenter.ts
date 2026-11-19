@@ -863,6 +863,8 @@ function ladderOf(
         valueText: null,
         isNew: false,
         accessibleName,
+        // A ladder's medal prints no words: its sentence names it.
+        figureName: null,
       },
       title: oneOff
         ? words.awardOneOff

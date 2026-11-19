@@ -1765,8 +1765,6 @@
     "reward": {
       "until": "до {{date}}",
       "more": "· още {{count}}",
-      "name": "{{title}}, {{value}}, използвай",
-      "nameBare": "{{title}}, използвай",
       "appliedName": "{{title}}, {{value}}, с това посещение",
       "appliedNameBare": "{{title}}, с това посещение",
       "stack": "×{{count}}"
@@ -1808,8 +1806,7 @@
         "stamps": "Печати",
         "rhythm": "Ритъм"
       },
-      "stampsOf": "{{filled}} от {{size}}",
-      "cardName": "Лоялност: {{points}}. {{sentence}} {{holdings}}"
+      "stampsOf": "{{filled}} от {{size}}"
     },
     "achievements": {
       "title": "Постижения",
@@ -2094,6 +2091,8 @@
       "medalProgressName": "{{title}}, {{value}} от {{target}} до ниво {{level}}",
       "medalNotStartedName": "{{title}}, още не е започнато: {{requirement}}",
       "newSuffix": ", ново",
+      "figureLevel": ", ниво {{level}}",
+      "figureNotStarted": ", още не е започнато",
       "nextSuffix": ", {{value}} от {{target}} до ниво {{level}}",
       "nextOnSuffix": ", ниво {{level}} на {{date}}",
       "levelSince": "Ниво {{level}} · от {{date}}",
@@ -2269,7 +2268,6 @@
         "one": ", навършва {{age}} година",
         "other": ", навършва {{age}} години"
       },
-      "giftName": "Рожден ден днес{{age}}. Подарък: {{value}}, използвай",
       "giftAppliedName": "Рожден ден днес{{age}}. Подарък: {{value}}, с това посещение"
     },
     "ledgerPage": {

@@ -96,9 +96,11 @@ export function ticketOf(
         ? words.reward.stack(group.grants.length)
         : null,
     applied: group.applied,
+    // A ready ticket is a button named by the words it prints (WCAG
+    // 2.5.3); only the applied one, an article, carries a sentence.
     accessibleName: group.applied
       ? words.reward.appliedName(first.title, first.valueLabel)
-      : words.reward.name(first.title, first.valueLabel),
+      : null,
     removeName: words.reward.removeName(first.title),
   };
 }

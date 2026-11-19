@@ -613,12 +613,13 @@ describe('the birthday card (BD)', () => {
         detail: 'до 28.10',
         stack: null,
         applied: false,
-        accessibleName: 'Рожден ден, −20 %, използвай',
+        // A ready ticket is a button named by the words it prints.
+        accessibleName: null,
         removeName: 'Премахни отстъпката: Рожден ден',
       },
       giftLabel: 'Подарък от салона',
-      accessibleName:
-        'Рожден ден днес, навършва 34 години. Подарък: −20 %, използвай',
+      // So is the card while the gift is held (WCAG 2.5.3).
+      accessibleName: null,
     });
   });
 
@@ -652,9 +653,10 @@ describe('the birthday card (BD)', () => {
       ],
     });
     expect(card?.gift?.value).toBeNull();
-    expect(card?.accessibleName).toBe(
-      'Рожден ден днес, навършва 34 години. Подарък: Безплатно подстригване, използвай',
-    );
+    // The ticket prints its name as its title, under the band; the button
+    // is named by those words, so the card carries no sentence of its own.
+    expect(card?.gift?.title).toBe('Безплатно подстригване');
+    expect(card?.accessibleName).toBeNull();
   });
 
   it('agrees the age, and says the day without a figure when no year can be the year of birth', () => {
@@ -741,7 +743,7 @@ describe('the birthday card (BD)', () => {
     ).toMatchObject({
       title: 'Birthday · 34',
       giftLabel: 'A gift from the shop',
-      accessibleName: 'Birthday today, turning 34. Gift: −20 %, use',
+      accessibleName: null,
     });
     expect(
       birthdayOf({ words: ENGLISH, user: born('1992-10-02') })?.title,
@@ -1074,9 +1076,6 @@ describe('«Лоялност» (F1)', () => {
         { id: 'stamps', label: 'Печати', value: '4 от 10' },
         { id: 'rhythm', label: 'Ритъм', value: '24' },
       ],
-      accessibleName: NBSP_EURO(
-        'Лоялност: 358 точки. Стигат за безплатно оформяне на брада. Ваучер 25,00 €, печати 4 от 10, ритъм 24 посещения.',
-      ),
     });
   });
 
@@ -1148,14 +1147,10 @@ describe('«Лоялност» (F1)', () => {
       unit: 'точки',
       sentence: null,
       holdings: [],
-      accessibleName: 'Лоялност: 358 точки.',
     });
     expect(loyaltyOf({ catalog: null })).toMatchObject({
       figure: '358',
       sentence: null,
-      accessibleName: NBSP_EURO(
-        'Лоялност: 358 точки. Ваучер 25,00 €, печати 4 от 10, ритъм 24 посещения.',
-      ),
     });
   });
 
@@ -1226,9 +1221,6 @@ describe('«Лоялност» (F1)', () => {
       value: '30,00\u00a0€ · 25,00\u00a0лв.',
     });
     expect(voucher(ENGLISH)?.value).toBe('€30.00 · BGN\u00a025.00');
-    expect(loyaltyOf({ vouchers: mixed })?.accessibleName).toBe(
-      'Лоялност: 358 точки. Стигат за безплатно оформяне на брада. Ваучер 30,00\u00a0€ · 25,00\u00a0лв., печати 4 от 10, ритъм 24 посещения.',
-    );
     // One currency: the one sum, worded as it always was.
     expect(
       loyaltyOf()?.holdings.find((holding) => holding.id === 'voucher')?.value,
@@ -1271,7 +1263,7 @@ describe('«Лоялност» (F1)', () => {
     );
   });
 
-  it('says no rhythm for a run that was lost, and agrees a run of one', () => {
+  it('says no rhythm for a run that was lost, and counts a run of one', () => {
     const cadence = must(StreakState.find(LOYALTY.account.streaks, RHYTHM.id));
     const run = (current: number) =>
       loyaltyOf({
@@ -1281,10 +1273,8 @@ describe('«Лоялност» (F1)', () => {
       'voucher',
       'stamps',
     ]);
-    expect(run(1)?.accessibleName).toBe(
-      NBSP_EURO(
-        'Лоялност: 358 точки. Стигат за безплатно оформяне на брада. Ваучер 25,00 €, печати 4 от 10, ритъм 1 посещение.',
-      ),
+    expect(run(1)?.holdings.find((holding) => holding.id === 'rhythm')).toEqual(
+      { id: 'rhythm', label: 'Ритъм', value: '1' },
     );
   });
 
@@ -1311,14 +1301,10 @@ describe('«Лоялност» (F1)', () => {
         { id: 'stamps', label: 'Печати', value: '4 от 10' },
         { id: 'rhythm', label: 'Ритъм', value: '24' },
       ],
-      accessibleName: NBSP_EURO(
-        'Лоялност: ваучер 25,00 €, печати 4 от 10, ритъм 24 посещения.',
-      ),
     });
     expect(loyaltyOf({ flags, vouchers: null })).toMatchObject({
       figure: '4 от 10',
       unit: null,
-      accessibleName: 'Лоялност: печати 4 от 10, ритъм 24 посещения.',
     });
   });
 
@@ -1350,8 +1336,6 @@ describe('«Лоялност» (F1)', () => {
     expect(loyaltyOf({ words: ENGLISH })).toMatchObject({
       unit: 'points',
       sentence: 'Enough for Free beard trim',
-      accessibleName:
-        'Loyalty: 358 points. Enough for Free beard trim. Voucher €25.00, stamps 4 of 10, rhythm 24 visits.',
     });
   });
 });

@@ -27,9 +27,12 @@
       }
     </span>
     @if (vm().barber; as barber) {
-    <!-- Who cuts, in the top-trailing corner. The sentence names him. -->
+    <!-- Who cuts, in the top-trailing corner: a drawing, hidden from a
+         reader, since the facts and the sentence name him (a photo's alt
+         would say him twice in the button's name). -->
     <ui-avatar
       class="visit-card__face"
+      aria-hidden="true"
       uiControlSize="regular"
       [uiSrc]="barber.avatarSrc"
       [uiName]="barber.name"
@@ -119,8 +122,10 @@
 </ng-template>
 
 @if (interactive()) {
-<!-- The whole card is the control: the button's name is the sentence, so
-     its words are read once. -->
+<!-- The whole card is the control, NAMED BY THE WORDS IT PRINTS, in their
+     reading order: the label, the services, the figure, the facts, the
+     quote, the capsule. No aria-label over them — a speech user says what
+     they see (WCAG 2.5.3, «label in name»). -->
 <button
   type="button"
   uiCard
@@ -129,7 +134,6 @@
   [uiPadding]="padding()"
   [uiInteractive]="true"
   [attr.data-testid]="vm().testId"
-  [attr.aria-label]="vm().accessibleName"
   (click)="open.emit()"
 >
   <span class="visit-card__words">

@@ -44,9 +44,11 @@ import { VisitRowWords } from './visit-row-text';
  * The ELEMENT is the host's to say (`interactive`), the perspective's
  * when it says nothing:
  * - client → `button[uiListRow]`: tapping opens the visit's sheet, so the
- *   row is the control, named by its sentence (`aria-label`), and keeps
- *   the ids «Моите часове» and its e2e rely on (`appointment-row`,
- *   `data-appointment-id`, `data-status`).
+ *   row is the control, NAMED BY THE WORDS IT PRINTS and then by what only
+ *   its drawing says (`drawnName`: the tile's day, a struck title's state)
+ *   — never an `aria-label` over them, so a speech user says what they see
+ *   (WCAG 2.5.3) — and keeps the ids «Моите часове» and its e2e rely on
+ *   (`appointment-row`, `data-appointment-id`, `data-status`).
  * - staff → a static `ui-list-row`: a barber reads a history, nothing opens
  *   (old R7), so the row is text — its sentence in a visually hidden line,
  *   the drawn parts hidden from the reader so nothing is heard twice.
@@ -102,6 +104,14 @@ export class VisitRow {
     (this.interactive() ?? this.perspective() === VisitPerspective.Client)
       ? 'button'
       : 'static',
+  );
+
+  /**
+   * The words are hidden from a reader on the static row only, whose
+   * sentence says all of it; on a button they ARE the name.
+   */
+  protected readonly wordsHidden = computed(() =>
+    this.shape() === 'static' ? 'true' : null,
   );
 
   /**
