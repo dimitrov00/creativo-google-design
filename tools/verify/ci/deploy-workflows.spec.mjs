@@ -249,9 +249,26 @@ describe('actions/deploy/action.yml — the runbook’s order, non-interactive',
       'Wait until every index is READY and every TTL ACTIVE',
       'Deploy the Firestore and Storage rules',
       'Deploy the functions',
+      'Every callable answers the public, and no other function does',
       'Deploy hosting',
       'Smoke-check the live site',
     ]);
+  });
+
+  it('makes every callable public straight after the functions deploy, before hosting', () => {
+    // firebase-tools grants a callable `allUsers` only on create; a callable
+    // whose first create failed stays private (tools/release/callable-invokers.mjs).
+    const guard =
+      'node tools/release/callable-invokers.mjs --project "$PROJECT"';
+    const functions = BODIES.indexOf(
+      'pnpm exec firebase deploy --only functions --project "$PROJECT" --non-interactive --force',
+    );
+    assert.equal(BODIES[functions + 1], guard);
+    assert.equal(
+      occurrences(CODE, '--dry-run'),
+      0,
+      'the deploy grants, never only reports',
+    );
   });
 
   it('names the build, the flag map and the App Check mode once, for every later step', () => {

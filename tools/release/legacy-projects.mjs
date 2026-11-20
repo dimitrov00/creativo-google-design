@@ -5,7 +5,8 @@
 //
 // The one list for JavaScript: the preflight's P6 and its escape hatch
 // (tools/verify/preflight/preflight.mjs) and the deploy's checkout pointer
-// (tools/release/deploy-target.mjs) refuse through it. The ops scripts hold
+// (tools/release/deploy-target.mjs) and its invoker check
+// (tools/release/callable-invokers.mjs) refuse through it. The ops scripts hold
 // the same list for bash (tools/ops/lib/legacy-projects.sh) and each deploy
 // workflow in its first step, which reads no repository code;
 // tools/verify/legacy/legacy-projects.spec.mjs holds the three equal and
