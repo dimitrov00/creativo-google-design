@@ -1143,8 +1143,9 @@ pnpm run preflight --project "$PROJECT_ID"
 `deploy-staging.yml` after CI passes on `main` and by
 `deploy-production.yml` from a release tag after your approval; section
 «Environments and releases»): the preflight in both scopes, then 3.1 with a
-bounded wait for P2 and P3, 3.2, 3.3 and 3.4 back to back, then a smoke
-check of the live site. Non-interactive, and only the functions deploy is
+bounded wait for P2 and P3, 3.2, 3.3 (with the callables' invoker check
+at its end) and 3.4 back to back, then a smoke check of the live site.
+Non-interactive, and only the functions deploy is
 forced (ADR E6, amended 2026-11-19): a new retry flag, a deletion or a raised
 minimum bill goes through, each pinned by `apps/functions/src/main.spec.ts`;
 the index deploy is never forced, so it never drops an index. What follows
@@ -1418,6 +1419,24 @@ browser reads the document yet.
 Source: `apps/functions/src/main.ts` (`setStaffPermissions`);
 `libs/ecs-core/src/pipelines/set-staff-permissions.pipeline.ts`;
 `docs/designs/staff-permissions.md` (P5, P6, stage A).
+
+**Every callable must answer the public.** A browser calls a callable
+without a Google credential, so its Cloud Run service needs `allUsers` on
+`roles/run.invoker`; who may do what is still decided in the code (Firebase
+Auth, App Check, the staff permissions). firebase-tools grants it only when
+it creates a callable. An update, or a function skipped as unchanged, keeps
+whatever it has, so a callable whose first create failed stays private, and
+Cloud Run answers its CORS preflight and every call with its own 403. That
+happened on staging, whose first deploy failed every build: its 37
+callables stayed private from 2026-11-19 until the owner granted them by
+hand on 2026-11-20. So straight after the functions deploy, CI runs
+`tools/release/callable-invokers.mjs --project "$PROJECT_ID"`. It makes
+every callable without that binding public, and fails if any other
+function (a trigger or a schedule, called only by the runtime account) is
+open to `allUsers` or `allAuthenticatedUsers`. Add `--dry-run` to only
+read and report, under your own application-default credentials.
+Source: `node_modules/firebase-tools/lib/deploy/functions/release/fabricator.js`
+(`createV2Function`, `updateV2Function`); `tools/release/callable-invokers.mjs`.
 
 ### 3.4 Hosting, straight after functions
 

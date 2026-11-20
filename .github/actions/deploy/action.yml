@@ -134,6 +134,17 @@ runs:
         PROJECT: ${{ inputs.project }}
       run: pnpm exec firebase deploy --only functions --project "$PROJECT" --non-interactive --force
 
+    # firebase-tools makes a callable public only when it creates it, so a
+    # callable whose first create failed stays private, and Cloud Run
+    # refuses every call before the code runs (staging, 2026-11-19 to
+    # 2026-11-20). This grants what the create would have, and fails if any
+    # other function is open to the public (tools/release/callable-invokers.mjs).
+    - name: Every callable answers the public, and no other function does
+      shell: bash
+      env:
+        PROJECT: ${{ inputs.project }}
+      run: node tools/release/callable-invokers.mjs --project "$PROJECT"
+
     # Straight after the functions: they share the callable wire. The
     # predeploy runs the web-scope preflight in full over the build above.
     - name: Deploy hosting
