@@ -29,6 +29,13 @@ export const appRoutes: Route[] = [
       ),
   },
   {
+    path: 'controls/progress-disc',
+    loadComponent: () =>
+      import('./pages/controls/progress-disc/progress-disc.page').then(
+        (m) => m.ProgressDiscPage,
+      ),
+  },
+  {
     path: 'controls/otp-field',
     loadComponent: () =>
       import('./pages/controls/otp-field/otp-field.page').then(

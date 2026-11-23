@@ -269,7 +269,14 @@
       "countryNoResults": "No matches"
     },
     "code": {
-      "title": "Enter the code",
+      "title": {
+        "email": "Check your email",
+        "phone": "Check your messages"
+      },
+      "sendingTitle": "Sending your code…",
+      "sendingTo": "to",
+      "doneTitle": "Done",
+      "openWebmail": "Open {{provider}}",
       "back": "Back",
       "sentTo": "We sent a 6-digit code to",
       "edit": "Edit",

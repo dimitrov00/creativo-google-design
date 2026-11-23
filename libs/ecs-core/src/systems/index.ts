@@ -125,5 +125,6 @@ export * from './visit-story.system';
 export * from './voucher.system';
 export * from './waitlist.system';
 export * from './wallet.system';
+export * from './webmail.system';
 export * from './work-budget.system';
 export * from './zoned-time.system';

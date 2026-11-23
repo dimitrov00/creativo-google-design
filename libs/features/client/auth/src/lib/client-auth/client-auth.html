@@ -93,7 +93,7 @@
             [hint]="t('auth.identify.phoneHint')"
             [locale]="activeLang()"
             [defaultCountry]="defaultCountry"
-            [disabled]="store.pending()"
+            [disabled]="store.sending()"
             [error]="translateError(identifierError())"
             [pickerTitle]="t('auth.identify.countryPicker')"
             [searchLabel]="t('auth.identify.countrySearch')"
@@ -119,7 +119,7 @@
                   data-testid="auth-identifier-input"
                   [placeholder]="t('auth.identify.emailPlaceholder')"
                   aria-describedby="auth-identifier-hint"
-                  [readonly]="store.pending()"
+                  [readonly]="store.sending()"
                   [attr.aria-invalid]="identifierError() ? true : null"
                   [uiInvalid]="!!identifierError()"
                   [value]="rawIdentifier()"
@@ -205,213 +205,13 @@
         uiButtonStyle="borderedProminent"
         uiControlSize="large"
         data-testid="auth-submit-identifier"
-        [uiLoading]="store.pending()"
+        [uiLoading]="store.sending()"
         [disabled]="!identifierResult()?.ok"
         (click)="submitIdentifier()"
       >
         {{ t('auth.identify.continue') }}
       </button>
     </ui-page-action-bar>
-  </ui-stack>
-  } @case (AuthFlowStep.Otp) {
-  <ui-stack uiSpacing="none" uiFrame uiFrameMinHeight="100svh">
-    <ui-toolbar uiSticky uiToolbarBackground="hidden">
-      <ui-stack
-        uiAxis="horizontal"
-        uiSpacing="none"
-        uiAlignment="center"
-        uiFrame
-        uiFrameMaxWidth="infinity"
-      >
-        <button
-          type="button"
-          uiButton
-          uiButtonStyle="bordered"
-          uiTint="neutral"
-          uiControlSize="regular"
-          [uiIconOnly]="true"
-          data-testid="auth-back"
-          [attr.aria-label]="t('auth.code.back')"
-          (click)="changeIdentifier()"
-        >
-          <ui-icon uiName="nav.back" />
-        </button>
-      </ui-stack>
-      <ui-stepper
-        [uiSteps]="3"
-        [uiCurrent]="2"
-        [uiLabel]="t('auth.steps.label', { current: 2, total: 3 })"
-        uiLabelsHidden
-        uiFrame
-        uiFrameWidth="min(34vw, 10rem)"
-      />
-      <ui-stack
-        uiAxis="horizontal"
-        uiSpacing="none"
-        uiAlignment="center"
-        uiFrame
-        uiFrameMaxWidth="infinity"
-      >
-        <ui-spacer />
-      </ui-stack>
-    </ui-toolbar>
-
-    <!-- Top-anchored under the toolbar (nav-stack grammar). No bottom
-         action bar on this screen — verification is automatic (or Enter);
-         the trailing spacer just keeps the column filling the viewport. -->
-    <ui-stack
-      uiAlignment="center"
-      uiPaddingHorizontal="regular"
-      uiPaddingVertical="spacious"
-    >
-      <ui-stack
-        uiSpacing="comfortable"
-        uiFrame
-        uiFrameMaxWidth="28rem"
-        data-testid="auth-otp"
-      >
-        <ui-section-header
-          uiAlignment="leading"
-          uiReveal
-          uiRevealTrigger="mount"
-        >
-          <h1 uiTitle>{{ t('auth.code.title') }}</h1>
-          <!-- One clean sentence row: destination semibold, Edit as an
-               inline link-styled button riding the same line. -->
-          <p uiLede>
-            {{ t('auth.code.sentTo') }}
-            <span
-              uiText
-              uiFont="body"
-              uiWeight="semibold"
-              data-testid="auth-otp-destination"
-              >{{ otpDestination() }}</span
-            >.
-            <button
-              type="button"
-              uiLink
-              data-testid="auth-change-identifier"
-              (click)="changeIdentifier()"
-            >
-              {{ t('auth.code.edit') }}
-            </button>
-          </p>
-        </ui-section-header>
-
-        <ui-stack
-          uiSpacing="regular"
-          uiReveal
-          uiRevealTrigger="mount"
-          [uiRevealDelay]="150"
-        >
-          <!-- Verification is AUTOMATIC on the 6th digit (delayed ~250ms,
-               suppressed while an error is displayed) — there is no Verify
-               button and no bottom action bar on this screen. The
-               accessible EXPLICIT path is Enter: pressing Enter inside any
-               slot submits the current code immediately (also what a
-               keyboard user expects from a single-field form). -->
-          <ui-otp-field
-            [uiLength]="otpLength"
-            [uiInvalid]="!!codeErrorMessage() || !!translateError(otpError())"
-            [uiDisabled]="verifying()"
-            [value]="rawCode()"
-            (valueChange)="onCodeChange($event)"
-            (keydown.enter)="submitCode()"
-            data-testid="auth-otp-input"
-          />
-          <!-- The visible "checking" state rides the field itself (slots
-               locked) plus this subtle inline progress row — the loading
-               CTA it replaces is gone. -->
-          @if (verifying()) {
-          <ui-stack
-            uiAxis="horizontal"
-            uiSpacing="tight"
-            uiAlignment="center"
-            data-testid="auth-otp-checking"
-          >
-            <ui-progress-view uiControlSize="small" />
-            <span uiText uiFont="caption" uiWeight="regular">
-              {{ t('auth.code.checking') }}
-            </span>
-          </ui-stack>
-          } @if (codeErrorMessage(); as error) {
-          <p
-            uiText
-            uiFont="footnote"
-            uiWeight="regular"
-            uiForegroundStyle="destructive"
-            data-testid="auth-otp-format-error"
-            role="alert"
-          >
-            {{ error }}
-          </p>
-          } @if (translateError(otpError()); as error) {
-          <p
-            uiText
-            uiFont="footnote"
-            uiWeight="regular"
-            uiForegroundStyle="destructive"
-            data-testid="auth-verify-error"
-            role="alert"
-          >
-            {{ error }}
-          </p>
-          }
-        </ui-stack>
-
-        <!-- Resend row — cooldown countdown, then the enabled affordance.
-             The ticking label is NOT live; sparse announcements ride the
-             visually-hidden polite region below (design §2.2). -->
-        <ui-stack
-          uiSpacing="tight"
-          uiReveal
-          uiRevealTrigger="mount"
-          [uiRevealDelay]="300"
-        >
-          <ui-stack uiAxis="horizontal" uiSpacing="tight" uiAlignment="center">
-            @if (store.canResend()) {
-            <button
-              type="button"
-              uiButton
-              uiButtonStyle="plain"
-              data-testid="auth-resend"
-              (click)="resend()"
-            >
-              <ui-icon uiName="auth.resend" />
-              {{ t('auth.code.resend') }}
-            </button>
-            } @else {
-            <!-- The ticking countdown is quiet informational text, not a
-                 dead control — caption tier, secondary ink (owner ruling
-                 2026-07-25). -->
-            <p
-              uiText
-              uiFont="caption"
-              uiWeight="regular"
-              data-testid="auth-resend-cooldown"
-            >
-              {{ t('auth.code.resendIn', { seconds: store.resendSecondsLeft() })
-              }}
-            </p>
-            }
-          </ui-stack>
-          <p uiVisuallyHidden aria-live="polite">{{ resendAnnouncement() }}</p>
-
-          @if (store.escalated()) {
-          <p
-            uiText
-            uiFont="caption"
-            uiWeight="regular"
-            data-testid="auth-resend-escalation"
-          >
-            {{ t(isPhone ? 'auth.code.escalation.phone' :
-            'auth.code.escalation.email') }}
-          </p>
-          }
-        </ui-stack>
-      </ui-stack>
-    </ui-stack>
-    <ui-spacer />
   </ui-stack>
   } @case (AuthFlowStep.Blocked) {
   <ui-stack
@@ -452,28 +252,247 @@
     <ui-spacer />
   </ui-stack>
   } @default {
-  <ui-stack
-    uiAlignment="center"
-    uiSpacing="none"
-    uiFrame
-    uiFrameMinHeight="100svh"
-    uiPaddingHorizontal="regular"
-    uiPaddingVertical="spacious"
-  >
-    <ui-spacer />
+  <!-- THE CODE STEP (direction B, owner 2026-11-23): one mail disc over the
+       headline tells where the code is — a ring turns round it while a
+       code is sent or checked, a badge says it landed, and it fills with a
+       drawn check on success, which stays on screen for the success beat
+       (the DONE / AUTHENTICATED states) before the hand-off. The flow
+       machine is already on OTP while the first code is out, so the words
+       come from the code-step presenter's phase, never «Изпратихме» early. -->
+  @if (codeStep(); as step) {
+  <ui-stack uiSpacing="none" uiFrame uiFrameMinHeight="100svh">
+    <ui-toolbar uiSticky uiToolbarBackground="hidden">
+      <ui-stack
+        uiAxis="horizontal"
+        uiSpacing="none"
+        uiAlignment="center"
+        uiFrame
+        uiFrameMaxWidth="infinity"
+      >
+        <button
+          type="button"
+          uiButton
+          uiButtonStyle="bordered"
+          uiTint="neutral"
+          uiControlSize="regular"
+          [uiIconOnly]="true"
+          data-testid="auth-back"
+          [attr.aria-label]="t('auth.code.back')"
+          [disabled]="step.accepted"
+          (click)="changeIdentifier()"
+        >
+          <ui-icon uiName="nav.back" />
+        </button>
+      </ui-stack>
+      <ui-stepper
+        [uiSteps]="3"
+        [uiCurrent]="2"
+        [uiLabel]="t('auth.steps.label', { current: 2, total: 3 })"
+        uiLabelsHidden
+        uiFrame
+        uiFrameWidth="min(34vw, 10rem)"
+      />
+      <ui-stack
+        uiAxis="horizontal"
+        uiSpacing="none"
+        uiAlignment="center"
+        uiFrame
+        uiFrameMaxWidth="infinity"
+      >
+        <ui-spacer />
+      </ui-stack>
+    </ui-toolbar>
+
+    <!-- Top-anchored under the toolbar (nav-stack grammar). Verification is
+         automatic (or Enter) — the only bottom control is the webmail
+         shortcut, when the address names one. -->
     <ui-stack
-      uiSpacing="regular"
       uiAlignment="center"
-      uiFrame
-      uiFrameMaxWidth="28rem"
-      data-testid="auth-settling"
+      uiPaddingHorizontal="regular"
+      uiPaddingVertical="spacious"
     >
-      <ui-progress-view />
-      <p uiText uiFont="body" uiForegroundStyle="secondary">
-        {{ t('auth.settling') }}
-      </p>
+      <ui-stack
+        uiSpacing="comfortable"
+        uiFrame
+        uiFrameMaxWidth="28rem"
+        data-testid="auth-otp"
+        [attr.data-phase]="step.codeStepPhase"
+      >
+        <ui-progress-disc
+          [uiPhase]="step.discPhase"
+          data-testid="auth-otp-disc"
+        >
+          <ui-icon [uiName]="isPhone ? 'auth.phone' : 'auth.email'" />
+        </ui-progress-disc>
+
+        <ui-section-header
+          uiAlignment="leading"
+          uiReveal
+          uiRevealTrigger="mount"
+        >
+          <!-- The headline IS the status: polite, so a screen reader hears
+               «Проверяваме…» → «Готово» as the disc says it. -->
+          <h1 uiTitle aria-live="polite" data-testid="auth-otp-title">
+            {{ step.title }}
+          </h1>
+          <!-- One clean sentence row: destination semibold, Edit as an
+               inline link-styled button riding the same line. -->
+          <p uiLede>
+            {{ step.lede }} @if (step.destination; as destination) {
+            <span
+              uiText
+              uiFont="body"
+              uiWeight="semibold"
+              data-testid="auth-otp-destination"
+              >{{ destination }}</span
+            >@if (step.canEdit) {.
+            <button
+              type="button"
+              uiLink
+              data-testid="auth-change-identifier"
+              (click)="changeIdentifier()"
+            >
+              {{ t('auth.code.edit') }}
+            </button>
+            } }
+          </p>
+        </ui-section-header>
+
+        <ui-stack
+          uiSpacing="regular"
+          uiReveal
+          uiRevealTrigger="mount"
+          [uiRevealDelay]="150"
+        >
+          <!-- Verification is AUTOMATIC on the 6th digit (delayed ~250ms,
+               suppressed while an error is displayed) — there is no Verify
+               button. The accessible EXPLICIT path is Enter: pressing Enter
+               inside any slot submits the current code immediately. The
+               slots lock while a request is out (the disc's ring says
+               which) and ring in the accent once the code is accepted. -->
+          <ui-otp-field
+            [uiLength]="otpLength"
+            [uiInvalid]="!!codeErrorMessage() || !!translateError(otpError())"
+            [uiDisabled]="step.locked"
+            [uiAccepted]="step.accepted"
+            [value]="rawCode()"
+            (valueChange)="onCodeChange($event)"
+            (keydown.enter)="submitCode()"
+            data-testid="auth-otp-input"
+          />
+          @if (codeErrorMessage(); as error) {
+          <p
+            uiText
+            uiFont="footnote"
+            uiWeight="regular"
+            uiForegroundStyle="destructive"
+            data-testid="auth-otp-format-error"
+            role="alert"
+          >
+            {{ error }}
+          </p>
+          } @if (translateError(otpError()); as error) {
+          <p
+            uiText
+            uiFont="footnote"
+            uiWeight="regular"
+            uiForegroundStyle="destructive"
+            data-testid="auth-verify-error"
+            role="alert"
+          >
+            {{ error }}
+          </p>
+          }
+        </ui-stack>
+
+        <!-- Resend row — a draining ring beside the countdown, then the
+             enabled affordance. Hidden while a code is on its way (nothing
+             to resend yet) and once one was accepted. The ticking label is
+             NOT live; sparse announcements ride the visually-hidden polite
+             region below (design §2.2). -->
+        @if (step.showsResend) {
+        <ui-stack
+          uiSpacing="tight"
+          uiReveal
+          uiRevealTrigger="mount"
+          [uiRevealDelay]="300"
+        >
+          <ui-stack
+            uiAxis="horizontal"
+            uiSpacing="compact"
+            uiAlignment="center"
+          >
+            @if (store.canResend()) {
+            <button
+              type="button"
+              uiButton
+              uiButtonStyle="plain"
+              data-testid="auth-resend"
+              (click)="resend()"
+            >
+              <ui-icon uiName="auth.resend" />
+              {{ t('auth.code.resend') }}
+            </button>
+            } @else {
+            <ui-progress-ring
+              [uiValue]="store.resendSecondsLeft() / resendWindowSeconds"
+              uiFrame
+              uiFrameWidth="1rem"
+              data-testid="auth-resend-ring"
+            />
+            <!-- The ticking countdown is quiet informational text, not a
+                 dead control — caption tier, secondary ink (owner ruling
+                 2026-07-25). -->
+            <p
+              uiText
+              uiFont="caption"
+              uiWeight="regular"
+              data-testid="auth-resend-cooldown"
+            >
+              {{ t('auth.code.resendIn', { seconds: store.resendSecondsLeft() })
+              }}
+            </p>
+            }
+          </ui-stack>
+
+          @if (store.escalated()) {
+          <p
+            uiText
+            uiFont="caption"
+            uiWeight="regular"
+            data-testid="auth-resend-escalation"
+          >
+            {{ t(isPhone ? 'auth.code.escalation.phone' :
+            'auth.code.escalation.email') }}
+          </p>
+          }
+        </ui-stack>
+        }
+        <p uiVisuallyHidden aria-live="polite">{{ resendAnnouncement() }}</p>
+      </ui-stack>
     </ui-stack>
     <ui-spacer />
+
+    <!-- «Отвори Gmail»: the person's own inbox, picked from the address
+         (WebmailSystem), in a new tab — the code step's one bottom control,
+         hugged trailing like every page action. -->
+    @if (step.webmail; as webmail) {
+    <ui-page-action-bar uiReveal="fade" uiRevealTrigger="mount">
+      <a
+        uiButton
+        uiPrimary
+        uiButtonStyle="bordered"
+        uiControlSize="large"
+        target="_blank"
+        rel="noopener noreferrer"
+        data-testid="auth-open-webmail"
+        [href]="webmail.href"
+      >
+        <ui-icon uiName="auth.email" />
+        {{ webmail.label }}
+      </a>
+    </ui-page-action-bar>
+    }
   </ui-stack>
-  } }
+  } } }
 </ng-container>

@@ -269,7 +269,14 @@
       "countryNoResults": "Няма съвпадения"
     },
     "code": {
-      "title": "Въведи кода",
+      "title": {
+        "email": "Провери пощата си",
+        "phone": "Провери съобщенията си"
+      },
+      "sendingTitle": "Изпращаме кода…",
+      "sendingTo": "до",
+      "doneTitle": "Готово",
+      "openWebmail": "Отвори {{provider}}",
       "back": "Назад",
       "sentTo": "Изпратихме 6-цифрен код на",
       "edit": "Промени",

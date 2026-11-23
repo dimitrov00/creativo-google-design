@@ -18,19 +18,22 @@ import { type AuthFailure, IdentityError } from '@core/errors';
 import {
   GuestGuardSystem,
   type LatchedVerdict,
+  OtpLimits,
   PhoneSystem,
+  WebmailSystem,
 } from '@core/systems';
 import {
   UiButton,
   UiIcon,
   UiOtpField,
   UiPhoneField,
-  UiProgressView,
+  UiProgressRing,
   UiTextField,
 } from '@creativo/ui/controls';
 import { UiSpacer, UiStack, UiToolbar } from '@creativo/ui/layout';
 import {
   UiPageActionBar,
+  UiProgressDisc,
   UiSectionHeader,
   UiStepper,
 } from '@creativo/ui/patterns';
@@ -47,10 +50,14 @@ import {
   AUTH_SESSION_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import {
+  loadedLanguage,
   translateCodedError,
   wordFlowFailure,
 } from '@creativo/infrastructure/i18n';
 import { AuthFlowStore } from '../auth-flow.store';
+import { codeStepVm } from '../code-step.presenter';
+import { CodeStepPhase, type CodeStepVm } from '../code-step.vm';
+import { codeStepWordsOf } from '../code-step.words';
 
 /**
  * Auto-verify micro-delay (uxResearch: 100–300 ms) — long enough for the
@@ -60,6 +67,14 @@ import { AuthFlowStore } from '../auth-flow.store';
  * explicit path is Enter inside the OTP field, bound in the template.
  */
 const AUTO_VERIFY_DELAY_MS = 250;
+
+/**
+ * The success beat: how long the accepted code step (the disc filled, its
+ * check drawn — 200 ms delay + 480 ms stroke) stays on screen before the
+ * hand-off, at the least. The wait for the session to reflect the sign-in
+ * runs alongside it, so a slow session never adds to it.
+ */
+const ACCEPTED_BEAT_MS = 750;
 
 /**
  * The `data-state` word per flow step — the lowercase spelling the e2e
@@ -124,7 +139,8 @@ interface LegalPart {
     UiOtpField,
     UiPageActionBar,
     UiPhoneField,
-    UiProgressView,
+    UiProgressDisc,
+    UiProgressRing,
     UiRevealDirective,
     UiSectionHeader,
     UiStepper,
@@ -153,6 +169,9 @@ export class ClientAuth {
 
   protected readonly store = inject(AuthFlowStore);
   protected readonly AuthFlowStep = AuthFlowStep;
+  protected readonly CodeStepPhase = CodeStepPhase;
+  /** The server's resend window, the countdown ring's whole (OR-9). */
+  protected readonly resendWindowSeconds = OtpLimits.ResendWindowSeconds;
   /** The legal sentence's piece kinds, for the template. */
   protected readonly ConsentPart = ConsentPart;
 
@@ -218,21 +237,65 @@ export class ClientAuth {
   /* ── OTP step ───────────────────────────────────────────────────── */
 
   protected readonly rawCode = signal('');
-  /** True during the auto-verify micro-delay — the visible "checking" state (field locked + inline progress row; there is no Verify button). */
+  /** True during the auto-verify micro-delay — already the visible "checking" phase (field locked, the disc's ring turning; there is no Verify button). */
   protected readonly checking = signal(false);
   /** Whether the last verify failure is still displayed — auto-verify stays suppressed until the user edits. */
   protected readonly otpErrorVisible = signal(false);
   private autoVerifyTimer: ReturnType<typeof setTimeout> | null = null;
 
-  protected readonly verifying = computed(
-    () => this.checking() || this.store.pending(),
-  );
-  /** The address the code went to, rendered semibold in the lede. */
-  protected readonly otpDestination = computed(() => {
+  /**
+   * Where the code step stands. The flow machine is on the otp step while
+   * the first code is still being sent, so the store's flags tell sending
+   * from checking; a finished flow (`DONE`, `AUTHENTICATED`) is the
+   * accepted code, shown until the hand-off.
+   */
+  protected readonly codeStepPhase = computed<CodeStepPhase>(() => {
+    const step = this.store.state().authFlowStep;
+    if (step === AuthFlowStep.Done || step === AuthFlowStep.Authenticated) {
+      return CodeStepPhase.Accepted;
+    }
+    if (this.store.sending()) return CodeStepPhase.Sending;
+    if (this.checking() || this.store.verifying()) {
+      return CodeStepPhase.Checking;
+    }
+    return CodeStepPhase.Waiting;
+  });
+
+  /** The destination the code went to — kept by the otp and done states, forgotten once authenticated. */
+  private readonly destination = computed(() => {
     const state = this.store.state();
-    return state.authFlowStep === AuthFlowStep.Otp
-      ? state.identifier.identifier
-      : '';
+    return state.authFlowStep === AuthFlowStep.Otp ||
+      state.authFlowStep === AuthFlowStep.Done
+      ? state.identifier
+      : null;
+  });
+
+  private readonly loadedLang = toSignal(loadedLanguage(this.transloco), {
+    initialValue: null,
+  });
+
+  /** The code step's words in the loaded language; `null` until the catalogue loads. */
+  private readonly codeStepWords = computed(() => {
+    const lang = this.loadedLang();
+    return lang === null
+      ? null
+      : codeStepWordsOf((key, params) =>
+          this.transloco.translate(key, { ...params }, lang),
+        );
+  });
+
+  /** What the code step prints — `WebmailSystem` reads the address, the presenter words the phase. */
+  protected readonly codeStep = computed<CodeStepVm | null>(() => {
+    const words = this.codeStepWords();
+    if (words === null) return null;
+    const identifier = this.destination();
+    return codeStepVm({
+      codeStepPhase: this.codeStepPhase(),
+      identifierChannel: this.identifierChannel,
+      destination: identifier === null ? null : identifier.identifier,
+      webmail: identifier === null ? null : WebmailSystem.inboxOf(identifier),
+      words,
+    });
   });
   /**
    * Sparse `aria-live` countdown announcements (design §2.2: at 30/10/0,
@@ -365,7 +428,7 @@ export class ClientAuth {
     // (uxResearch: instant submit prevents catching a mistyped digit).
     // A failed verify clears the field, so a stale code can never sit at
     // 6 digits and auto-resubmit itself.
-    if (value.length === this.otpLength && !this.store.pending()) {
+    if (value.length === this.otpLength && !this.store.verifying()) {
       this.checking.set(true);
       this.autoVerifyTimer = setTimeout(() => {
         this.autoVerifyTimer = null;
@@ -464,15 +527,21 @@ export class ClientAuth {
       return;
     }
 
-    await firstValueFrom(
-      this.session
-        .observePrincipal()
-        .pipe(
-          filter(
-            (principal) => principal.principalKind !== PrincipalKind.Anonymous,
+    // The success beat (the disc fills, its check draws) runs while the
+    // session catches up; whichever is slower sets the hand-off.
+    await Promise.all([
+      firstValueFrom(
+        this.session
+          .observePrincipal()
+          .pipe(
+            filter(
+              (principal) =>
+                principal.principalKind !== PrincipalKind.Anonymous,
+            ),
           ),
-        ),
-    );
+      ),
+      new Promise((resolve) => setTimeout(resolve, ACCEPTED_BEAT_MS)),
+    ]);
 
     if (session === SessionKind.Returning) {
       await this.router.navigateByUrl(
