@@ -12,6 +12,7 @@
   "// routes 2026-11-17": "Admin loyalty to 1.75 MB (built 1.714, 3.7 kB over the 1.71 it stood under since 2026-11-07): the staff welcome's `ui-avatar-orbit` (6.4 kB with its styles) lands in the shared design-system chunk every route loads, because the builder keeps the `@creativo/ui/controls` barrel whole, and loyalty had the least room. About 2% above the build. Client booking now stands 0.8 kB under its 1.76 MB.",
   "// routes 2026-11-17, later": "Client booking to 1.80 MB (built 1.7605, 0.45 kB over the 1.76 it stood 0.73 kB under): the shell menu's «Моят профил» row and the rule it is shown by (SessionAccessSystem.opensOwnProfile, StaffAccessService.opensOwnProfile) add 1.2 kB to the shell, systems and access chunks every route loads; booking had the least room. About 2% above the build.",
   "// routes 2026-11-19": "The dependency pass inside the current majors (firebase 12.19, firebase-functions 7.4, Nx 23.3.1, Angular 22.2.5/22.2.6, gsap 3.15.1, …) adds 4.5–6.2 kB to every route: about 2.7 kB of firebase in the chunks every route loads (@firebase/auth +1.9 kB, app, util, functions and app-check the rest), gsap +0.6 kB, Angular +0.5 kB, and the rest the builder's chunking (@angular/build 22.2.6); Firestore shrinks 47 kB, only in the lazy data chunk. Staff analytics to 1.88 MB (built 1.8747, 4.7 kB over the 1.87), client onboarding to 1.59 MB (built 1.5815, 1.5 kB over the 1.58), and client account given a ceiling of its own, 1.56 MB (built 1.5548, 4.8 kB over the 1.55 default it stood 0.8 kB under). @fontsource-variable/onest stays at exactly 5.3.0: 5.3.1 adds the Vietnamese, symbols and math subsets and grows the font CSS every route loads by 2.9 kB, for characters this app never prints.",
+  "// routes 2026-11-23": "Client account to 1.59 MB (built 1.5611, 1.1 kB over the 1.56 it was given on 2026-11-19): the sign-in code step's `ui-progress-disc` (6.1 kB with its styles: the turning ring, the check badge, the drawn check and their reduced-motion forms) lands in the shared design-system chunk every feature route loads, where `ui-reward-moment`, which now composes it, shrinks to 1.0 kB, and `ui-otp-field` gains its accepted state; account had the least room. About 2% above the build.",
   "defaultRouteBytes": 1550000,
   "routes": {
     "libs/features/staff/dashboard/src/index.ts": 2130000,
@@ -20,7 +21,7 @@
     "libs/features/staff/analytics/src/index.ts": 1880000,
     "libs/features/client/appointments/src/index.ts": 1640000,
     "libs/features/client/onboarding/src/index.ts": 1590000,
-    "libs/features/client/account/src/index.ts": 1560000
+    "libs/features/client/account/src/index.ts": 1590000
   },
   "// publicAssetBytes": "Any one file under apps/web/public. Today's largest is welcome.mp4, 4.37 MB; lower this when the videos are recompressed.",
   "publicAssetBytes": 4500000
