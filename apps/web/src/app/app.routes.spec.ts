@@ -125,13 +125,51 @@ describe('appRoutes — /account/notifications (OR-19)', () => {
  * The Team page is behind the capabilities that open it; «Права» is the
  * owner's alone, as its save is.
  */
-describe('appRoutes — /support (OR-24)', () => {
+describe('appRoutes — the schedule, the programs and /support (2026-11-24)', () => {
   afterEach(() => {
     TestBed.resetTestingModule();
   });
 
   const staff = (role: Role) =>
     principalFixture.staff(UserId.of(`staff-${role}`), [role]);
+
+  /**
+   * The schedule's guard is `Roles.BOOK`, the rules' `worksTheBook()`: a
+   * content manager is staff, but the rules refuse them every appointment
+   * read, so the day would open empty.
+   */
+  test('whoever works the book opens the schedule; a content manager and a client do not', async () => {
+    for (const role of [
+      Role.Barber,
+      Role.Receptionist,
+      Role.Admin,
+      Role.Sysadmin,
+    ]) {
+      expect(await landingOf(staff(role), '/staff/schedule')).toBe(
+        '/staff/schedule',
+      );
+    }
+    expect(await landingOf(staff(Role.ContentManager), '/staff/schedule')).toBe(
+      '/forbidden',
+    );
+    expect(await landingOf(principalFixture.client(), '/staff/schedule')).toBe(
+      '/forbidden',
+    );
+  });
+
+  /** `Roles.CATALOG`, the rules' `isCatalogManager()`. */
+  test('a content manager and the admin pair open the programs; a barber and the front desk do not', async () => {
+    for (const role of [Role.ContentManager, Role.Admin, Role.Sysadmin]) {
+      expect(await landingOf(staff(role), '/admin/programs')).toBe(
+        '/admin/programs',
+      );
+    }
+    for (const role of [Role.Barber, Role.Receptionist]) {
+      expect(await landingOf(staff(role), '/admin/programs')).toBe(
+        '/forbidden',
+      );
+    }
+  });
 
   /** `Roles.SUPPORT`: the vendor's sysadmin alone (owner ruling 2026-11-24). */
   test('the sysadmin opens support’s read-as page; the shop’s admin and everyone else do not', async () => {

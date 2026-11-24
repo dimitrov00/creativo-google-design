@@ -1,7 +1,12 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { EnvironmentProviders, Injectable } from '@angular/core';
+import {
+  Component,
+  EnvironmentProviders,
+  Injectable,
+  input,
+} from '@angular/core';
 import {
   Translation,
   TranslocoLoader,
@@ -24,6 +29,7 @@ import {
   Result,
 } from '@core/primitives';
 import { RepositoryError } from '@core/errors';
+import { SiteHeaderComponent } from '@creativo/features/shared/shell';
 import {
   type ProgramsWorld,
   type ProgramsWorldSeed,
@@ -198,6 +204,17 @@ class TestTranslationLoader implements TranslocoLoader {
   }
 }
 
+/** The shared site header, inert: the page's own suite does not sign anyone in. */
+@Component({
+  // eslint-disable-next-line @angular-eslint/component-selector -- a test double answers to the shell selector it stands in for.
+  selector: 'cr-site-header',
+  template: '',
+  host: { '[attr.data-over-hero]': 'uiOverHero()' },
+})
+class InertSiteHeader {
+  readonly uiOverHero = input(true);
+}
+
 function provideTestI18n(): EnvironmentProviders[] {
   return provideTransloco({
     config: {
@@ -228,6 +245,13 @@ async function configure(
   const locations: readonly ShopLocation[] = seed.locations ?? [CENTER];
   const world = memoryProgramsWorld({ ...seed, locations });
   const programs = memoryProgramsPorts(world);
+  // The page's header is the shared shell's, proven in its own specs; here
+  // it stands in as an inert element, so the session it reads is not this
+  // suite's concern.
+  TestBed.overrideComponent(AdminPrograms, {
+    remove: { imports: [SiteHeaderComponent] },
+    add: { imports: [InertSiteHeader] },
+  });
   await TestBed.configureTestingModule({
     imports: [AdminPrograms],
     providers: [
@@ -309,6 +333,13 @@ function pickShop(
 }
 
 describe('AdminPrograms', () => {
+  it('carries the site header, its way to the menu, solid over no hero', async () => {
+    const { host } = await configure();
+    const header = host.querySelector('cr-site-header');
+    expect(header).not.toBeNull();
+    expect(header?.getAttribute('data-over-hero')).toBe('false');
+  });
+
   it('lists positions on the default tab', async () => {
     const { host } = await configure({
       positions: [positionOf('pos_1'), positionOf('pos_2')],

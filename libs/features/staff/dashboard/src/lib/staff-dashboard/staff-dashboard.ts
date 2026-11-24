@@ -14,6 +14,7 @@ import { StaffWeekStrip } from './week-strip';
 import { bindRouteInputs } from './route-inputs';
 import { AnalyticsEntry } from './analytics-entry';
 import { StaffHome } from '../staff-home/staff-home';
+import { AccountMenuComponent } from '@creativo/features/shared/shell/account-menu';
 import { transitionOf } from './transition-of';
 import {
   ChangeDetectionStrategy,
@@ -384,7 +385,7 @@ const ANCHOR_FRAMES = 24;
 const ANCHOR_TOLERANCE = 2;
 
 /**
- * `/staff` — the shop's day, one lane per chair.
+ * `/staff/schedule` — the shop's day, one lane per chair.
  *
  * ### What this screen is for
  * The three questions a person behind the counter actually asks: who is in
@@ -397,14 +398,13 @@ const ANCHOR_TOLERANCE = 2;
  * one barber and a bug to another. The chair's actual availability is the
  * client calendar's job; this sheet is the day's RECORD.
  *
- * ### Real Bulgarian copy, unlike the admin tools
- * `admin/programs` ships hardcoded English (internal-tool posture). The
- * day sheet is read by the barbers between cuts — it gets real `staff.*`
- * keys in both catalogs like every client surface.
+ * ### Real Bulgarian copy
+ * Read between cuts: real `staff.*` keys in both catalogs.
  */
 @Component({
   selector: 'lib-staff-dashboard',
   imports: [
+    AccountMenuComponent,
     NgTemplateOutlet,
     StaffHome,
     StaffBlockFailurePipe,

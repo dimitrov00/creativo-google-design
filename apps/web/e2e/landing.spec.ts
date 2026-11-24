@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { Role } from '@core/components';
 import { mintActiveToken } from './support/sign-in';
+import { emulateInstalledApp } from './support/standalone';
 
 declare global {
   interface Window {
@@ -238,27 +239,10 @@ test.describe('marketing landing', () => {
     const uid = `e2e-standalone-${test.info().testId}`;
     const token = await mintActiveToken(uid, [Role.Client]);
 
-    // Chromium has no native "launch as installed PWA" affordance for
-    // Playwright to drive, so `display-mode: standalone` is forced the same
-    // way home.guard.spec.ts does at the unit level — this test's job is to
-    // prove the guard's real DI wiring (AUTH_SESSION_PORTS, Router) behaves the
-    // same end-to-end, not to re-derive `isStandalone()`'s own logic.
-    await page.addInitScript(() => {
-      const original = window.matchMedia.bind(window);
-      window.matchMedia = ((query: string) =>
-        query === '(display-mode: standalone)'
-          ? ({
-              matches: true,
-              media: query,
-              onchange: null,
-              addListener: () => undefined,
-              removeListener: () => undefined,
-              addEventListener: () => undefined,
-              removeEventListener: () => undefined,
-              dispatchEvent: () => false,
-            } as MediaQueryList)
-          : original(query)) as typeof window.matchMedia;
-    });
+    // `display-mode: standalone` forced as an installed app answers it —
+    // this test's job is to prove the guard's real DI wiring
+    // (AUTH_SESSION_PORTS, Router) behaves the same end-to-end.
+    await emulateInstalledApp(page);
 
     await page.goto('/');
     await page.waitForFunction(() => typeof window.__e2eSignIn === 'function');
@@ -274,22 +258,7 @@ test.describe('marketing landing', () => {
   test('standalone launch by an anonymous visitor still sees the landing page', async ({
     page,
   }) => {
-    await page.addInitScript(() => {
-      const original = window.matchMedia.bind(window);
-      window.matchMedia = ((query: string) =>
-        query === '(display-mode: standalone)'
-          ? ({
-              matches: true,
-              media: query,
-              onchange: null,
-              addListener: () => undefined,
-              removeListener: () => undefined,
-              addEventListener: () => undefined,
-              removeEventListener: () => undefined,
-              dispatchEvent: () => false,
-            } as MediaQueryList)
-          : original(query)) as typeof window.matchMedia;
-    });
+    await emulateInstalledApp(page);
 
     await page.goto('/');
     await expect(page).toHaveURL(/^[^?]*\/$/);

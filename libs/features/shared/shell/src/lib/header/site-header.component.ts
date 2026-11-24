@@ -72,6 +72,10 @@ export class SiteHeaderComponent {
   protected readonly identity = inject(SessionIdentityService);
   protected readonly isAuthed = this.identity.isAuthed;
   protected readonly isStaffMember = this.identity.isStaffMember;
+  /** The menu's «График» row — whoever works the book. */
+  protected readonly worksTheBook = this.identity.worksTheBook;
+  /** The menu's «Програми» row — whoever manages the programs. */
+  protected readonly managesCatalog = this.identity.managesCatalog;
   /** The admin pair — the menu's «Лоялност» entry (client-card revision 3 §3.17). */
   protected readonly isAdmin = this.identity.isAdmin;
   /** The menu's «Поддръжка» row — the vendor's support account (OR-24). */

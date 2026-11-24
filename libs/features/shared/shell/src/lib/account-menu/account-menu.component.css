@@ -1,0 +1,26 @@
+/* The face IS the button, as on the site header's trigger: the button's own
+   chrome drops and the avatar fills the capsule; the ungated :active
+   scale keeps the press feedback (press parity). */
+:host {
+  display: inline-flex;
+}
+
+.cr-account-menu__trigger {
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.cr-account-menu__face {
+  inline-size: 100%;
+  block-size: 100%;
+  /* An identity, not the button's label: the avatar derives its disc and
+     initials from the ink it inherits, and a bordered button's accent ink
+     gave orange initials on a near-white disc. */
+  --ui-avatar-ink: var(--sys-color-foreground);
+}
+
+.cr-account-menu__trigger:active .cr-account-menu__face {
+  transform: scale(var(--sys-press-scale-surface, 0.97));
+}

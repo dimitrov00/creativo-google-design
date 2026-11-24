@@ -337,6 +337,38 @@ describe('SessionIdentityService', () => {
 
       expect(service.isStaffMember()).toBe(false);
       expect(service.isAdmin()).toBe(false);
+      expect(service.worksTheBook()).toBe(false);
+      expect(service.managesCatalog()).toBe(false);
+    });
+
+    /**
+     * `worksTheBook` is `Roles.BOOK` (the rules' `worksTheBook()`, the
+     * schedule's guard) and `managesCatalog` is `Roles.CATALOG` (the rules'
+     * `isCatalogManager()`, the programs' guard): the menu shows a row only
+     * where its page will open.
+     */
+    it.each([
+      ['barber', true, false],
+      ['receptionist', true, false],
+      ['content_manager', false, true],
+      ['admin', true, true],
+      ['sysadmin', true, true],
+      ['client', false, false],
+    ])(
+      'reads %s: works the book %s, manages the programs %s',
+      (role, book, catalog) => {
+        const { service } = harness(active('user_1', [role]));
+
+        expect(service.worksTheBook()).toBe(book);
+        expect(service.managesCatalog()).toBe(catalog);
+      },
+    );
+
+    it('keeps a content manager staff, but off the book', () => {
+      const { service } = harness(active('user_1', ['content_manager']));
+
+      expect(service.isStaffMember()).toBe(true);
+      expect(service.worksTheBook()).toBe(false);
     });
   });
 

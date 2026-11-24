@@ -142,6 +142,26 @@ export class SessionIdentityService {
   );
 
   /**
+   * Works the book (`Roles.BOOK`) — the SAME grouping firestore.rules'
+   * `worksTheBook()` and the schedule route's guard use. Drives the menu's
+   * «График» row: narrower than {@link isStaffMember}, because the rules
+   * refuse `content_manager` every appointment read and a row to a day it
+   * cannot show is a dead end. UI-only, like the others.
+   */
+  readonly worksTheBook = computed(() =>
+    Principal.hasAnyRole(this.principal(), Roles.BOOK),
+  );
+
+  /**
+   * Manages the programs (`Roles.CATALOG`) — the SAME grouping
+   * firestore.rules' `isCatalogManager()` and the `/admin/programs` guard
+   * use. Drives the menu's «Програми» row, the one way to that page.
+   */
+  readonly managesCatalog = computed(() =>
+    Principal.hasAnyRole(this.principal(), Roles.CATALOG),
+  );
+
+  /**
    * One of the admin pair, `admin | sysadmin` (`Roles.ADMIN`, ONE home) —
    * the SAME grouping firestore.rules' `isAdmin()` and the `/admin` routes'
    * `rolesGuard` use, read off the token's claims. Drives the menu's «Лоялност» entry (the one

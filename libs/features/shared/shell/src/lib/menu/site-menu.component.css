@@ -191,3 +191,31 @@
    leading glyphs (rows + CTA) uiScale="medium" (20px), trailing lock
    accessories uiScale="small" (16px) + secondary ink from the [uiTrailing]
    slot contract; the scheme is documented in the template. */
+
+/* THE MENU WITH ITS OWN ✕ — on a page with no site header (the schedule).
+   It is a manual popover in the top layer (see `closeButton`), so the UA
+   popover box (fitted, bordered, padded, centred) is reset to the overlay's
+   own full-viewport sheet. With no fixed header above it, the scroller
+   clears only the safe area. */
+.cr-menu[popover] {
+  inset: 0;
+  inline-size: auto;
+  block-size: auto;
+  max-inline-size: none;
+  max-block-size: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: visible;
+  color: inherit;
+}
+
+.cr-menu[data-close-button] .cr-menu__body {
+  padding-block-start: calc(
+    var(--landing-safe-pad-top) + var(--sys-space-comfortable)
+  );
+}
+
+.cr-menu__close {
+  margin-inline-start: var(--sys-space-compact);
+}

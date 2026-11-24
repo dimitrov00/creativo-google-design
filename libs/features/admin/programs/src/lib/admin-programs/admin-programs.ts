@@ -23,6 +23,7 @@ import type { ProgramSaveError } from '@core/errors';
 import { type LocationId } from '@core/primitives';
 import { LocationScopeSystem, ProgramsSystem } from '@core/systems';
 import { shopNameOf } from '@creativo/features/shared/catalog';
+import { SiteHeaderComponent } from '@creativo/features/shared/shell';
 import { sameLocationIds } from '@creativo/infrastructure/firebase-app';
 import {
   loadedLanguage,
@@ -45,7 +46,7 @@ import {
   UiMenuTrigger,
   UiSectionHeader,
 } from '@creativo/ui/patterns';
-import { UiFrameDirective } from '@creativo/ui/modifiers';
+import { UiFrameDirective, UiPaddingDirective } from '@creativo/ui/modifiers';
 import { AdminProgramsStore, ProgramsTab } from '../admin-programs.store';
 
 /** Which program the edit form is open on — the field `programEditing`, the
@@ -107,6 +108,7 @@ const NO_SHOP = '';
   selector: 'lib-admin-programs',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    SiteHeaderComponent,
     TranslocoDirective,
     UiButton,
     UiCard,
@@ -118,6 +120,7 @@ const NO_SHOP = '';
     UiListGroup,
     UiListRow,
     UiMenuTrigger,
+    UiPaddingDirective,
     UiSectionHeader,
     UiStack,
     UiTextField,
