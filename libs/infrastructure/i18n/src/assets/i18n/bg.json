@@ -1,5 +1,16 @@
 {
   "errors": {
+    "GOVERNANCE_IMPERSONATION_FORBIDDEN": "Само поддръжката може да отваря профил за четене.",
+    "GOVERNANCE_IMPERSONATION_UNAUTHENTICATED": "Влез отново и опитай пак.",
+    "GOVERNANCE_IMPERSONATION_TARGET_NOT_FOUND": "Този профил вече не съществува.",
+    "GOVERNANCE_IMPERSONATION_TARGET_ERASED": "Този профил е изтрит.",
+    "GOVERNANCE_IMPERSONATION_TARGET_NOT_REGISTERED": "Този човек още не е завършил регистрацията си.",
+    "GOVERNANCE_IMPERSONATION_SESSION_SELF_IMPERSONATION": "Не можеш да отвориш собствения си профил така.",
+    "GOVERNANCE_IMPERSONATION_SESSION_REASON_REQUIRED": "Напиши причина.",
+    "GOVERNANCE_IMPERSONATION_WINDOW_TOO_LONG": "Четенето може да продължи най-много 15 минути.",
+    "GOVERNANCE_IMPERSONATION_SCOPE_NOT_OFFERED": "Предлага се само четене.",
+    "GOVERNANCE_IMPERSONATION_READ_ONLY": "Само четене — нищо не може да се промени.",
+    "GOVERNANCE_IMPERSONATION_EXPIRED": "Времето за четене изтече.",
     "SCHEDULING_ROSTER_BREAK_OUTSIDE_SHIFT": "Почивката трябва да е в работните часове на деня.",
     "SCHEDULING_ROSTER_BREAK_IN_PAST": "Промяната не може да започва от минал ден.",
     "SCHEDULING_ROSTER_OUTSIDE_SHOPS": "Бръснарят не работи в този салон. Първо го добави към салоните му.",
@@ -241,6 +252,13 @@
     "forbidden": {
       "title": "Забранено",
       "body": "Нямаш достъп до тази страница."
+    },
+    "readAs": {
+      "actingAs": "Действаш като {{name}}",
+      "someone": "този профил",
+      "until": "до {{time}}",
+      "end": "Край",
+      "label": "Само за четене"
     }
   },
   "auth": {
@@ -674,7 +692,8 @@
       "loyaltyAdmin": "Лоялност",
       "staffAnalytics": "Анализи",
       "ownProfile": "Моят профил",
-      "team": "Екип"
+      "team": "Екип",
+      "support": "Поддръжка"
     },
     "prefs": {
       "language": "Език",
@@ -2901,6 +2920,24 @@
       "flagOff": "Ритъмът още не е включен за приложението.",
       "failed": "Правилото не се зареди.",
       "offline": "Без връзка · правилото не може да се запази."
+    },
+    "support": {
+      "documentTitle": "Поддръжка · Creativo",
+      "title": "Поддръжка",
+      "lede": "Виж приложението така, както го вижда един човек — само за четене, до 15 минути. Всяко отваряне се записва.",
+      "find": "Намери профил",
+      "lookupTitle": "Чий профил?",
+      "lookupLede": "Потърси по име, телефон или имейл.",
+      "hint": "Напиши име, телефон или имейл.",
+      "noneTitle": "Няма такъв профил",
+      "none": "Провери написаното и потърси пак.",
+      "failed": "Търсенето не се зареди. Опитай пак.",
+      "sheetTitle": "Виж като {{name}}",
+      "sheetLede": "До 15 минути само за четене: нищо не може да се промени. Причината се записва.",
+      "reason": "Причина",
+      "reasonPlaceholder": "Номер на запитване или кратко описание",
+      "start": "Започни",
+      "close": "Затвори"
     },
     "programs": {
       "documentTitle": "Програми · Creativo Admin",

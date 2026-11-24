@@ -8,10 +8,12 @@ import { blockOf, occurrences, rulesCode } from '@core/testing';
  * DEP-15, RU-18). The emulator suite proves the window's behaviour against
  * the emulator's own clock, which no spec can pin; this pure spec pins what
  * that suite cannot: the helper's exact body, the one `300000` (±300 s)
- * literal, the one `request.time` read, and its two call sites — the
+ * literal, its `request.time` read, and its two call sites — the
  * note's `writtenAtUtcMs` and the photo's `takenAtUtcMs`, each beside the
  * author check — so the window can neither widen nor wander onto a
- * shop-time coordinate (`utcEpochMs`, Law 7.3) unnoticed.
+ * shop-time coordinate (`utcEpochMs`, Law 7.3) unnoticed. The one other
+ * `request.time` read is the read-as window (OR-24, `readAsLive`), which
+ * compares the clock with the token's `impExp` and with nothing stored.
  */
 
 /** The workspace's own `firestore.rules`, comments removed (`src/lib` is five levels down). */
@@ -30,9 +32,12 @@ describe('firestore.rules — the stamp window (WS-3.4, DEP-15)', () => {
     expect(occurrences(CODE, 'function stampInWindow(')).toBe(1);
   });
 
-  it('holds the 300000 literal and the request.time read inside the helper only', () => {
+  it('holds the 300000 literal inside the helper only, and reads request.time there and in the read-as window alone', () => {
     expect(occurrences(CODE, '300000')).toBe(1);
-    expect(occurrences(CODE, 'request.time')).toBe(1);
+    expect(occurrences(CODE, 'request.time')).toBe(2);
+    expect(folded(CODE)).toContain(
+      "function readAsLive() { return !('imp' in request.auth.token) || request.time.toMillis() < request.auth.token.impExp; }",
+    );
   });
 
   it('calls the helper exactly twice: the note’s writtenAtUtcMs and the photo’s takenAtUtcMs', () => {
@@ -49,12 +54,13 @@ describe('firestore.rules — the stamp window (WS-3.4, DEP-15)', () => {
   it('windows a note’s create and update beside its author, and leaves its delete to the book', () => {
     const notes = folded(blockOf(CODE, '/appointmentNotes/{appointmentId}'));
     // Security hardening S-DEP-5 (S-RU-8): the id proof and the key list
-    // follow the window — the author check and the one stamp stay first.
+    // follow the window — the author check and the one stamp stay first,
+    // after the read-as refusal (OR-24) that every client write leads with.
     expect(notes).toContain(
-      "allow create, update: if worksTheBook() && request.resource.data.authorUserId == request.auth.uid && stampInWindow(request.resource.data.writtenAtUtcMs) && request.resource.data.keys().hasOnly(['authorUserId', 'text', 'writtenAtUtcMs']) && exists(/databases/$(database)/documents/appointments/$(appointmentId));",
+      "allow create, update: if worksTheBook() && notReadAs() && request.resource.data.authorUserId == request.auth.uid && stampInWindow(request.resource.data.writtenAtUtcMs) && request.resource.data.keys().hasOnly(['authorUserId', 'text', 'writtenAtUtcMs']) && exists(/databases/$(database)/documents/appointments/$(appointmentId));",
     );
     expect(notes).toContain('allow read: if worksTheBook();');
-    expect(notes).toContain('allow delete: if worksTheBook();');
+    expect(notes).toContain('allow delete: if worksTheBook() && notReadAs();');
     expect(notes).not.toContain('write:');
   });
 
@@ -62,13 +68,13 @@ describe('firestore.rules — the stamp window (WS-3.4, DEP-15)', () => {
     const photos = folded(blockOf(CODE, '/appointmentPhotos/{photoId}'));
     // Security hardening S-DEP-5 (S-RU-8): the id proofs, the key list and
     // the origin / path pins follow the window — the taker check and the one
-    // stamp stay first.
+    // stamp stay first, after the read-as refusal (OR-24).
     expect(photos).toContain(
-      "allow create: if worksTheBook() && request.resource.data.takenByUserId == request.auth.uid && stampInWindow(request.resource.data.takenAtUtcMs) && photoId.matches('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') && request.resource.data.keys().hasOnly(['appointmentId', 'barberId', 'clientCustomerId', 'clientLabel', 'height', 'label', 'path', 'photoOrigin', 'takenAtUtcMs', 'takenByUserId', 'url', 'width']) && request.resource.data.appointmentId is string && request.resource.data.photoOrigin in ['SHOT', 'LIBRARY'] && (request.resource.data.photoOrigin != 'SHOT' || request.resource.data.path == 'appointmentPhotos/' + request.resource.data.appointmentId + '/' + photoId) && exists(/databases/$(database)/documents/appointments/$(request.resource.data.appointmentId));",
+      "allow create: if worksTheBook() && notReadAs() && request.resource.data.takenByUserId == request.auth.uid && stampInWindow(request.resource.data.takenAtUtcMs) && photoId.matches('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$') && request.resource.data.keys().hasOnly(['appointmentId', 'barberId', 'clientCustomerId', 'clientLabel', 'height', 'label', 'path', 'photoOrigin', 'takenAtUtcMs', 'takenByUserId', 'url', 'width']) && request.resource.data.appointmentId is string && request.resource.data.photoOrigin in ['SHOT', 'LIBRARY'] && (request.resource.data.photoOrigin != 'SHOT' || request.resource.data.path == 'appointmentPhotos/' + request.resource.data.appointmentId + '/' + photoId) && exists(/databases/$(database)/documents/appointments/$(request.resource.data.appointmentId));",
     );
     expect(photos).toContain('allow read: if worksTheBook();');
     expect(photos).toContain('allow update: if false;');
-    expect(photos).toContain('allow delete: if worksTheBook();');
+    expect(photos).toContain('allow delete: if worksTheBook() && notReadAs();');
     expect(photos).not.toContain('write:');
   });
 });

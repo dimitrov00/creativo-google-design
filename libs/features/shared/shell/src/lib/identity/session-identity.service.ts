@@ -154,6 +154,15 @@ export class SessionIdentityService {
   );
 
   /**
+   * The vendor's support account (`Roles.SUPPORT`, the sysadmin alone) —
+   * the menu's «Поддръжка» row, the one way to the read-as page (OR-24).
+   * UI-only: the route's guard and the callables are the locks.
+   */
+  readonly runsReadAs = computed(() =>
+    Principal.hasAnyRole(this.principal(), Roles.SUPPORT),
+  );
+
+  /**
    * The profile's own name once the snapshot lands, falling back to the
    * Auth record's display name (stamped at registration) and then to the
    * identifier's local part — the monogram renders '?' only when none of

@@ -517,7 +517,7 @@
               </ui-list-group>
             </div>
 
-            @if (isAdmin() || opensTeam()) {
+            @if (isAdmin() || opensTeam() || runsReadAs()) {
               <!-- The shop's rules — ITS OWN group after the account run
                    (iOS Settings grammar: what is MINE, then what I MANAGE,
                    then the site). One row today: «Лоялност», the ONE way to
@@ -576,6 +576,27 @@
                         uiScale="medium"
                       />
                       {{ t('landing.menu.loyaltyAdmin') }}
+                    </a>
+                  }
+                  @if (runsReadAs()) {
+                    <!-- «Поддръжка» — support's read-as page (OR-24): the
+                         sysadmin opens a person's account from there, 15
+                         minutes, read-only, audited. `Roles.SUPPORT` on the
+                         route and on both callables are the locks. -->
+                    <a
+                      routerLink="/support"
+                      uiListRow
+                      uiSize="large"
+                      [uiInteractive]="true"
+                      data-testid="menu-support"
+                      (click)="close()"
+                    >
+                      <ui-icon
+                        uiLeading
+                        uiName="admin.support"
+                        uiScale="medium"
+                      />
+                      {{ t('landing.menu.support') }}
                     </a>
                   }
                 </ui-list-group>

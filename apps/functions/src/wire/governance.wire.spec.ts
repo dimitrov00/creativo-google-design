@@ -39,6 +39,8 @@ const signedIn = (
   ...(uid === null ? {} : { auth: { uid, token: { roles } } }),
 });
 const admin = (data: unknown) => signedIn(data, 'u-owner', ['barber', 'admin']);
+/** The vendor's support account — the one caller of the impersonation callables (ruling 2026-11-24). */
+const support = (data: unknown) => signedIn(data, 'u-vendor', ['sysadmin']);
 
 function valueOf<T>(result: Result<T, EdgeError>): T {
   if (!result.ok) {
@@ -95,6 +97,8 @@ describe.each([
     ['a client', ['client']],
     ['no claim', []],
     ['a list inside the claim', [['admin']]],
+    ['the shop’s admin (ruling 2026-11-24)', ['barber', 'admin']],
+    ['a list inside the claim, of the support role', [['sysadmin']]],
   ])(
     'refuses %s as GOVERNANCE_IMPERSONATION_FORBIDDEN — the uid stays on the server',
     (_who, roles) => {
@@ -107,27 +111,22 @@ describe.each([
 });
 
 describe('decodeStartImpersonation', () => {
-  it('decodes the call component and the verified admin — the owner and the vendor alike', () => {
-    expect(valueOf(decodeStartImpersonation(admin(START)))).toEqual({
-      adminUserId: 'u-owner',
-      adminRoles: ['barber', 'admin'],
+  it('decodes the call component and the verified support account — the vendor alone (ruling 2026-11-24)', () => {
+    expect(valueOf(decodeStartImpersonation(support(START)))).toEqual({
+      adminUserId: 'u-vendor',
+      adminRoles: ['sysadmin'],
       targetUserId: 'u-client',
       impersonationScope: ImpersonationScope.Read,
       reason: 'support ticket 42',
       expiresAtUtcMs: EXPIRES,
       operationId: null,
     });
-    expect(
-      valueOf(
-        decodeStartImpersonation(signedIn(START, 'u-vendor', ['sysadmin'])),
-      ),
-    ).toMatchObject({ adminUserId: 'u-vendor', adminRoles: ['sysadmin'] });
   });
 
   it('refuses a payload that is no call, field by field', () => {
     for (const targetUserId of ['', 42, undefined]) {
       expect(
-        wire(decodeStartImpersonation(admin({ ...START, targetUserId }))),
+        wire(decodeStartImpersonation(support({ ...START, targetUserId }))),
       ).toEqual({
         code: 'invalid-argument',
         details: { errorCode: PrimitiveErrorCode.IdEmpty },
@@ -136,7 +135,7 @@ describe('decodeStartImpersonation', () => {
     expect(
       wire(
         decodeStartImpersonation(
-          admin({ ...START, impersonationScope: 'read' }),
+          support({ ...START, impersonationScope: 'read' }),
         ),
       ).details,
     ).toMatchObject({
@@ -144,7 +143,7 @@ describe('decodeStartImpersonation', () => {
     });
     for (const expiresAtUtcMs of [undefined, 'soon', Number.NaN]) {
       expect(
-        wire(decodeStartImpersonation(admin({ ...START, expiresAtUtcMs })))
+        wire(decodeStartImpersonation(support({ ...START, expiresAtUtcMs })))
           .details,
       ).toEqual({ errorCode: GovernanceErrorCode.ImpersonationInvalidExpiry });
     }
@@ -154,13 +153,13 @@ describe('decodeStartImpersonation', () => {
     expect(
       valueOf(
         decodeStartImpersonation(
-          admin({ ...START, operationId: OPERATION_TEXT }),
+          support({ ...START, operationId: OPERATION_TEXT }),
         ),
       ).operationId,
     ).toBe(OperationId.of(OPERATION_TEXT));
     for (const operationId of NOT_AN_OPERATION_ID) {
       expect(
-        valueOf(decodeStartImpersonation(admin({ ...START, operationId })))
+        valueOf(decodeStartImpersonation(support({ ...START, operationId })))
           .operationId,
       ).toBeNull();
     }
@@ -169,7 +168,7 @@ describe('decodeStartImpersonation', () => {
   it('hands an absent reason — or one that is no text — on as empty, for the system to refuse', () => {
     for (const reason of [undefined, 42]) {
       expect(
-        valueOf(decodeStartImpersonation(admin({ ...START, reason }))).reason,
+        valueOf(decodeStartImpersonation(support({ ...START, reason }))).reason,
       ).toBe('');
     }
   });
@@ -190,13 +189,42 @@ describe('decodeStartImpersonation', () => {
 });
 
 describe('decodeEndImpersonation', () => {
-  it('decodes the session and the verified admin', () => {
+  it('decodes the session and the verified support account', () => {
     expect(
-      valueOf(decodeEndImpersonation(admin({ sessionId: 'imp-1' }))),
+      valueOf(decodeEndImpersonation(support({ sessionId: 'imp-1' }))),
     ).toEqual({
       sessionId: 'imp-1',
-      adminUserId: 'u-owner',
-      adminRoles: ['barber', 'admin'],
+      adminUserId: 'u-vendor',
+      adminRoles: ['sysadmin'],
+      readAs: null,
+      operationId: null,
+    });
+  });
+
+  it('lets a read-as session past the gate to end itself — its uid the target’s, its claims beside — for the pipeline to admit (OR-24)', () => {
+    const request: WireRequest = {
+      data: { sessionId: 'imp-1' },
+      auth: {
+        uid: 'u-client',
+        token: {
+          roles: ['client'],
+          imp: 'imp-1',
+          impBy: 'u-vendor',
+          impScope: 'READ',
+          impExp: EXPIRES,
+        },
+      },
+    };
+    expect(valueOf(decodeEndImpersonation(request))).toEqual({
+      sessionId: 'imp-1',
+      adminUserId: 'u-client',
+      adminRoles: ['client'],
+      readAs: {
+        readAsSessionId: 'imp-1',
+        readAsByUserId: 'u-vendor',
+        readAsScope: 'READ',
+        readAsExpiresAtUtcMs: EXPIRES,
+      },
       operationId: null,
     });
   });
@@ -205,14 +233,14 @@ describe('decodeEndImpersonation', () => {
     expect(
       valueOf(
         decodeEndImpersonation(
-          admin({ sessionId: 'imp-1', operationId: OPERATION_TEXT }),
+          support({ sessionId: 'imp-1', operationId: OPERATION_TEXT }),
         ),
       ).operationId,
     ).toBe(OperationId.of(OPERATION_TEXT));
     for (const operationId of NOT_AN_OPERATION_ID) {
       expect(
         valueOf(
-          decodeEndImpersonation(admin({ sessionId: 'imp-1', operationId })),
+          decodeEndImpersonation(support({ sessionId: 'imp-1', operationId })),
         ).operationId,
       ).toBeNull();
     }
@@ -220,7 +248,7 @@ describe('decodeEndImpersonation', () => {
 
   it('refuses a request that names no session', () => {
     for (const data of [{}, { sessionId: '' }, { sessionId: 7 }, null]) {
-      expect(wire(decodeEndImpersonation(admin(data))).code).toBe(
+      expect(wire(decodeEndImpersonation(support(data))).code).toBe(
         'invalid-argument',
       );
     }

@@ -410,4 +410,46 @@ describe('storage.rules (emulator)', () => {
     await assertFails(upload(owner, path, PNG, IMAGE.contentType));
     await assertFails(owner.storage(BUCKET).ref(path).getMetadata());
   });
+
+  describe('a support read-as (OR-24) uploads and deletes nothing', () => {
+    /** The target's own claims and the four read-as claims, live for an hour of the test. */
+    function readAs(uid: string, ...roles: string[]): RulesTestContext {
+      return testEnv.authenticatedContext(uid, {
+        roles,
+        imp: 'imp-1',
+        impBy: 'u-support',
+        impScope: 'READ',
+        impExp: Date.now() + 60 * 60_000,
+      });
+    }
+
+    it('refuses the avatar upload its target may make', async () => {
+      await assertSucceeds(
+        upload(
+          signedIn(ACTIVE, Role.Client),
+          avatarOf(ACTIVE),
+          PNG,
+          IMAGE.contentType,
+        ),
+      );
+      await assertFails(
+        upload(
+          readAs(ACTIVE, Role.Client),
+          avatarOf(ACTIVE),
+          PNG,
+          IMAGE.contentType,
+        ),
+      );
+    });
+
+    it('refuses deleting what its target may delete', async () => {
+      await seedObject(avatarOf(ACTIVE));
+      await assertFails(
+        readAs(ACTIVE, Role.Client)
+          .storage(BUCKET)
+          .ref(avatarOf(ACTIVE))
+          .delete(),
+      );
+    });
+  });
 });

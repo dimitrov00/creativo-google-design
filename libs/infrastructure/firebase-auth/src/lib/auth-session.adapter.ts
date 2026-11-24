@@ -12,6 +12,7 @@ import {
   Email,
   ParsedIdentifier,
   Principal,
+  ReadAsClaims,
 } from '@core/components';
 import { Result, StoredFields, UserId } from '@core/primitives';
 import { PipelineError, PipelineErrorCode } from '@core/errors';
@@ -196,8 +197,18 @@ export const authSessionPorts = (auth: Auth): AuthSessionPorts => {
             .getIdTokenResult()
             .then((token) => {
               const claims = AuthClaims.fromToken(token.claims);
+              // A support read-as (OR-24) is never remembered: a revived
+              // session would come back with the target's claims and NOT
+              // its read-as ones — a plain session of the target. After an
+              // emulator restart the read-as simply ends.
               if (emulated()) {
-                remember({ uid: user.uid, claims: AuthClaims.toToken(claims) });
+                if (ReadAsClaims.claimed(token.claims)) forget();
+                else {
+                  remember({
+                    uid: user.uid,
+                    claims: AuthClaims.toToken(claims),
+                  });
+                }
               }
               const userId = UserId.parse(user.uid);
               subscriber.next(

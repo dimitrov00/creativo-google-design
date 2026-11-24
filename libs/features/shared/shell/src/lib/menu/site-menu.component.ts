@@ -116,6 +116,10 @@ export class SiteMenuComponent {
    *  `/staff/profile` once the welcome and the setup card have gone.
    *  UI-only: the route's capability gate and the callables are the locks. */
   readonly opensOwnProfile = input(false);
+  /** The vendor's support account (`Roles.SUPPORT`) — the menu's
+   *  «Поддръжка» row, the one way to the read-as page (OR-24). UI-only:
+   *  the route's guard and the callables are the locks. */
+  readonly runsReadAs = input(false);
   readonly closed = output();
 
   /** The onboarding link's `?phase=` word, for the template (D-8.2). */

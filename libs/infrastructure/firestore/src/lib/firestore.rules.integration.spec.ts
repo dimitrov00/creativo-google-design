@@ -3486,4 +3486,93 @@ describe('firestore.rules', () => {
       );
     });
   });
+
+  describe('a support read-as (OR-24) — reads what its target reads, writes nothing, is nobody past impExp', () => {
+    const notePath = 'appointmentNotes/appt-1';
+    const moneyPath = `clientStats/${recordOf('client-1')}/restricted/money`;
+
+    /** The target's own role claims and the four read-as claims, `impExp` as given. */
+    function readAs(
+      uid: string,
+      impExp: unknown,
+      ...roles: string[]
+    ): RulesTestContext {
+      return testEnv.authenticatedContext(uid, {
+        roles,
+        imp: 'imp-1',
+        impBy: 'u-support',
+        impScope: 'READ',
+        impExp,
+      });
+    }
+
+    /** A note as `appointmentNotes/{appointmentId}` stores it. */
+    const note = (authorUserId: string, writtenAtUtcMs: UtcEpochMs) => ({
+      text: 'Иска същото като миналия път.',
+      authorUserId,
+      writtenAtUtcMs,
+    });
+
+    beforeEach(async () => {
+      await seedAppointments('appt-1', 'appt-2');
+      await seed(notePath, note('staff-1', SEPT_FIRST));
+      await seed(moneyPath, moneyBody('client-1', 64_000));
+    });
+
+    it('reads what its target reads while its window is open', async () => {
+      const now = await emulatorNowMs();
+      const db = readAs(
+        'staff-1',
+        now + 10 * 60_000,
+        'barber',
+        'admin',
+      ).firestore();
+      await assertSucceeds(getDoc(doc(db, notePath)));
+    });
+
+    it('writes nothing — a note its target may write is refused to it, and so is a delete', async () => {
+      const own = signedIn('staff-1', 'barber', 'admin').firestore();
+      await assertSucceeds(
+        setDoc(
+          doc(own, 'appointmentNotes/appt-2'),
+          note('staff-1', await emulatorNowMs()),
+        ),
+      );
+      const now = await emulatorNowMs();
+      const db = readAs(
+        'staff-1',
+        now + 10 * 60_000,
+        'barber',
+        'admin',
+      ).firestore();
+      await assertFails(setDoc(doc(db, notePath), note('staff-1', now)));
+      await assertFails(deleteDoc(doc(db, notePath)));
+    });
+
+    it('is nobody past its window — even its reads are refused', async () => {
+      const now = await emulatorNowMs();
+      const db = readAs('staff-1', now - 60_000, 'barber', 'admin').firestore();
+      await assertFails(getDoc(doc(db, notePath)));
+    });
+
+    it('is nobody when its window does not read', async () => {
+      const db = readAs('staff-1', 'soon', 'barber', 'admin').firestore();
+      await assertFails(getDoc(doc(db, notePath)));
+    });
+
+    it('keeps the owner’s walls — a read-as of the admin never reads a client’s spend (ruling 2026-11-24)', async () => {
+      await assertSucceeds(
+        getDoc(doc(signedIn('staff-1', 'admin').firestore(), moneyPath)),
+      );
+      const now = await emulatorNowMs();
+      await assertFails(
+        getDoc(
+          doc(
+            readAs('staff-1', now + 10 * 60_000, 'admin').firestore(),
+            moneyPath,
+          ),
+        ),
+      );
+    });
+  });
 });

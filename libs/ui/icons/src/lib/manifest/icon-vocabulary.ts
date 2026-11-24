@@ -155,6 +155,10 @@ export const UI_ICON_REGISTRY = {
    *  Shares `loyalty` with `loyalty.program` (the programme as the client
    *  card shows it): this one is the place an admin MANAGES it from. */
   'admin.loyalty': 'loyalty',
+  /** The menu's entry for support's read-as page («Поддръжка», OR-24): the
+   *  account a session is opened for. Shares `manage_accounts` with the
+   *  profile intents; this one is where support opens one. */
+  'admin.support': 'manage_accounts',
   /** Marker on links that leave the site (footer external links). */
   'link.external': 'arrow_forward',
   /** Apply-via-Instagram CTA on the hiring section. */

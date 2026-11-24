@@ -3,7 +3,9 @@ import {
   Actor,
   EndReasonFields,
   ImpersonationEndReason,
+  ImpersonationScope,
   ImpersonationStatus,
+  type ReadAsClaims,
   Role,
   WriteOp,
 } from '@core/components';
@@ -36,10 +38,12 @@ import {
 
 /*
  * `endImpersonation` (Phase 4a 4A-3 (4), §1.2) — the SAME caller gate as
- * the start, asked BEFORE any read (no session → unauthenticated, no admin
- * role → forbidden: `endByAdmin` checks neither, so the gate is what keeps
- * a signed-in stranger holding a session id from ending an admin's
- * session); then the session read by id in the transaction and ended on
+ * the start, asked BEFORE any read (no session → unauthenticated, no
+ * support role → forbidden: `endByAdmin` checks neither, so the gate is
+ * what keeps a signed-in stranger holding a session id from ending a
+ * session), or the read-as session ending ITSELF under its own token
+ * (OR-24) — that session and no other, credited to the support account
+ * as an impersonator; then the session read by id in the transaction and ended on
  * the server's clock; the plan ONE `Set` of the whole ENDED body, never a
  * field transition, so the TTL adapter re-stamps `purgeAt` to
  * `endedAtUtcMs` + 30 d — and, in the same commit, the end's audit row
@@ -47,9 +51,22 @@ import {
  * spec's cases (admin end before expiry, expired end, unknown session).
  */
 
+/** The support account — the fixture session's `adminUserId`. */
 const ADMIN = UserId.of('u-admin');
 const SESSION = ImpersonationSessionId.of('imp-1');
 const PATH = [Collections.ImpersonationSessions, SESSION];
+/** The fixture session's target — under its read-as token, the caller's uid. */
+const TARGET = impersonationSessionFixture().targetUserId;
+
+/** The claims a read-as token for `sessionId` carries. */
+const readAsOf = (
+  sessionId: ImpersonationSessionId = SESSION,
+): ReadAsClaims => ({
+  readAsSessionId: sessionId,
+  readAsByUserId: ADMIN,
+  readAsScope: ImpersonationScope.Read,
+  readAsExpiresAtUtcMs: impersonationSessionFixture().expiresAtUtcMs,
+});
 
 function rig(
   sessions: readonly ImpersonationSession[],
@@ -87,7 +104,8 @@ const end = (
 ): EndImpersonationCommand => ({
   sessionId: SESSION,
   adminUserId: ADMIN,
-  adminRoles: [Role.Admin],
+  adminRoles: [Role.Sysadmin],
+  readAs: null,
   operationId: null,
   ...extra,
 });
@@ -125,7 +143,7 @@ describe('endImpersonation', () => {
           impersonationEndReason: ImpersonationEndReason.AdminEnded,
           endedByUserId: ADMIN,
         }),
-        auditCreateOf(ended, Actor.admin(ADMIN), null),
+        auditCreateOf(ended, Actor.forCaller(ADMIN, [Role.Sysadmin]), null),
       ],
     ]);
   });
@@ -218,7 +236,67 @@ describe('endImpersonation', () => {
     expect(tx.plans).toEqual([]);
   });
 
-  it('refuses no caller and a caller with no admin role with ZERO reads — the session untouched', async () => {
+  it('lets the read-as session end ITSELF under its own token — ended by the support account, credited as an impersonator (OR-24)', async () => {
+    const at = UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, 5 * 60_000);
+    const session = impersonationSessionFixture();
+    const { tx, run } = rig([session], at);
+    const answer = await run(
+      end({
+        adminUserId: TARGET,
+        adminRoles: [Role.Client],
+        readAs: readAsOf(),
+      }),
+    );
+    expect(answer).toEqual(
+      Result.ok({
+        sessionId: SESSION,
+        impersonationEndReason: ImpersonationEndReason.AdminEnded,
+      }),
+    );
+    const ended: ImpersonationSession = {
+      ...session,
+      impersonationStatus: ImpersonationStatus.Ended,
+      endedAtUtcMs: at,
+      ...EndReasonFields.adminEnded(ADMIN),
+    };
+    expect(tx.plans).toEqual([
+      [
+        WriteOp.set(PATH, {
+          ...bodyOf(session),
+          impersonationStatus: ImpersonationStatus.Ended,
+          endedAtUtcMs: at,
+          impersonationEndReason: ImpersonationEndReason.AdminEnded,
+          endedByUserId: ADMIN,
+        }),
+        auditCreateOf(
+          ended,
+          Actor.impersonator(ADMIN, TARGET, SESSION, ImpersonationScope.Read),
+          null,
+        ),
+      ],
+    ]);
+  });
+
+  it('refuses a read-as token ending ANOTHER session — with ZERO reads', async () => {
+    const { tx, run } = rig([impersonationSessionFixture()]);
+    expect(
+      await run(
+        end({
+          adminUserId: TARGET,
+          adminRoles: [Role.Client],
+          readAs: readAsOf(ImpersonationSessionId.of('imp-other')),
+        }),
+      ),
+    ).toEqual(
+      Result.err({
+        errorCode: GovernanceErrorCode.ImpersonationForbidden,
+        callerUserId: TARGET,
+      }),
+    );
+    expect(tx.transactions).toEqual([]);
+  });
+
+  it('refuses no caller and a caller with no support role — the shop’s admin included — with ZERO reads, the session untouched', async () => {
     const { store, tx, run } = rig([impersonationSessionFixture()]);
     const before = store.get(PATH.join('/'));
     expect(await run(end({ adminUserId: null }))).toEqual(
@@ -226,16 +304,18 @@ describe('endImpersonation', () => {
         errorCode: GovernanceErrorCode.ImpersonationUnauthenticated,
       }),
     );
-    expect(
-      await run(
-        end({ adminUserId: UserId.of('u-client'), adminRoles: [Role.Client] }),
-      ),
-    ).toEqual(
-      Result.err({
-        errorCode: GovernanceErrorCode.ImpersonationForbidden,
-        callerUserId: UserId.of('u-client'),
-      }),
-    );
+    for (const roles of [[Role.Client], [Role.Admin]]) {
+      expect(
+        await run(
+          end({ adminUserId: UserId.of('u-client'), adminRoles: roles }),
+        ),
+      ).toEqual(
+        Result.err({
+          errorCode: GovernanceErrorCode.ImpersonationForbidden,
+          callerUserId: UserId.of('u-client'),
+        }),
+      );
+    }
     expect(tx.transactions).toEqual([]);
     expect(store.get(PATH.join('/'))).toBe(before);
   });

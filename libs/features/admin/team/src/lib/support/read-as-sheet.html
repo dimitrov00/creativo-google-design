@@ -1,0 +1,66 @@
+<ng-container *transloco="let t">
+  <ui-modal-sheet
+    sheetId="read-as-sheet"
+    labelledBy="read-as-sheet-title"
+    [closeLabel]="t('admin.support.close')"
+    [open]="!uiClosing()"
+    [closing]="uiClosing()"
+    data-testid="read-as-sheet"
+    (dismissed)="dismissed.emit()"
+    (closeFinished)="closeFinished.emit()"
+  >
+    <span sheet-title
+      >{{ t('admin.support.sheetTitle', { name: uiName() }) }}</span
+    >
+
+    <div class="team-page__form">
+      <h2 id="read-as-sheet-title" uiSheetLargeTitle uiText uiFont="largeTitle">
+        {{ t('admin.support.sheetTitle', { name: uiName() }) }}
+      </h2>
+      <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
+        {{ t('admin.support.sheetLede') }}
+      </p>
+
+      @if (refusal(); as line) {
+      <ui-notice
+        uiTone="destructive"
+        uiAnnounce="polite"
+        data-testid="read-as-refusal"
+      >
+        {{ line }}
+      </ui-notice>
+      }
+
+      <label class="team-page__field">
+        <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+          >{{ t('admin.support.reason') }}</span
+        >
+        <textarea
+          uiTextField
+          uiControlSize="large"
+          rows="3"
+          data-testid="read-as-reason"
+          [placeholder]="t('admin.support.reasonPlaceholder')"
+          [readonly]="store.pending()"
+          [value]="reason()"
+          (input)="reason.set(typed($event))"
+        ></textarea>
+      </label>
+    </div>
+
+    <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        [uiSpread]="true"
+        [uiLoading]="store.pending()"
+        [disabled]="!canStart()"
+        data-testid="read-as-start"
+        (click)="start()"
+      >
+        {{ t('admin.support.start') }}
+      </button>
+    </ui-sheet-action-bar>
+  </ui-modal-sheet>
+</ng-container>

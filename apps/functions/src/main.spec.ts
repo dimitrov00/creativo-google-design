@@ -1523,23 +1523,23 @@ const FLIPPED: { readonly [name: string]: Case } = {
         reason: 'support ticket 42',
         expiresAtUtcMs: Date.UTC(2026, 9, 11, 8),
       },
-      OWNER,
+      SYSADMIN,
     ),
     command: {
-      adminUserId: 'u-owner',
-      adminRoles: ['barber', 'admin'],
+      adminUserId: 'u-admin',
+      adminRoles: ['sysadmin'],
       targetUserId: 'u-client',
       impersonationScope: 'READ',
       reason: 'support ticket 42',
       expiresAtUtcMs: Date.UTC(2026, 9, 11, 8),
     },
-    answer: ok({ sessionId: 'imp-1' }),
-    expected: { sessionId: 'imp-1' },
+    answer: ok({ sessionId: 'imp-1', customToken: 'read-as-token' }),
+    expected: { sessionId: 'imp-1', customToken: 'read-as-token' },
   },
   endImpersonation: {
     pipeline: 'endImpersonation',
-    input: request({ sessionId: 'imp-1' }, OWNER),
-    command: { sessionId: 'imp-1', adminUserId: 'u-owner' },
+    input: request({ sessionId: 'imp-1' }, SYSADMIN),
+    command: { sessionId: 'imp-1', adminUserId: 'u-admin', readAs: null },
     answer: ok({ sessionId: 'imp-1', impersonationEndReason: 'ADMIN_ENDED' }),
     expected: { sessionId: 'imp-1', impersonationEndReason: 'ADMIN_ENDED' },
   },
@@ -1962,12 +1962,54 @@ describe('main.ts — the composition root', () => {
       expect(seam.calls).toEqual([]);
     });
 
+    it('refuses a support read-as token on every closed callable while live, and on any callable past its window — before a pipeline runs (OR-24)', async () => {
+      const readAs = (impExp: number): CallableRequest<unknown> =>
+        ({
+          data: {},
+          auth: {
+            uid: 'u-client',
+            token: {
+              roles: ['client'],
+              imp: 'imp-1',
+              impBy: 'u-admin',
+              impScope: 'READ',
+              impExp,
+            },
+          },
+          rawRequest: {},
+          acceptsStreaming: false,
+        }) as unknown as CallableRequest<unknown>;
+      const live = readAs(Date.UTC(2999, 0, 1));
+      const over = readAs(Date.UTC(2000, 0, 1));
+      for (const name of ['updateProfile', 'commitBooking', 'setRoles']) {
+        const closed = await rejection(run(name, live));
+        expect(closed.code).toBe('permission-denied');
+        expect(closed.details).toEqual({
+          errorCode: 'GOVERNANCE_IMPERSONATION_READ_ONLY',
+        });
+      }
+      for (const name of ['listTeam', 'updateProfile']) {
+        const expired = await rejection(run(name, over));
+        expect(expired.code).toBe('unauthenticated');
+        expect(expired.details).toEqual({
+          errorCode: 'GOVERNANCE_IMPERSONATION_EXPIRED',
+        });
+      }
+      expect(seam.calls).toEqual([]);
+    });
+
     it('gates the impersonation callables and the roles change on the verified caller before the payload is read, and the invitation on a session', async () => {
       for (const name of ['startImpersonation', 'endImpersonation']) {
         const nobody = await rejection(run(name, request({}, null)));
         expect(nobody.code).toBe('unauthenticated');
         expect(nobody.details).toEqual({
           errorCode: 'GOVERNANCE_IMPERSONATION_UNAUTHENTICATED',
+        });
+        // The shop's owner too: support is the sysadmin's alone (ruling 2026-11-24).
+        const owner = await rejection(run(name, request({}, OWNER)));
+        expect(owner.code).toBe('permission-denied');
+        expect(owner.details).toEqual({
+          errorCode: 'GOVERNANCE_IMPERSONATION_FORBIDDEN',
         });
         const staff = await rejection(run(name, request({}, STAFF)));
         expect(staff.code).toBe('permission-denied');

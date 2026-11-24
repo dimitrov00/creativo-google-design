@@ -107,6 +107,17 @@ export const Roles = {
   ASSIGN: [Role.Admin],
 
   /**
+   * The roles that may open, end and run a SUPPORT READ-AS (OR-24, owner
+   * ruling 2026-11-24): the vendor's sysadmin alone. The shop's owner sees
+   * the shop through their own roles; stepping into a client's or a
+   * barber's account is support's tool, audited, never the owner's.
+   * CALLABLE-ONLY like `ASSIGN`: `impersonationSessions` takes no client
+   * write, so no rules helper twins it (`role.rules-parity.spec.ts` says
+   * so); the callables gate the token's claims against it.
+   */
+  SUPPORT: [Role.Sysadmin],
+
+  /**
    * The roles `setRoles` may grant or take away — every role but the
    * vendor's `sysadmin`, dictionary order (S-RU-14). CALLABLE-ONLY, as
    * {@link Roles.ASSIGN}.
@@ -190,6 +201,15 @@ export const Roles = {
    */
   handlesClientPrivacy(roles: readonly string[]): boolean {
     return anyIn(Roles.PRIVACY, roles);
+  },
+
+  /**
+   * Whether a role set may open or end a support read-as (`SUPPORT` — the
+   * sysadmin alone): both impersonation callables' gate and the «Виж като …»
+   * row's. Claims-tolerant like `mayBook`.
+   */
+  runsReadAs(roles: readonly string[]): boolean {
+    return anyIn(Roles.SUPPORT, roles);
   },
 
   /**

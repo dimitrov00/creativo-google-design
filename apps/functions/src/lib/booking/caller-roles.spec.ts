@@ -5,6 +5,7 @@ import { ActorRole, Roles } from '@core/components';
 import { helperRoles, rulesCode } from '@core/testing';
 import {
   callerActor,
+  callerReadAs,
   callerActorAsClaimed,
   callerIsAdmin,
   callerIsStaff,
@@ -237,5 +238,53 @@ describe('the two readings of the claim’s entries (§9 R6)', () => {
 
   it('name nobody without a verified caller', () => {
     expect(callerActorAsClaimed({})).toBeNull();
+  });
+});
+
+describe('callerReadAs / callerActor under a support read-as (OR-24)', () => {
+  const readAsToken = {
+    roles: ['client', 'admin'],
+    imp: 'imp-1',
+    impBy: 'u-vendor',
+    impScope: 'READ',
+    impExp: Date.UTC(2026, 10, 24, 10, 15),
+  };
+
+  it('reads the four claims off the verified token, and none off a plain one', () => {
+    expect(
+      callerReadAs({ auth: { uid: 'u-owner', token: readAsToken } }),
+    ).toEqual({
+      claimed: true,
+      claims: {
+        readAsSessionId: 'imp-1',
+        readAsByUserId: 'u-vendor',
+        readAsScope: 'READ',
+        readAsExpiresAtUtcMs: readAsToken.impExp,
+      },
+    });
+    expect(
+      callerReadAs({ auth: { uid: 'u-owner', token: { roles: ['admin'] } } }),
+    ).toEqual({ claimed: false, claims: null });
+    expect(callerReadAs({})).toEqual({ claimed: false, claims: null });
+  });
+
+  it('keeps a read-as whose claims do not read CLAIMED — the edge ends it, never reads it as a plain session', () => {
+    expect(
+      callerReadAs({
+        auth: { uid: 'u-owner', token: { ...readAsToken, impExp: 'soon' } },
+      }),
+    ).toEqual({ claimed: true, claims: null });
+  });
+
+  it('credits the act to the support account as an impersonator — never to the person read as', () => {
+    expect(
+      callerActor({ auth: { uid: 'u-owner', token: readAsToken } }),
+    ).toEqual({
+      actorRole: ActorRole.Impersonator,
+      actorAdminUserId: 'u-vendor',
+      actorTargetUserId: 'u-owner',
+      actorSessionId: 'imp-1',
+      actorScope: 'READ',
+    });
   });
 });

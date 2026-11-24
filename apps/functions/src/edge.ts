@@ -9,7 +9,7 @@ import {
   LogEvent,
   OperationId,
   PrimitiveErrorCode,
-  type Result,
+  Result,
   StaffCapability,
   StoredFields,
   Tag,
@@ -29,6 +29,7 @@ import {
   ClientIssueErrorCode,
   CompleteRegistrationRefusalCode,
   EngagementErrorCode,
+  GovernanceError,
   GovernanceErrorCode,
   HttpsStatus,
   IdentityErrorCode,
@@ -49,7 +50,7 @@ import {
   WaitlistErrorCode,
   WIRE_PARAM_ALLOWLIST,
 } from '@core/errors';
-import { AttemptOutcome } from '@core/components';
+import { AttemptOutcome, ReadAsClaims } from '@core/components';
 import {
   type AppCheckModePorts,
   CALLABLE_APP_CHECK_TOKEN,
@@ -72,7 +73,12 @@ import {
   WorkBudgetSystem,
 } from '@core/systems';
 import { appCheckFactsOf } from './lib/app-check';
-import { callerKnownRoles, callerUserId } from './lib/booking/caller-roles';
+import { CALLABLE_READ_AS_ACCESS, ReadAsAccess } from './lib/read-as-access';
+import {
+  callerKnownRoles,
+  callerReadAs,
+  callerUserId,
+} from './lib/booking/caller-roles';
 import { eventInstantOf, idOf, operationIdOf } from './wire/wire-read';
 
 /**
@@ -574,6 +580,14 @@ const GOVERNANCE_WIRE: WireTable<GovernanceErrorCode> = {
   [GovernanceErrorCode.ImpersonationTargetNotRegistered]: fields(
     S.FailedPrecondition,
   ),
+  // The support read-as (OR-24): a window past the cap or a scope with no
+  // token are the start's own refusals; a write under a read-as token and
+  // a call past its window are the edge's — the code alone, the session id
+  // stays on the server.
+  [GovernanceErrorCode.ImpersonationWindowTooLong]: fields(S.InvalidArgument),
+  [GovernanceErrorCode.ImpersonationScopeNotOffered]: fields(S.InvalidArgument),
+  [GovernanceErrorCode.ImpersonationReadOnly]: fields(S.PermissionDenied),
+  [GovernanceErrorCode.ImpersonationExpired]: fields(S.Unauthenticated),
   // The admin's roles change (security hardening S-WS-E, S-L-15): the
   // caller's gate, a malformed set, one's own account, a target that is
   // absent / unregistered / erased / the vendor's sysadmin — the code alone,
@@ -1224,6 +1238,32 @@ export type CallableSpec<N extends CallableName = CallableName> = {
 };
 
 /**
+ * THE READ-AS GATE (OR-24, docs/designs/support-read-as.md): `null` for a
+ * plain session; for a token that names a support read-as, the refusal —
+ * `GOVERNANCE_IMPERSONATION_EXPIRED` once its window is over (or when its
+ * claims do not read: a malformed claim is an ended read-as, never a plain
+ * session), `GOVERNANCE_IMPERSONATION_READ_ONLY` on a callable the table
+ * closes (`CALLABLE_READ_AS_ACCESS`). The rules hold the same two lines for
+ * the browser's own reads and writes.
+ */
+export function readAsRefusal(
+  callable: CallableName,
+  request: CallableRequest<unknown>,
+  nowUtcMs: UtcEpochMs,
+): GovernanceError | null {
+  const readAs = callerReadAs(request);
+  if (!readAs.claimed) return null;
+  const claims = readAs.claims;
+  if (claims === null || !ReadAsClaims.isLive(claims, nowUtcMs)) {
+    return GovernanceError.impersonationExpired();
+  }
+  // eslint-disable-next-line security/detect-object-injection -- `callable` is a closed `CallableName` literal and the table is total over it.
+  return CALLABLE_READ_AS_ACCESS[callable] === ReadAsAccess.Closed
+    ? GovernanceError.impersonationReadOnly(claims.readAsSessionId)
+    : null;
+}
+
+/**
  * A pipeline as a callable handler: `Result.ok` is the answer, every
  * `Result.err` is thrown as the table says, and an infrastructure throw is
  * tracked and answered as {@link unexpected} says. A callable that answers
@@ -1256,6 +1296,11 @@ export type CallableSpec<N extends CallableName = CallableName> = {
  * `failed-precondition`: a traced callable writes ONE `callable.refused`
  * line carrying the tag and never runs its handler; the untraced sink is
  * refused with no line (RU-24).
+ *
+ * **The read-as gate next (OR-24).** A token that names a support read-as
+ * is refused past its window, and on every callable the read-as table
+ * closes ({@link readAsRefusal}) — through the same outcome path, so the
+ * line names the refusal and its code; the handler never runs.
  */
 export const callableEdge =
   <In, Out>(
@@ -1274,6 +1319,14 @@ export const callableEdge =
       CALLABLE_APP_CHECK_TOKEN[spec.callable],
     );
     if (!spec.traced && !verdict.ok) throw toHttpsError(verdict.error);
+    // The read-as gate (OR-24), on the same footing as App Check: a refused
+    // call never reaches its handler.
+    const readAs = readAsRefusal(
+      spec.callable,
+      request as CallableRequest<unknown>,
+      ports.nowUtcMs(),
+    );
+    if (!spec.traced && readAs !== null) throw toHttpsError(readAs);
     const budget = workBudget(
       ports.nowUtcMs,
       WorkBudgetSystem.callableBudgetMs(
@@ -1292,9 +1345,11 @@ export const callableEdge =
     );
     // A refused request never reaches its handler: nothing decoded,
     // digested or run — the refusal settles through the same outcome path.
-    const run = verdict.ok
-      ? handle
-      : async (): Promise<Result<Out, EdgeError>> => verdict;
+    const run = !verdict.ok
+      ? async (): Promise<Result<Out, EdgeError>> => verdict
+      : readAs !== null
+        ? async (): Promise<Result<Out, EdgeError>> => Result.err(readAs)
+        : handle;
     return ports.bindLogContext(context, async () => {
       let inputDigest: string | null = null;
       const trace: CallTrace = {

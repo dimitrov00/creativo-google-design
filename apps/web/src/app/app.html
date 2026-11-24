@@ -1,1 +1,6 @@
 <router-outlet></router-outlet>
+<!-- The support read-as banner (OR-24): drawn only under a read-as token,
+     loaded once the app is idle so the first paint never waits on it. -->
+@defer (on idle) {
+<cr-read-as-banner />
+}

@@ -74,6 +74,8 @@ export class SiteHeaderComponent {
   protected readonly isStaffMember = this.identity.isStaffMember;
   /** The admin pair — the menu's «Лоялност» entry (client-card revision 3 §3.17). */
   protected readonly isAdmin = this.identity.isAdmin;
+  /** The menu's «Поддръжка» row — the vendor's support account (OR-24). */
+  protected readonly runsReadAs = this.identity.runsReadAs;
   /** The menu's «Анализи» row — whoever the `ANALYTICS` capability reaches. */
   protected readonly readsAnalytics = this.identity.readsAnalytics;
   /** The menu's «Екип» row — whoever the Team page opens for. */

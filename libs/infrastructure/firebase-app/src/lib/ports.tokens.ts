@@ -35,6 +35,8 @@ import type {
   PositionReadPorts,
   ProfilePorts,
   ProgramsPorts,
+  ReadAsCallPorts,
+  ReadAsSessionPorts,
   RolesAdminPorts,
   SchedulingReadPorts,
   ShopEventReadPorts,
@@ -248,6 +250,24 @@ export const CLIENT_PRIVACY_PORTS =
  */
 export const ROLES_ADMIN_PORTS = new InjectionToken<RolesAdminPorts>(
   'ROLES_ADMIN_PORTS',
+);
+
+/**
+ * The support read-as's two calls (`ReadAsCallPorts`, OR-24):
+ * `startImpersonation` and `endImpersonation`, over the callable client —
+ * the «Виж като …» sheet and the banner's «Край».
+ */
+export const READ_AS_CALL_PORTS = new InjectionToken<ReadAsCallPorts>(
+  'READ_AS_CALL_PORTS',
+);
+
+/**
+ * The support read-as's session facts (`ReadAsSessionPorts`, OR-24): the
+ * read-as claims off each ID token, and the sign-in with a read-as token —
+ * bound to `readAsSessionPorts(auth)`.
+ */
+export const READ_AS_SESSION_PORTS = new InjectionToken<ReadAsSessionPorts>(
+  'READ_AS_SESSION_PORTS',
 );
 
 /**

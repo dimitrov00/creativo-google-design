@@ -3,6 +3,7 @@ import type {
   AuthDeployment,
   Identifier,
   ParsedIdentifier,
+  ReadAsClaims,
 } from '@core/components';
 import type {
   CustomerId,
@@ -177,6 +178,19 @@ export type MintCustomToken = (
 ) => Promise<Result<string, PipelineError>>;
 
 /**
+ * A support READ-AS token (OR-24, docs/designs/support-read-as.md): a
+ * custom token whose `uid` is the TARGET, carrying the target's own
+ * `claims` and the four read-as claims beside them
+ * (`ReadAsClaims.toToken`), so the rules judge it as the target and tell it
+ * apart without a read.
+ */
+export type MintReadAsToken = (
+  uid: UserId,
+  claims: AuthClaims,
+  readAs: ReadAsClaims,
+) => Promise<Result<string, PipelineError>>;
+
+/**
  * The Auth user's display name — what the header/menu account monogram reads
  * through `AuthSessionPorts.currentDisplayName` (auth.port.ts; session-cached,
  * no Firestore read). `completeRegistration` calls it after the registered `Set` with
@@ -247,6 +261,11 @@ export type AuthUserLookupPorts = {
 
 /** An account by its sign-in destination, in Firestore and in Auth — two adapters, one suite. */
 export type UserDirectoryPorts = UserLookupPorts & AuthUserLookupPorts;
+
+/** The read-as token's mint — `startImpersonation`'s alone (`auth-claims.adapter.ts`). */
+export type ReadAsTokenPorts = {
+  readonly mintReadAsToken: MintReadAsToken;
+};
 
 /** Firebase Auth's admin writes — provision, token, display name (no role grant in Phase 4, 4A-14). */
 export type AuthAdminPorts = {

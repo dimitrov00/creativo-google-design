@@ -278,6 +278,21 @@ describe('SessionIdentityService', () => {
    * `STAFF_ROLES`, `isAdmin` the pair `admin | sysadmin` of `isAdmin()` in
    * firestore.rules (client-card revision 3 §3.17).
    */
+  describe('the support flag (OR-24)', () => {
+    it.each<[readonly string[], boolean]>([
+      [['sysadmin'], true],
+      [['admin'], false],
+      [['barber', 'admin'], false],
+      [['client'], false],
+    ])(
+      'reads %j as the vendor’s support account: %s — the shop’s admin is not',
+      (roles, expected) => {
+        const { service } = harness(active('user_1', roles));
+        expect(service.runsReadAs()).toBe(expected);
+      },
+    );
+  });
+
   describe('the role flags', () => {
     it.each(['admin', 'sysadmin'])(
       'reads %s as one of the admin pair — who is staff too',

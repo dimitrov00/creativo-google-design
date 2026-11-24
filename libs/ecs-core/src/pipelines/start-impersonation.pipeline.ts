@@ -1,6 +1,8 @@
 import {
   Actor,
   type GovernanceCall,
+  ImpersonationScope,
+  type ReadAsClaims,
   type Role,
   Roles,
   WriteOp,
@@ -29,19 +31,26 @@ import type {
   CommitPorts,
   HashPorts,
   IdPorts,
+  ReadAsTokenPorts,
   TelemetryPorts,
+  TenantPorts,
 } from '@core/ports';
-import { AuditSystem, ImpersonationSystem } from '@core/systems';
+import {
+  AuditSystem,
+  ImpersonationSystem,
+  RegistrationSystem,
+} from '@core/systems';
 
 /**
- * `startImpersonation` — an admin opens a time-bounded, audited session in
- * which they act as a user (blueprint §2.8; Phase 4a 4A-3 (4)). Since
- * Phase 4a the callables are the ONLY writers of `impersonationSessions`
- * (the rules refuse every client write), so the caller gate is today's
- * rule, `isAdmin()`, asked here BEFORE anything else: no verified caller →
+ * `startImpersonation` — SUPPORT opens a time-bounded, audited, read-only
+ * session in which it sees the app as a user (blueprint §2.8; Phase 4a
+ * 4A-3 (4); the read-as of OR-24, docs/designs/support-read-as.md). The
+ * callables are the ONLY writers of `impersonationSessions` (the rules
+ * refuse every client write), so the caller gate is asked here BEFORE
+ * anything else: no verified caller →
  * `GOVERNANCE_IMPERSONATION_UNAUTHENTICATED`, a caller whose verified roles
- * hold no admin role (`Roles.isAdmin`, `Roles.ADMIN`) →
- * `GOVERNANCE_IMPERSONATION_FORBIDDEN`. Then `ImpersonationSystem.start` —
+ * hold no support role (`Roles.runsReadAs`, `Roles.SUPPORT` — the sysadmin
+ * alone, owner ruling 2026-11-24) → `GOVERNANCE_IMPERSONATION_FORBIDDEN`. Then `ImpersonationSystem.start` —
  * the structural invariants (no self-impersonation, a reason, an expiry
  * after the start) and its own staff gate — over a minted id and the
  * server's clock; a refused start leaves as the FIRST of its faults, one
@@ -61,12 +70,23 @@ import { AuditSystem, ImpersonationSystem } from '@core/systems';
  * (`expiresAtUtcMs` + 30 d, runbook §2.1). Every governance refusal
  * logs the one `impersonation.start.refused` line with its code; a store
  * failure answers as the commit answers it.
+ *
+ * THE TOKEN. The commit hands back the target's stored account it judged;
+ * after it lands, the target's own claims (`RegistrationSystem.claimsFor`,
+ * the claims their own sign-in carries, on the tenant) and the four
+ * read-as claims are minted into ONE custom token whose uid is the target
+ * (`mintReadAsToken`). Minting after the commit is deliberate: a session
+ * row with no token is harmless — nothing can sign in with it, and it
+ * expires — while a token with no row would be an unaudited session. Auth
+ * failing to mint answers as the port answers it.
  */
 
 export type StartImpersonationPorts = CommitPorts &
   ClockPorts &
   IdPorts &
   HashPorts &
+  TenantPorts &
+  ReadAsTokenPorts &
   TelemetryPorts;
 
 /** The call (`GovernanceCall`) & the verified caller — never the payload's. */
@@ -82,7 +102,7 @@ export type StartImpersonationCommand = GovernanceCall & {
   readonly operationId: OperationId | null;
 };
 
-/** The caller as both impersonation callables gate it — a verified admin, or the refusal. */
+/** The caller as both impersonation callables gate it — the verified support account, or the refusal. */
 export function admitImpersonationCaller(
   adminUserId: UserId | null,
   adminRoles: readonly Role[],
@@ -90,7 +110,7 @@ export function admitImpersonationCaller(
   if (adminUserId === null) {
     return Result.err(GovernanceError.impersonationUnauthenticated());
   }
-  return Roles.isAdmin(adminRoles)
+  return Roles.runsReadAs(adminRoles)
     ? Result.ok(adminUserId)
     : Result.err(GovernanceError.impersonationForbidden(adminUserId));
 }
@@ -131,18 +151,24 @@ export const startImpersonation =
     }
     const session: ImpersonationSession = started.value;
     const { id, ...body } = session;
+    const tenant = await ports.loadTenant();
+    if (!tenant.ok) return tenant;
     const actor = Actor.forCaller(admitted.value, cmd.adminRoles);
     const committed = await ports.commit(
       (tx) => tx.get<User>([Collections.Users, session.targetUserId]),
       (
         stored,
-      ): Result<{ readonly writes: readonly WriteOp[] }, GovernanceError> => {
+      ): Result<
+        { readonly target: User; readonly writes: readonly WriteOp[] },
+        GovernanceError
+      > => {
         const target = ImpersonationSystem.admitTarget(
           stored,
           session.targetUserId,
         );
         if (!target.ok) return target;
         return Result.ok({
+          target: target.value,
           writes: [
             WriteOp.create(impersonationSessionPath(id), body),
             ...AuditSystem.createsOf(
@@ -172,5 +198,22 @@ export const startImpersonation =
       adminUserId: session.adminUserId,
       targetUserId: session.targetUserId,
     });
-    return Result.ok({ sessionId: id });
+    const target = committed.value.target;
+    const readAs: ReadAsClaims = {
+      readAsSessionId: id,
+      readAsByUserId: session.adminUserId,
+      readAsScope: ImpersonationScope.Read,
+      readAsExpiresAtUtcMs: session.expiresAtUtcMs,
+    };
+    const customToken = await ports.mintReadAsToken(
+      session.targetUserId,
+      RegistrationSystem.claimsFor(
+        target.registrationState,
+        target.roles,
+        tenant.value,
+      ),
+      readAs,
+    );
+    if (!customToken.ok) return customToken;
+    return Result.ok({ sessionId: id, customToken: customToken.value });
   };

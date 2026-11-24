@@ -1,0 +1,48 @@
+<ng-container *transloco="let t">
+  <cr-site-header [uiOverHero]="false" />
+  <main
+    uiFrame
+    [uiFrameMaxWidth]="'var(--sys-container-content)'"
+    uiPaddingHorizontal="regular"
+    class="support-page__main"
+  >
+    <ui-stack uiSpacing="comfortable" uiAlignment="leading">
+      <h1 uiText uiFont="largeTitle">{{ t('admin.support.title') }}</h1>
+      <p uiText uiFont="body" uiForegroundStyle="secondary">
+        {{ t('admin.support.lede') }}
+      </p>
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiControlSize="large"
+        data-testid="support-find"
+        (click)="openLookup()"
+      >
+        {{ t('admin.support.find') }}
+      </button>
+    </ui-stack>
+  </main>
+
+  @if (lookupOpen()) {
+  <lib-account-pick-sheet
+    uiSheetId="support-lookup"
+    [uiTitle]="t('admin.support.lookupTitle')"
+    [uiVm]="lookupVm()"
+    [uiSearching]="lookup.searching()"
+    [uiClosing]="lookupClosing()"
+    (queried)="lookup.ask($event)"
+    (picked)="pick($event)"
+    (dismissed)="lookupClosing.set(true)"
+    (closeFinished)="lookupClosed()"
+  />
+  } @else if (target(); as who) {
+  <lib-read-as-sheet
+    [uiUserId]="who.userId"
+    [uiName]="who.name"
+    [uiClosing]="sheetClosing()"
+    (dismissed)="sheetClosing.set(true)"
+    (closeFinished)="sheetClosed()"
+  />
+  }
+</ng-container>
