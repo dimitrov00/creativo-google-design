@@ -115,6 +115,44 @@ describe('ImpersonationSystem.start', () => {
     ).toBe(false);
   });
 
+  it('offers READ alone — a WRITE start is refused, as no token is minted for it (OR-24)', () => {
+    expect(
+      codesOf(
+        ImpersonationSystem.start(
+          startProps({ impersonationScope: ImpersonationScope.Write }),
+        ),
+      ),
+    ).toEqual(['GOVERNANCE_IMPERSONATION_SCOPE_NOT_OFFERED']);
+  });
+
+  it('caps the window at MAX_WINDOW_MINUTES from the start — exactly 15 is allowed, a millisecond past it is not', () => {
+    expect(ImpersonationSystem.MAX_WINDOW_MINUTES).toBe(15);
+    expect(
+      ImpersonationSystem.start(startProps({ expiresAtUtcMs: at(15) })).ok,
+    ).toBe(true);
+    expect(
+      unwrapErr(
+        ImpersonationSystem.start(
+          startProps({ expiresAtUtcMs: UtcEpochMs.plusMs(at(15), 1) }),
+        ),
+      ),
+    ).toEqual([{ errorCode: 'GOVERNANCE_IMPERSONATION_WINDOW_TOO_LONG' }]);
+  });
+
+  it('asks the read-as rules only of a sound, staff request — structural faults still come first', () => {
+    expect(
+      codesOf(
+        ImpersonationSystem.start(
+          startProps({
+            reason: ' ',
+            impersonationScope: ImpersonationScope.Write,
+            expiresAtUtcMs: at(60),
+          }),
+        ),
+      ),
+    ).toEqual(['GOVERNANCE_IMPERSONATION_SESSION_REASON_REQUIRED']);
+  });
+
   it('rejects an invalid scope — at its edge, before start', () => {
     expect(unwrapErr(ImpersonationLifecycle.parseScope('full'))).toEqual({
       errorCode: GovernanceErrorCode.ImpersonationScopeInvalid,
@@ -172,12 +210,7 @@ describe('ImpersonationSystem.start', () => {
 
 function activeSession(): ImpersonationSession {
   return unwrapOk(
-    ImpersonationSystem.start(
-      startProps({
-        impersonationScope: ImpersonationScope.Write,
-        reason: 'fixing broken booking',
-      }),
-    ),
+    ImpersonationSystem.start(startProps({ reason: 'fixing broken booking' })),
   );
 }
 
@@ -299,7 +332,7 @@ describe('ImpersonationSystem — the use cases (start/end-impersonation.use-cas
       id: 'sess-1',
       adminUserId: 'admin-1',
       targetUserId: 'user-1',
-      impersonationScope: 'WRITE',
+      impersonationScope: 'READ',
       reason: 'fixing broken booking',
       startedAtUtcMs: STARTED,
       expiresAtUtcMs: EXPIRES,

@@ -1,0 +1,59 @@
+/* A pill at the top centre, over every page's own chrome (the banner rung,
+   above the header): the system's way of saying a session is not what it
+   seems — the call-in-progress pill, not a bar that pushes the page. The
+   caution wash is a shape (the accent law: colour is a shape, words are
+   ink); the dot is the sign. */
+:host {
+  position: fixed;
+  inset-block-start: max(var(--sys-space-compact), env(safe-area-inset-top));
+  inset-inline: 0;
+  z-index: var(--sys-layer-banner);
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.cr-read-as {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sys-space-compact);
+  max-inline-size: calc(100vw - 2 * var(--sys-space-regular));
+  padding-block: var(--sys-space-tight);
+  padding-inline: var(--sys-space-regular) var(--sys-space-tight);
+  border-radius: 999px;
+  background: color-mix(
+    in srgb,
+    var(--sys-color-caution) var(--sys-alpha-tint),
+    var(--sys-color-surface-elevated)
+  );
+  color: var(--sys-color-foreground);
+  box-shadow: var(--sys-elevation-overlay);
+}
+
+.cr-read-as__dot {
+  flex: none;
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: 50%;
+  background: var(--sys-color-caution);
+}
+
+.cr-read-as__text {
+  display: flex;
+  flex-direction: column;
+  min-inline-size: 0;
+  font: var(--sys-font-footnote);
+  font-variant-numeric: tabular-nums;
+}
+
+.cr-read-as__title {
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cr-read-as__until {
+  color: var(--sys-color-secondary-label);
+}

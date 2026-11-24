@@ -286,6 +286,18 @@ export const appRoutes: Route[] = [
       import('@creativo/features/admin/loyalty').then((m) => m.AdminRhythm),
   },
   {
+    // «Поддръжка» — support's read-as page (OR-24, docs/designs/
+    // support-read-as.md): the vendor's sysadmin alone (`Roles.SUPPORT`,
+    // owner ruling 2026-11-24), the same list both impersonation callables
+    // gate on. The callables judge the token again.
+    path: 'support',
+    canActivate: [activeGuard, rolesGuard(...Roles.SUPPORT)],
+    loadComponent: () =>
+      import('@creativo/features/admin/team/support').then(
+        (m) => m.SupportPage,
+      ),
+  },
+  {
     path: 'forbidden',
     loadComponent: () =>
       import('./pages/forbidden.page').then((m) => m.ForbiddenPage),

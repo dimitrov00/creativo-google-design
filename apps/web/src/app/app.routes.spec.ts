@@ -125,6 +125,26 @@ describe('appRoutes — /account/notifications (OR-19)', () => {
  * The Team page is behind the capabilities that open it; «Права» is the
  * owner's alone, as its save is.
  */
+describe('appRoutes — /support (OR-24)', () => {
+  afterEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  const staff = (role: Role) =>
+    principalFixture.staff(UserId.of(`staff-${role}`), [role]);
+
+  /** `Roles.SUPPORT`: the vendor's sysadmin alone (owner ruling 2026-11-24). */
+  test('the sysadmin opens support’s read-as page; the shop’s admin and everyone else do not', async () => {
+    expect(await landingOf(staff(Role.Sysadmin), '/support')).toBe('/support');
+    for (const role of [Role.Admin, Role.Barber, Role.Receptionist]) {
+      expect(await landingOf(staff(role), '/support')).toBe('/forbidden');
+    }
+    expect(await landingOf(principalFixture.client(), '/support')).toBe(
+      '/forbidden',
+    );
+  });
+});
+
 describe('appRoutes — /admin/team', () => {
   afterEach(() => {
     TestBed.resetTestingModule();

@@ -32,7 +32,8 @@ import { Roles } from './roles.data';
  * `barbers` and `services` take no client write), and `Roles.ROSTERS` (the
  * front desk and the owners — any barber's hours; a barber's own go by the
  * account's link, which no rule can read; `barberSchedules` takes no
- * client write).
+ * client write), and `Roles.SUPPORT` (the sysadmin alone — the support
+ * read-as, OR-24; `impersonationSessions` takes no client write).
  *
  * The reader is `@core/testing`'s `rules-text.ts` — the one every
  * rules-text spec parses the file with (its own cases sit beside it).
@@ -99,10 +100,15 @@ describe('role.data.ts and firestore.rules agree', () => {
     expect(sorted(twin.roles), twin.source).toEqual(sorted(Roles.MONEY));
   });
 
-  it('SPEND_ROLES is the read grant of clientStats/{id}/restricted (the spend)', () => {
-    expect(
-      sorted(listRoles(RULES, ownStatements(RULES, '/restricted/{docId}'))),
-    ).toEqual(sorted(Roles.SPEND));
+  it('SPEND_ROLES is readsSpend(), the read grant of clientStats/{id}/restricted (the spend) — beside the read-as wall', () => {
+    expect(sorted(helperRoles(RULES, 'readsSpend'))).toEqual(
+      sorted(Roles.SPEND),
+    );
+    // The grant is that helper and nothing wider, and a support read-as of
+    // the admin is kept out (owner ruling 2026-11-24, OR-24).
+    expect(ownStatements(RULES, '/restricted/{docId}')).toMatch(
+      /allow read: if readsSpend\(\) && notReadAs\(\);/,
+    );
   });
 
   it('every role the rules name is a Role', () => {

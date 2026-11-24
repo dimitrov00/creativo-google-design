@@ -1,11 +1,12 @@
 import type { Auth } from 'firebase-admin/auth';
 import { IdentifierChannel, Result, UserId } from '@core/primitives';
 import { PipelineError, PipelineErrorCode } from '@core/errors';
-import { AttemptOutcome, AuthClaims } from '@core/components';
+import { AttemptOutcome, AuthClaims, ReadAsClaims } from '@core/components';
 import type {
   AuthAdminPorts,
   AuthSessionRevokePorts,
   AuthUserLookupPorts,
+  ReadAsTokenPorts,
 } from '@core/ports';
 import { FailureCodeSystem, TriggerAttemptSystem } from '@core/systems';
 
@@ -113,6 +114,29 @@ export const authClaimsPorts = (
       return authCodeOf(error) === AuthRefusal.UserNotFound
         ? Result.ok(null)
         : Result.err(authFailure(error));
+    }
+  },
+});
+
+/**
+ * The support read-as token (`ReadAsTokenPorts`, OR-24): a custom token for
+ * the TARGET's uid carrying the target's own claims and the four read-as
+ * claims beside them — the one place the two bags are joined, each spelled
+ * by its own `toToken`. Firebase keeps a custom token's claims on every ID
+ * token of the session it starts, so the rules and the edge read them
+ * without a lookup; `impExp` is what ends it (docs/designs/support-read-as.md).
+ */
+export const readAsTokenPorts = (auth: Auth): ReadAsTokenPorts => ({
+  mintReadAsToken: async (uid, claims, readAs) => {
+    try {
+      return Result.ok(
+        await auth.createCustomToken(uid, {
+          ...AuthClaims.toToken(claims),
+          ...ReadAsClaims.toToken(readAs),
+        }),
+      );
+    } catch (error) {
+      return Result.err(authFailure(error));
     }
   },
 });

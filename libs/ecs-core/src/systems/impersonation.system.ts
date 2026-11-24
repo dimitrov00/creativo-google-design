@@ -7,7 +7,7 @@ import {
 import { GovernanceError } from '@core/errors';
 import {
   AccountLifecycle,
-  type ImpersonationScope,
+  ImpersonationScope,
   EndReasonFields,
   ImpersonationLifecycle,
   Registration,
@@ -81,7 +81,15 @@ function metaOf<S extends ImpersonationSessionMeta>(
   };
 }
 
+/** The longest a support read-as may run (OR-24: a token of at most 15 minutes). */
+const MAX_WINDOW_MINUTES = 15;
+/** The same window as an elapsed duration, for `UtcEpochMs.plusMs`. */
+const MAX_WINDOW_MS = MAX_WINDOW_MINUTES * 60_000;
+
 export const ImpersonationSystem = {
+  /** The longest window a start may ask for, in minutes — the read-as's cap. */
+  MAX_WINDOW_MINUTES,
+
   /**
    * Every structural refusal at once, in the legacy order: self-
    * impersonation, a blank reason, an expiry not strictly after the start.
@@ -107,7 +115,13 @@ export const ImpersonationSystem = {
    * A new active session, the reason trimmed. Structural faults come first
    * and alone — the staff gate
    * (`GOVERNANCE_IMPERSONATION_SESSION_ADMIN_NOT_STAFF`) is asked only of a
-   * structurally sound request.
+   * structurally sound request. Then the read-as's own two rules (OR-24,
+   * docs/designs/support-read-as.md): only a `READ` session is offered —
+   * no token is minted for any other, so none is opened
+   * (`GOVERNANCE_IMPERSONATION_SCOPE_NOT_OFFERED`) — and its window runs at
+   * most {@link MAX_WINDOW_MINUTES} from the start
+   * (`GOVERNANCE_IMPERSONATION_WINDOW_TOO_LONG`). Creation-time rules only:
+   * a stored session is never re-judged by them.
    */
   start(
     request: StartImpersonation,
@@ -118,6 +132,17 @@ export const ImpersonationSystem = {
       return Result.err([
         GovernanceError.impersonationAdminNotStaff(request.adminUserId),
       ]);
+    }
+    if (request.impersonationScope !== ImpersonationScope.Read) {
+      return Result.err([GovernanceError.impersonationScopeNotOffered()]);
+    }
+    if (
+      UtcEpochMs.compare(
+        request.expiresAtUtcMs,
+        UtcEpochMs.plusMs(request.startedAtUtcMs, MAX_WINDOW_MS),
+      ) > 0
+    ) {
+      return Result.err([GovernanceError.impersonationWindowTooLong()]);
     }
     return Result.ok({
       id: request.id,

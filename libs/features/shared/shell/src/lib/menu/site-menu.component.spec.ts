@@ -107,6 +107,7 @@ const bg: Translation = {
       staffAnalytics: 'Анализи',
       ownProfile: 'Моят профил',
       team: 'Екип',
+      support: 'Поддръжка',
     },
     hero: { cta: 'Запази час' },
     footer: {
@@ -151,6 +152,8 @@ describe('SiteMenuComponent', () => {
     readsAnalytics?: boolean;
     /** Whoever the Team page opens for — surfaces the «Екип» row. */
     opensTeam?: boolean;
+    /** The vendor's support account — surfaces «Поддръжка». */
+    runsReadAs?: boolean;
     /** A linked barber whose own page opens — surfaces «Моят профил». */
     opensOwnProfile?: boolean;
     /** The account's live bookings — the bookings row counts those still to come. */
@@ -268,6 +271,9 @@ describe('SiteMenuComponent', () => {
     }
     if (inputs.opensTeam !== undefined) {
       fixture.componentRef.setInput('opensTeam', inputs.opensTeam);
+    }
+    if (inputs.runsReadAs !== undefined) {
+      fixture.componentRef.setInput('runsReadAs', inputs.runsReadAs);
     }
     if (inputs.opensOwnProfile !== undefined) {
       fixture.componentRef.setInput('opensOwnProfile', inputs.opensOwnProfile);
@@ -986,6 +992,40 @@ describe('SiteMenuComponent', () => {
       expect(
         host.querySelector('[data-testid="menu-admin-loyalty"]'),
       ).toBeNull();
+    });
+  });
+
+  describe('the support row', () => {
+    it('is absent for anyone but the support account — the owner included', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+        isAdmin: true,
+      });
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="menu-support"]'),
+      ).toBeNull();
+    });
+
+    /** Support's one door to the read-as page (OR-24): the sysadmin opens no Team page. */
+    it('leads the support account to /support as «Поддръжка», in the group of what one manages', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+        runsReadAs: true,
+      });
+      const row = fixture.nativeElement.querySelector(
+        '[data-testid="menu-support"]',
+      ) as HTMLAnchorElement | null;
+      expect(row?.tagName).toBe('A');
+      expect(row?.getAttribute('href')).toBe('/support');
+      expect(row?.textContent).toContain('Поддръжка');
+      expect(row?.firstElementChild?.getAttribute('uiname')).toBe(
+        'admin.support',
+      );
+      expect(row?.closest('ui-list-group')).not.toBeNull();
     });
   });
 

@@ -2,6 +2,7 @@ import {
   Actor,
   type GovernanceCall,
   ImpersonationStatus,
+  type ReadAsClaims,
   type Role,
   WriteOp,
 } from '@core/components';
@@ -27,12 +28,18 @@ import {
 } from './start-impersonation.pipeline';
 
 /**
- * `endImpersonation` — an admin closes a session (blueprint §2.8; Phase 4a
- * 4A-3 (4)), on the SAME caller gate as the start, asked BEFORE any read:
- * no verified caller → `GOVERNANCE_IMPERSONATION_UNAUTHENTICATED`, no admin
- * role → `GOVERNANCE_IMPERSONATION_FORBIDDEN` (`ImpersonationSystem.endByAdmin`
- * checks neither roles nor ownership, so without the gate any signed-in
- * caller holding a session id could end an admin's session). Then ONE
+ * `endImpersonation` — support closes a session (blueprint §2.8; Phase 4a
+ * 4A-3 (4)), asked BEFORE any read, by one of two callers:
+ * - the support account from its own session, on the SAME gate as the
+ *   start: no verified caller → `GOVERNANCE_IMPERSONATION_UNAUTHENTICATED`,
+ *   no support role → `GOVERNANCE_IMPERSONATION_FORBIDDEN`;
+ * - the read-as session itself (its «Край», OR-24), under its own token —
+ *   it may end THAT session and no other (another id →
+ *   `GOVERNANCE_IMPERSONATION_FORBIDDEN`), credited to the support account
+ *   the token names, as `Actor.impersonator`.
+ * (`ImpersonationSystem.endByAdmin` checks neither roles nor ownership, so
+ * without the gate any signed-in caller holding a session id could end a
+ * session.) Then ONE
  * transaction reads the session by id — absent →
  * `GOVERNANCE_END_IMPERSONATION_NOT_FOUND` — and `endByAdmin` ends it on the
  * server's clock: `EXPIRED` when its window had lapsed, `ADMIN_ENDED` by the
@@ -61,11 +68,55 @@ export type EndImpersonationCommand = GovernanceCall.End & {
   /** The verified token's roles. */
   readonly adminRoles: readonly Role[];
   /**
+   * The verified token's read-as claims (`ReadAsClaims.fromToken`) — `null`
+   * on a plain session. Under a read-as the uid is the TARGET's.
+   */
+  readonly readAs: ReadAsClaims | null;
+  /**
    * The call's transport operation id (WS-4.1, RU-21) — optional on the
    * wire: absent or malformed is `null`, never refused.
    */
   readonly operationId: OperationId | null;
 };
+
+/** Who ends the session, and how the audit row credits them. */
+type EndCaller = { readonly endedBy: UserId; readonly actor: Actor };
+
+/**
+ * The end's caller: a read-as session ending ITSELF (credited to the
+ * support account its token names, as an impersonator), or the support
+ * account through {@link admitImpersonationCaller}.
+ */
+export function admitEndCaller(
+  cmd: EndImpersonationCommand,
+): Result<EndCaller, GovernanceError> {
+  const readAs = cmd.readAs;
+  if (readAs !== null) {
+    if (cmd.adminUserId === null) {
+      return Result.err(GovernanceError.impersonationUnauthenticated());
+    }
+    if (readAs.readAsSessionId !== cmd.sessionId) {
+      return Result.err(
+        GovernanceError.impersonationForbidden(cmd.adminUserId),
+      );
+    }
+    return Result.ok({
+      endedBy: readAs.readAsByUserId,
+      actor: Actor.impersonator(
+        readAs.readAsByUserId,
+        cmd.adminUserId,
+        readAs.readAsSessionId,
+        readAs.readAsScope,
+      ),
+    });
+  }
+  const admitted = admitImpersonationCaller(cmd.adminUserId, cmd.adminRoles);
+  if (!admitted.ok) return admitted;
+  return Result.ok({
+    endedBy: admitted.value,
+    actor: Actor.forCaller(admitted.value, cmd.adminRoles),
+  });
+}
 
 /** The answer and its one write. */
 type Ended = GovernanceCall.Ended & { readonly writes: readonly WriteOp[] };
@@ -75,15 +126,14 @@ export const endImpersonation =
   async (
     cmd: EndImpersonationCommand,
   ): Promise<Result<GovernanceCall.Ended, EndImpersonationError>> => {
-    const admitted = admitImpersonationCaller(cmd.adminUserId, cmd.adminRoles);
+    const admitted = admitEndCaller(cmd);
     if (!admitted.ok) {
       ports.log('info', LogEvent.ImpersonationEndRefused, {
         errorCode: admitted.error.errorCode,
       });
       return admitted;
     }
-    const endedBy = admitted.value;
-    const actor = Actor.forCaller(endedBy, cmd.adminRoles);
+    const { endedBy, actor } = admitted.value;
     // Read once, before the transaction: `decide` may run more than once.
     const nowUtcMs = ports.nowUtcMs();
     const path = impersonationSessionPath(cmd.sessionId);

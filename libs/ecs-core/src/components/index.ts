@@ -213,6 +213,7 @@ export * from './program-status.data';
 export * from './public-label.data';
 export * from './punch-card.data';
 export * from './qualifier-comparison.data';
+export * from './read-as-claims.data';
 export * from './recurrence-end-rule.data';
 export * from './recurrence-pattern.data';
 export * from './recurrence-rule.data';

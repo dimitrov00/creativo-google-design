@@ -23,7 +23,9 @@ import { endImpersonation, startImpersonation } from '@core/pipelines';
 import {
   bodyOf,
   FIXTURE_NOW_UTC_MS,
+  fixedTenantPorts,
   pinnedNowUtcMs,
+  recordingReadAsTokenPorts,
   recordingTelemetry,
   registeredUserFixture,
 } from '@core/testing';
@@ -39,8 +41,11 @@ import { firestoreCommitPlan } from '../adapters/firestore-tx.adapter';
  * the end + 30 days (an `Update` would have kept the expiry's); a session
  * nobody holds is refused, nothing written. Since audit-hardening WS-3
  * (DEP-12) each start and each end also CREATES its audit row in the same
- * commit — credited to the admin, targeted at the impersonated user, on the
- * session's resource, never carrying the reason; the refusal writes none.
+ * commit — credited to the support account, targeted at the impersonated
+ * user, on the session's resource, never carrying the reason; the refusal
+ * writes none. Since OR-24's read-as only the sysadmin may run one, for at
+ * most 15 minutes, and a start answers the read-as token minted after its
+ * commit.
  * Since security hardening S-DEP-3 a start reads `users/{target}` in its
  * commit, so each start case seeds the target's account after the clear;
  * an ERASED target writes no session and no audit row.
@@ -56,7 +61,7 @@ if (!FIRESTORE_HOST.includes('127.0.0.1')) {
 }
 
 const DAY_MS = 86_400_000;
-const OWNER = UserId.of('u-owner');
+const SUPPORT = UserId.of('u-support');
 const CLIENT = UserId.of('u-client');
 const SESSION = ImpersonationSessionId.of('imp-1');
 
@@ -67,7 +72,8 @@ function after(ms: number): UtcEpochMs {
   return instant.value;
 }
 
-const EXPIRES = after(3_600_000);
+/** Fourteen minutes on — what the web asks for, a minute under the cap. */
+const EXPIRES = after(14 * 60_000);
 const ENDED = after(600_000);
 
 describe('startImpersonation / endImpersonation (emulator)', () => {
@@ -102,6 +108,8 @@ describe('startImpersonation / endImpersonation (emulator)', () => {
       nowUtcMs: pinnedNowUtcMs(nowUtcMs),
       nextId: () => SESSION,
       hash: sha256Hex,
+      ...fixedTenantPorts(),
+      ...recordingReadAsTokenPorts(),
       ...telemetry,
     };
   };
@@ -116,7 +124,7 @@ describe('startImpersonation / endImpersonation (emulator)', () => {
     );
   /** What every row of this session names: who, about whom, on what. */
   const SESSION_ROW = {
-    ...Actor.admin(OWNER),
+    ...Actor.forCaller(SUPPORT, [Role.Sysadmin]),
     ...AuditTargetRef.user(CLIENT),
     resourceId: AuditResourceId.forImpersonationSession(SESSION),
     impersonationSessionId: SESSION,
@@ -136,8 +144,8 @@ describe('startImpersonation / endImpersonation (emulator)', () => {
 
   const start = () =>
     startImpersonation(ports())({
-      adminUserId: OWNER,
-      adminRoles: [Role.Admin],
+      adminUserId: SUPPORT,
+      adminRoles: [Role.Sysadmin],
       targetUserId: CLIENT,
       impersonationScope: ImpersonationScope.Read,
       reason: 'support ticket 42',
@@ -148,10 +156,13 @@ describe('startImpersonation / endImpersonation (emulator)', () => {
 
   it('starts ONE session, stamped to purge 30 days after its expiry', async () => {
     await seedTarget();
-    expect(await start()).toEqual({ ok: true, value: { sessionId: SESSION } });
+    expect(await start()).toEqual({
+      ok: true,
+      value: { sessionId: SESSION, customToken: `read-as:${CLIENT}:1` },
+    });
     const body = await stored();
     expect(body).toMatchObject({
-      adminUserId: OWNER,
+      adminUserId: SUPPORT,
       targetUserId: CLIENT,
       startedAtUtcMs: FIXTURE_NOW_UTC_MS,
       expiresAtUtcMs: EXPIRES,
@@ -175,8 +186,9 @@ describe('startImpersonation / endImpersonation (emulator)', () => {
     expect(
       await endImpersonation(ports(ENDED))({
         sessionId: SESSION,
-        adminUserId: OWNER,
-        adminRoles: [Role.Admin],
+        adminUserId: SUPPORT,
+        adminRoles: [Role.Sysadmin],
+        readAs: null,
         operationId: null,
       }),
     ).toEqual({
@@ -220,8 +232,9 @@ describe('startImpersonation / endImpersonation (emulator)', () => {
   it('refuses a session nobody holds, and writes nothing', async () => {
     const answer = await endImpersonation(ports(ENDED))({
       sessionId: SESSION,
-      adminUserId: OWNER,
-      adminRoles: [Role.Admin],
+      adminUserId: SUPPORT,
+      adminRoles: [Role.Sysadmin],
+      readAs: null,
       operationId: null,
     });
     expect(!answer.ok && answer.error.errorCode).toBe(

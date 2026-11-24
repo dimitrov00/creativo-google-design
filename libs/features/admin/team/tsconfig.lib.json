@@ -30,10 +30,13 @@
   ],
   "references": [
     {
+      "path": "../../../infrastructure/i18n/tsconfig.lib.json"
+    },
+    {
       "path": "../../../infrastructure/storage/tsconfig.lib.json"
     },
     {
-      "path": "../../../infrastructure/i18n/tsconfig.lib.json"
+      "path": "../../shared/shell/tsconfig.lib.json"
     },
     {
       "path": "../../../ui/wall-clock/tsconfig.lib.json"
@@ -51,9 +54,6 @@
       "path": "../../client/account-state/tsconfig.lib.json"
     },
     {
-      "path": "../../../ui/icons/tsconfig.lib.json"
-    },
-    {
       "path": "../../../ui/patterns/tsconfig.lib.json"
     },
     {
@@ -61,6 +61,9 @@
     },
     {
       "path": "../../../ui/layout/tsconfig.lib.json"
+    },
+    {
+      "path": "../../../ui/icons/tsconfig.lib.json"
     },
     {
       "path": "../../../ui/controls/tsconfig.lib.json"

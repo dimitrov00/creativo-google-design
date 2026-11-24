@@ -11,7 +11,7 @@ import {
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { TranslocoService } from '@jsverse/transloco';
-import type { Subscription } from 'rxjs';
+import { of, type Subscription } from 'rxjs';
 import type {
   Appointment,
   AppointmentPhoto,
@@ -92,6 +92,7 @@ import {
   LOYALTY_ACCOUNT_READ_PORTS,
   LOYALTY_CATALOG_READ_PORTS,
   PROFILE_PORTS,
+  READ_AS_SESSION_PORTS,
   ROLES_ADMIN_PORTS,
   ShopZoneService,
   WAITLIST_READ_PORTS,
@@ -433,6 +434,16 @@ export class ClientCardStore {
   /** The browser's clock (`CLOCK_PORTS`): «now» is read once per `open`. */
   private readonly clock = inject(CLOCK_PORTS);
   /**
+   * A support read-as (OR-24): the owner's walls hold inside it (ruling
+   * 2026-11-24) — the client's own words stay off the card and the spend is
+   * never asked for, whatever roles the target holds. Unbound reads as none.
+   */
+  private readonly readingAs = toSignal(
+    inject(READ_AS_SESSION_PORTS, { optional: true })?.observeReadAs() ??
+      of(null),
+    { initialValue: null },
+  );
+  /**
    * The shop's zone (Law 7.2, Phase 4a 4A-11): no location is in the card's
    * scope, so it is the deployment's default location's — read once per
    * session and cached. `null` until it resolves: the head is the seat's
@@ -765,8 +776,10 @@ export class ClientCardStore {
       now: this.shopNow(),
       timeZone: this.zone(),
       photoCounts: history.photoCounts,
-      // No viewer reads as no roles (pass D, D-10.6).
-      clientWords: Roles.readsClientWords(context.viewer?.roles ?? []),
+      // No viewer reads as no roles (pass D, D-10.6); a read-as reads none.
+      clientWords:
+        this.readingAs() === null &&
+        Roles.readsClientWords(context.viewer?.roles ?? []),
       catalog: context.catalog,
       words,
     };
@@ -1228,7 +1241,9 @@ export class ClientCardStore {
         waitlist: LoadSlice.dataOf(waitlist),
         paused: this.paused(),
         count: this.stats()?.lifetimeVisitsCompleted ?? 0,
-        clientWords: Roles.readsClientWords(context.viewer?.roles ?? []),
+        clientWords:
+          this.readingAs() === null &&
+          Roles.readsClientWords(context.viewer?.roles ?? []),
         now,
         zone,
         words,
@@ -2647,8 +2662,12 @@ export class ClientCardStore {
         () => this._stats.set(LoadSlice.ready(null)),
         () => this._stats.set(FAILED),
       );
-      // No viewer reads as no roles: the money read is never asked for.
-      if (Roles.seesClientSpend(this._context()?.viewer?.roles ?? [])) {
+      // No viewer reads as no roles: the money read is never asked for —
+      // nor under a read-as, which the rules refuse it anyway.
+      if (
+        untracked(this.readingAs) === null &&
+        Roles.seesClientSpend(this._context()?.viewer?.roles ?? [])
+      ) {
         void this.withRecord(generation, uid, (customerId) =>
           this.loadMoney(generation, customerId),
         );

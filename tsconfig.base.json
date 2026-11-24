@@ -123,6 +123,9 @@
       "@creativo/features/admin/team/member": [
         "./libs/features/admin/team/src/member.route.ts"
       ],
+      "@creativo/features/admin/team/support": [
+        "./libs/features/admin/team/src/support.route.ts"
+      ],
       "@creativo/features/admin/team/account": [
         "./libs/features/admin/team/src/account.route.ts"
       ],
@@ -131,6 +134,9 @@
       ],
       "@creativo/features/shared/shell": [
         "./libs/features/shared/shell/src/index.ts"
+      ],
+      "@creativo/features/shared/shell/read-as": [
+        "./libs/features/shared/shell/src/read-as.ts"
       ],
       "@creativo/features/shared/visits": [
         "./libs/features/shared/visits/src/index.ts"

@@ -6,6 +6,7 @@ import type {
   UserId,
 } from '@core/primitives';
 import type { EngagementError } from './engagement.error';
+import type { PipelineError } from './pipeline.error';
 import type { RepositoryError } from './repository.error';
 
 /**
@@ -50,8 +51,9 @@ export const GovernanceErrorCode = {
   /** `startImpersonation` / `endImpersonation` called without a signed-in session. */
   ImpersonationUnauthenticated: 'GOVERNANCE_IMPERSONATION_UNAUTHENTICATED',
   /**
-   * The caller holds no admin role (`Roles.ADMIN`) — today's rule
-   * `isAdmin()` on `impersonationSessions`; checked before any read.
+   * The caller is not the vendor's support account (`Roles.SUPPORT`, owner
+   * ruling 2026-11-24: the sysadmin alone opens or ends a read-as); checked
+   * before any read.
    */
   ImpersonationForbidden: 'GOVERNANCE_IMPERSONATION_FORBIDDEN',
   /** `startImpersonation` named a uid with no account document. */
@@ -61,6 +63,17 @@ export const GovernanceErrorCode = {
   /** `startImpersonation` named an account that never finished registering (a PROVISIONED stub). */
   ImpersonationTargetNotRegistered:
     'GOVERNANCE_IMPERSONATION_TARGET_NOT_REGISTERED',
+  /*
+   * The support read-as (OR-24, docs/designs/support-read-as.md).
+   */
+  /** A start whose window runs past the read-as's longest (`ImpersonationSystem.MAX_WINDOW_MINUTES`). */
+  ImpersonationWindowTooLong: 'GOVERNANCE_IMPERSONATION_WINDOW_TOO_LONG',
+  /** A start in a scope no token is minted for — only `READ` is offered. */
+  ImpersonationScopeNotOffered: 'GOVERNANCE_IMPERSONATION_SCOPE_NOT_OFFERED',
+  /** A write asked under a read-only read-as token — the rules and the edge refuse every one. */
+  ImpersonationReadOnly: 'GOVERNANCE_IMPERSONATION_READ_ONLY',
+  /** A call under a read-as token past its `impExp`, or whose read-as claims do not read. */
+  ImpersonationExpired: 'GOVERNANCE_IMPERSONATION_EXPIRED',
   /*
    * `setRoles` — an admin's roles change (security hardening S-WS-E,
    * S-RU-11, S-RU-14, S-L-15).
@@ -143,6 +156,10 @@ export type GovernanceError =
   | GovernanceError.ImpersonationTargetNotFound
   | GovernanceError.ImpersonationTargetErased
   | GovernanceError.ImpersonationTargetNotRegistered
+  | GovernanceError.ImpersonationWindowTooLong
+  | GovernanceError.ImpersonationScopeNotOffered
+  | GovernanceError.ImpersonationReadOnly
+  | GovernanceError.ImpersonationExpired
   | GovernanceError.RolesUnauthenticated
   | GovernanceError.RolesForbidden
   | GovernanceError.RolesInvalid
@@ -234,6 +251,20 @@ export const GovernanceError = {
       errorCode: GovernanceErrorCode.ImpersonationForbidden,
       callerUserId,
     };
+  },
+  impersonationWindowTooLong(): GovernanceError.ImpersonationWindowTooLong {
+    return { errorCode: GovernanceErrorCode.ImpersonationWindowTooLong };
+  },
+  impersonationScopeNotOffered(): GovernanceError.ImpersonationScopeNotOffered {
+    return { errorCode: GovernanceErrorCode.ImpersonationScopeNotOffered };
+  },
+  impersonationReadOnly(
+    sessionId: ImpersonationSessionId,
+  ): GovernanceError.ImpersonationReadOnly {
+    return { errorCode: GovernanceErrorCode.ImpersonationReadOnly, sessionId };
+  },
+  impersonationExpired(): GovernanceError.ImpersonationExpired {
+    return { errorCode: GovernanceErrorCode.ImpersonationExpired };
   },
   impersonationTargetNotFound(
     targetUserId: UserId,
@@ -416,8 +447,22 @@ export namespace GovernanceError {
   };
   export type ImpersonationForbidden = {
     readonly errorCode: typeof GovernanceErrorCode.ImpersonationForbidden;
-    /** The signed-in caller whose roles hold no admin role. */
+    /** The signed-in caller who is not the support account. */
     readonly callerUserId: UserId;
+  };
+  export type ImpersonationWindowTooLong = {
+    readonly errorCode: typeof GovernanceErrorCode.ImpersonationWindowTooLong;
+  };
+  export type ImpersonationScopeNotOffered = {
+    readonly errorCode: typeof GovernanceErrorCode.ImpersonationScopeNotOffered;
+  };
+  export type ImpersonationReadOnly = {
+    readonly errorCode: typeof GovernanceErrorCode.ImpersonationReadOnly;
+    /** The read-as session the refused write was asked under. */
+    readonly sessionId: ImpersonationSessionId;
+  };
+  export type ImpersonationExpired = {
+    readonly errorCode: typeof GovernanceErrorCode.ImpersonationExpired;
   };
   export type ImpersonationTargetNotFound = {
     readonly errorCode: typeof GovernanceErrorCode.ImpersonationTargetNotFound;
@@ -540,8 +585,12 @@ export type RunBackfillRefusal = { readonly errorCode: RunBackfillRefusalCode };
  * Law 7.5: never in a pipeline file).
  */
 
-/** What `startImpersonation` answers with: a governance refusal or the store's failure. */
-export type StartImpersonationError = GovernanceError | RepositoryError;
+/**
+ * What `startImpersonation` answers with: a governance refusal, the store's
+ * failure, or Auth's failing to mint the read-as token.
+ */
+export type StartImpersonationError =
+  GovernanceError | RepositoryError | PipelineError;
 
 /** What `setRoles` answers with: a governance refusal (the failed revoke included) or the store's failure. */
 export type SetRolesError = GovernanceError | RepositoryError;

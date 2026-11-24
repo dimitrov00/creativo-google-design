@@ -1,5 +1,6 @@
 import { Component, inject } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
+import { ReadAsBannerComponent } from '@creativo/features/shared/shell/read-as';
 import { E2eSignInHookService } from '@creativo/infrastructure/firebase-auth';
 import { environment } from '../environments/environment';
 import { AppChromeService } from './shell/app-chrome.service';
@@ -7,7 +8,7 @@ import { SessionExpiryService } from './shell/session-expiry.service';
 
 @Component({
   selector: 'cr-root',
-  imports: [RouterOutlet],
+  imports: [RouterOutlet, ReadAsBannerComponent],
   templateUrl: './app.html',
   styleUrl: './app.css',
 })

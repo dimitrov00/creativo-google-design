@@ -25,8 +25,35 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // A SUPPORT READ-AS (OR-24, docs/designs/support-read-as.md) signs in
+    // AS its target, with the read-as claims beside the target's own
+    // (`ReadAsClaims`: `imp`, `impBy`, `impScope`, `impExp`). Firebase keeps
+    // a custom token's claims on every ID token of the session, refreshes
+    // included, so the window is enforced here, on every rule that needs a
+    // person: past `impExp` the session is nobody. A token whose `impExp`
+    // does not read is refused the same way (an error denies).
     function isSignedIn() {
-      return request.auth != null;
+      return request.auth != null && readAsLive();
+    }
+
+    function readAsLive() {
+      return !('imp' in request.auth.token)
+        || request.time.toMillis() < request.auth.token.impExp;
+    }
+
+    // A client's lifetime spend (`clientStats/{id}/restricted/money`) is
+    // the shop admin's alone (`Roles.SPEND`): not the sysadmin, a support
+    // role with no business in a client's spend, and not the front desk.
+    // A helper of its own so `role.rules-parity.spec.ts` reads its list.
+    function readsSpend() {
+      return hasAnyRole(['admin']);
+    }
+
+    // A read-as writes NOTHING (`impScope` is only ever `READ`): every
+    // client write below holds this beside its own condition, and so does
+    // the one read the owner's walls keep from support (a client's spend).
+    function notReadAs() {
+      return request.auth != null && !('imp' in request.auth.token);
     }
 
     function roles() {
@@ -234,7 +261,7 @@ service cloud.firestore {
         // epoch-ms instant, and it is no earlier than `sentAtUtcMs` — the
         // clamp `NotificationSystem.receiptAt` applies when it builds the
         // receipt, repeated here for a write that skipped it.
-        allow update: if isOwner(uid)
+        allow update: if isOwner(uid) && notReadAs()
           && affectedKeys().hasOnly(['readAtUtcMs'])
           && resource.data.readAtUtcMs == null
           && request.resource.data.readAtUtcMs is int
@@ -349,12 +376,12 @@ service cloud.firestore {
     // stray note's delete needs neither: it can always be removed.
     match /appointmentNotes/{appointmentId} {
       allow read: if worksTheBook();
-      allow create, update: if worksTheBook()
+      allow create, update: if worksTheBook() && notReadAs()
         && request.resource.data.authorUserId == request.auth.uid
         && stampInWindow(request.resource.data.writtenAtUtcMs)
         && request.resource.data.keys().hasOnly(['authorUserId', 'text', 'writtenAtUtcMs'])
         && exists(/databases/$(database)/documents/appointments/$(appointmentId));
-      allow delete: if worksTheBook();
+      allow delete: if worksTheBook() && notReadAs();
     }
 
     // ── the shop's photos of a visit ─────────────────────────────────────
@@ -378,7 +405,7 @@ service cloud.firestore {
     // free — security hardening S-DEP-5 (Phase 3 flag 26 included).
     match /appointmentPhotos/{photoId} {
       allow read: if worksTheBook();
-      allow create: if worksTheBook()
+      allow create: if worksTheBook() && notReadAs()
         && request.resource.data.takenByUserId == request.auth.uid
         && stampInWindow(request.resource.data.takenAtUtcMs)
         && photoId.matches('^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
@@ -389,7 +416,7 @@ service cloud.firestore {
             || request.resource.data.path == 'appointmentPhotos/' + request.resource.data.appointmentId + '/' + photoId)
         && exists(/databases/$(database)/documents/appointments/$(request.resource.data.appointmentId));
       allow update: if false;
-      allow delete: if worksTheBook();
+      allow delete: if worksTheBook() && notReadAs();
     }
 
     // ── the shop's client records (D29) ──────────────────────────────────
@@ -435,9 +462,10 @@ service cloud.firestore {
       // money lives in its own document, and rules do not cascade, so this
       // match needs its own allow. The shop's admin only: NOT sysadmin, a
       // support role with no business in a client's spend, and not the
-      // front desk.
+      // front desk — and not a support read-as of the admin either: the
+      // owner's walls hold inside a read-as (owner ruling 2026-11-24).
       match /restricted/{docId} {
-        allow read: if hasAnyRole(['admin']);
+        allow read: if readsSpend() && notReadAs();
         allow write: if false;
       }
     }
@@ -696,19 +724,19 @@ service cloud.firestore {
     // `validEvent` above — and no client deletes one.
     match /positions/{positionId} {
       allow read: if true;
-      allow create, update: if isCatalogManager() && validPosition(request.resource.data);
+      allow create, update: if isCatalogManager() && notReadAs() && validPosition(request.resource.data);
       allow delete: if false;
     }
 
     match /courses/{courseId} {
       allow read: if true;
-      allow create, update: if isCatalogManager() && validCourse(request.resource.data);
+      allow create, update: if isCatalogManager() && notReadAs() && validCourse(request.resource.data);
       allow delete: if false;
     }
 
     match /events/{eventId} {
       allow read: if true;
-      allow create, update: if isCatalogManager() && validEvent(request.resource.data);
+      allow create, update: if isCatalogManager() && notReadAs() && validEvent(request.resource.data);
       allow delete: if false;
     }
 

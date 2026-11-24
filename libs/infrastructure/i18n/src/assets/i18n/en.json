@@ -1,5 +1,16 @@
 {
   "errors": {
+    "GOVERNANCE_IMPERSONATION_FORBIDDEN": "Only support can open an account read-only.",
+    "GOVERNANCE_IMPERSONATION_UNAUTHENTICATED": "Sign in again and try again.",
+    "GOVERNANCE_IMPERSONATION_TARGET_NOT_FOUND": "This account no longer exists.",
+    "GOVERNANCE_IMPERSONATION_TARGET_ERASED": "This account was erased.",
+    "GOVERNANCE_IMPERSONATION_TARGET_NOT_REGISTERED": "This person hasn't finished signing up yet.",
+    "GOVERNANCE_IMPERSONATION_SESSION_SELF_IMPERSONATION": "You can't open your own account this way.",
+    "GOVERNANCE_IMPERSONATION_SESSION_REASON_REQUIRED": "Give a reason.",
+    "GOVERNANCE_IMPERSONATION_WINDOW_TOO_LONG": "A read-only session lasts at most 15 minutes.",
+    "GOVERNANCE_IMPERSONATION_SCOPE_NOT_OFFERED": "Only read-only is offered.",
+    "GOVERNANCE_IMPERSONATION_READ_ONLY": "Read-only — nothing can be changed.",
+    "GOVERNANCE_IMPERSONATION_EXPIRED": "The read-only session has ended.",
     "SCHEDULING_ROSTER_BREAK_OUTSIDE_SHIFT": "A break has to sit inside the day's hours.",
     "SCHEDULING_ROSTER_BREAK_IN_PAST": "A change can't start on a past day.",
     "SCHEDULING_ROSTER_OUTSIDE_SHOPS": "The barber doesn't work at this shop. Add it to their shops first.",
@@ -241,6 +252,13 @@
     "forbidden": {
       "title": "Forbidden",
       "body": "You don't have access to this page."
+    },
+    "readAs": {
+      "actingAs": "Acting as {{name}}",
+      "someone": "this account",
+      "until": "until {{time}}",
+      "end": "End",
+      "label": "Read-only"
     }
   },
   "auth": {
@@ -674,7 +692,8 @@
       "loyaltyAdmin": "Loyalty",
       "staffAnalytics": "Analytics",
       "ownProfile": "My profile",
-      "team": "Team"
+      "team": "Team",
+      "support": "Support"
     },
     "prefs": {
       "language": "Language",
@@ -2898,6 +2917,24 @@
       "flagOff": "The rhythm is not switched on for the app yet.",
       "failed": "The rule did not load.",
       "offline": "Offline · the rule cannot be saved."
+    },
+    "support": {
+      "documentTitle": "Support · Creativo",
+      "title": "Support",
+      "lede": "See the app as one person sees it — read-only, for up to 15 minutes. Every session is recorded.",
+      "find": "Find an account",
+      "lookupTitle": "Whose account?",
+      "lookupLede": "Search by name, phone or e-mail.",
+      "hint": "Type a name, phone or e-mail.",
+      "noneTitle": "No such account",
+      "none": "Check what you typed and search again.",
+      "failed": "The search didn't load. Try again.",
+      "sheetTitle": "View as {{name}}",
+      "sheetLede": "Read-only for up to 15 minutes: nothing can be changed. The reason is recorded.",
+      "reason": "Reason",
+      "reasonPlaceholder": "Ticket number or a short description",
+      "start": "Start",
+      "close": "Close"
     },
     "programs": {
       "documentTitle": "Programs · Creativo Admin",

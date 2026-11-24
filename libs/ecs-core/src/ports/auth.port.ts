@@ -3,6 +3,7 @@ import type {
   OtpCode,
   ParsedIdentifier,
   Principal,
+  ReadAsClaims,
   RegistrationFields,
   SessionKind,
 } from '@core/components';
@@ -40,6 +41,23 @@ export type CurrentIdentifier = () => ParsedIdentifier | null;
 /** The Auth profile's display name; `null` when signed out or never set. */
 export type CurrentDisplayName = () => string | null;
 
+// ── The support read-as (OR-24) ───────────────────────────────────────────
+
+/**
+ * The signed-in session's read-as claims, as each ID token carries them —
+ * `null` on a plain session and when nobody is signed in. Read off the
+ * token, never off Firestore (OR-24: the banner makes no read).
+ */
+export type ObserveReadAs = () => Observable<ReadAsClaims | null>;
+
+/**
+ * Signs in with a read-as token (`GovernanceCall.Started.customToken`): the
+ * browser's one session becomes the target's, read-as claims beside its own.
+ */
+export type SignInWithReadAsToken = (
+  customToken: string,
+) => Promise<Result<void, PipelineError>>;
+
 // ── The OTP callables ─────────────────────────────────────────────────────
 
 /** `requestOtpChallenge` — issue a code to the identifier; answers the challenge id. */
@@ -75,6 +93,12 @@ export type AuthSessionPorts = {
   readonly signOut: SignOut;
   readonly currentIdentifier: CurrentIdentifier;
   readonly currentDisplayName: CurrentDisplayName;
+};
+
+/** The support read-as's session facts — ONE token, `READ_AS_SESSION_PORTS` (web). */
+export type ReadAsSessionPorts = {
+  readonly observeReadAs: ObserveReadAs;
+  readonly signInWithReadAsToken: SignInWithReadAsToken;
 };
 
 /** The three OTP callables — `OTP_CHALLENGE_PORTS` / `otpChallengePorts(auth, gateway)`. */

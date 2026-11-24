@@ -96,6 +96,7 @@ import {
 import {
   authClaimsPorts,
   authSessionRevokePorts,
+  readAsTokenPorts,
 } from './adapters/auth-claims.adapter';
 import { paramAppCheckModePorts } from './adapters/app-check.adapter';
 import { consoleOtpSender } from './adapters/console-otp-sender.adapter';
@@ -499,6 +500,17 @@ const identityPorts = once(() => ({
   ...singleTenantPorts(DEFAULT_TENANT),
   // The SAME deployment const the web app provides through `AUTH_DEPLOYMENT_PORTS`.
   authDeployment: AuthDeployment.DEFAULT,
+}));
+
+/**
+ * The support read-as's start (OR-24): the server ports, the tenant its
+ * token's claims name and Admin Auth's read-as mint — built on first use,
+ * so no other callable initialises Admin Auth for it.
+ */
+const readAsPorts = once(() => ({
+  ...serverPorts(),
+  ...readAsTokenPorts(auth()),
+  ...singleTenantPorts(DEFAULT_TENANT),
 }));
 
 /**
@@ -1653,8 +1665,9 @@ export const publishStreakDefinition = onCall(
 );
 
 /**
- * An admin opens an impersonation (4A-3 (4)) — the only writer of
- * `impersonationSessions` since the rules refused the direct write.
+ * Support opens a read-as (4A-3 (4); OR-24, docs/designs/support-read-as.md)
+ * — the only writer of `impersonationSessions` since the rules refused the
+ * direct write, and the only mint of a read-as token.
  */
 export const startImpersonation = onCall(
   {
@@ -1663,14 +1676,14 @@ export const startImpersonation = onCall(
   },
   wiredCallable(
     plain(Callables.StartImpersonation, null),
-    root.ports,
+    readAsPorts,
     decodeStartImpersonation,
     (ports, cmd) => startImpersonationPipeline(ports)(cmd),
     refusalOf,
   ),
 );
 
-/** An admin ends an impersonation — the same caller gate, ONE `Set` of the ended body (4A-3 (4)). */
+/** Support, or the read-as session itself, ends a read-as — ONE `Set` of the ended body (4A-3 (4); OR-24). */
 export const endImpersonation = onCall(
   LOG_DIGEST_SECRETS,
   wiredCallable(
