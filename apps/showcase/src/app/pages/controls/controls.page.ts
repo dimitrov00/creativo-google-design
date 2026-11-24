@@ -87,6 +87,7 @@ export class ControlsPage {
         { slug: 'stepper', name: 'Stepper' },
         { slug: 'quick-actions', name: 'QuickActions' },
         { slug: 'notice', name: 'Notice' },
+        { slug: 'progress-disc', name: 'ProgressDisc' },
         { slug: 'date-tile', name: 'DateTile' },
         { slug: 'coupon-card', name: 'CouponCard' },
         { slug: 'pass-card', name: 'PassCard' },

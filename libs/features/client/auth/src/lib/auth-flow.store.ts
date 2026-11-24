@@ -38,8 +38,10 @@ function retryAfterSecondsOf(error: PipelineError): number {
  * `ClientAuth`, not root, so re-navigating to `/auth` always starts fresh.
  *
  * Also owns the PRESENTATIONAL trust mechanics the machine deliberately
- * doesn't (design §3.3): the resend countdown ticker and the per-flow send
- * counter. The countdown runs the server's own resend window
+ * doesn't (design §3.3): which round trip is in flight (`sending` a code or
+ * `verifying` one, two flags because the code step words them apart — the
+ * machine is already on the otp step while the first send is still out),
+ * the resend countdown ticker and the per-flow send counter. The countdown runs the server's own resend window
  * (`OtpLimits.ResendWindowSeconds`, 60 s — owner ruling OR-9), so the
  * button never re-enables while the server would still refuse; a resend
  * the server throttles anyway restarts the countdown at the seconds it
@@ -65,14 +67,21 @@ export class AuthFlowStore {
   private readonly _state = signal<AuthFlowState>(AuthFlowState.initial());
   readonly state = this._state.asReadonly();
 
-  private readonly _pending = signal(false);
-  /** True while a request/verify round-trip is in flight — presentational only, not modeled in `AuthFlowState`. */
-  readonly pending = this._pending.asReadonly();
+  private readonly _sending = signal(false);
+  /** True while a code is being requested (the first send or a resend) — presentational only, not modeled in `AuthFlowState`. */
+  readonly sending = this._sending.asReadonly();
+
+  private readonly _verifying = signal(false);
+  /** True while a typed code is with the server — presentational only, not modeled in `AuthFlowState`. */
+  readonly verifying = this._verifying.asReadonly();
 
   private readonly _resendSecondsLeft = signal(0);
   /** Countdown until "Resend code" re-enables — 0 means resend is available. */
   readonly resendSecondsLeft = this._resendSecondsLeft.asReadonly();
-  readonly canResend = computed(() => this._resendSecondsLeft() === 0);
+  /** Whether "Resend code" may be offered: the countdown has run out and no send is in flight (the first send's countdown is 0 before it lands). */
+  readonly canResend = computed(
+    () => this._resendSecondsLeft() === 0 && !this._sending(),
+  );
 
   private readonly _sendCount = signal(0);
   /** Codes sent for the CURRENT identifier (initial send included). */
@@ -122,7 +131,7 @@ export class AuthFlowStore {
     if (
       state.authFlowStep !== AuthFlowStep.Otp ||
       !this.canResend() ||
-      this._pending()
+      this._verifying()
     ) {
       return;
     }
@@ -146,12 +155,12 @@ export class AuthFlowStore {
       );
       return null;
     }
-    this._pending.set(true);
+    this._verifying.set(true);
     const result = await this.otp.verifyOtpChallenge(
       this.challengeId,
       code.value,
     );
-    this._pending.set(false);
+    this._verifying.set(false);
 
     if (!result.ok) {
       this.dispatch(
@@ -168,9 +177,9 @@ export class AuthFlowStore {
   }
 
   private async requestChallenge(identifier: ParsedIdentifier): Promise<void> {
-    this._pending.set(true);
+    this._sending.set(true);
     const result = await this.otp.requestOtpChallenge(identifier);
-    this._pending.set(false);
+    this._sending.set(false);
 
     if (!result.ok) {
       if (

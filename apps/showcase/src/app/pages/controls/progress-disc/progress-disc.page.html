@@ -1,0 +1,74 @@
+<sc-page scTitle="Progress Disc">
+  <ng-container scLede>
+    <code>ui-progress-disc</code> — one symbol on an accent wash that tells an
+    errand's story without copy: a ring turns while the work is out, a badge
+    says it landed, the disc fills with a drawn check when it is done. ≙ the
+    Apple Pay sheet's processing → done mark.
+    <code>ui-reward-moment</code> composes it (<code>complete</code>,
+    <code>large</code>) inside its confetti burst.
+  </ng-container>
+
+  <sc-demo scTitle="Phases">
+    <ng-container scAbout>
+      <code>uiPhase</code>: <code>idle</code> · <code>busy</code> ·
+      <code>acknowledged</code> · <code>complete</code>. The ring is drawn
+      outside the disc's box and the badge rides its shoulder, so no phase moves
+      the layout.
+    </ng-container>
+    <ui-flow uiSpacing="loose" uiAlignment="trailing">
+      @for (phase of phases; track phase) {
+      <ui-stack uiAxis="vertical" uiSpacing="regular" uiAlignment="center">
+        <ui-progress-disc [uiPhase]="phase">
+          <ui-icon uiName="auth.email" />
+        </ui-progress-disc>
+        <p uiText [uiFont]="'caption'" class="progress-disc__mono">
+          {{ phase }}
+        </p>
+      </ui-stack>
+      }
+    </ui-flow>
+  </sc-demo>
+
+  <sc-demo scTitle="Sizes">
+    <ng-container scAbout>
+      <code>regular</code> (64) heads a step; <code>large</code> (88) is the
+      celebration mark of <code>ui-reward-moment</code>.
+    </ng-container>
+    <ui-flow uiSpacing="loose" uiAlignment="trailing">
+      <ui-progress-disc uiPhase="acknowledged">
+        <ui-icon uiName="auth.email" />
+      </ui-progress-disc>
+      <ui-progress-disc uiPhase="acknowledged" uiControlSize="large">
+        <ui-icon uiName="auth.email" />
+      </ui-progress-disc>
+    </ui-flow>
+  </sc-demo>
+
+  <sc-demo scTitle="The sign-in code step">
+    <ng-container scAbout>
+      The disc over the code step's headline, beside
+      <code>ui-otp-field</code>: busy while a code is sent or checked,
+      acknowledged while it waits in the inbox, complete with
+      <code>uiAccepted</code> lighting the slots.
+    </ng-container>
+    <ui-stack uiAxis="vertical" uiSpacing="comfortable" uiAlignment="leading">
+      <ui-progress-disc [uiPhase]="live()">
+        <ui-icon uiName="auth.email" />
+      </ui-progress-disc>
+      <ui-otp-field
+        value="492817"
+        [uiDisabled]="live() !== 'acknowledged'"
+        [uiAccepted]="live() === 'complete'"
+      />
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="bordered"
+        uiTint="neutral"
+        (click)="next()"
+      >
+        Next phase · {{ live() }}
+      </button>
+    </ui-stack>
+  </sc-demo>
+</sc-page>

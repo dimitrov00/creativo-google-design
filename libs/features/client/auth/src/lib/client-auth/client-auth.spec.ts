@@ -209,14 +209,77 @@ describe('ClientAuth', () => {
       await fillEmailAndSubmit();
 
       expect(query('auth-otp')).not.toBeNull();
+      expect(query('auth-otp')?.dataset['phase']).toBe('WAITING');
+      expect(query('auth-otp-title')?.textContent?.trim()).toBe(
+        'auth.code.title.email',
+      );
       expect(query('auth-otp-destination')?.textContent).toContain(
         'client@example.com',
       );
+      // The code landed: the mail disc wears its badge.
+      expect(query('auth-otp-disc')?.dataset['phase']).toBe('acknowledged');
       expect(requestChallenge).toHaveBeenCalledTimes(1);
-      // Verification is automatic (owner ruling 2026-07-25) — the otp
-      // screen ships no Verify button and no bottom action bar.
+      // Verification is automatic (owner ruling 2026-07-25) — no Verify
+      // button; and an address no webmail names gets no bottom bar at all.
       expect(query('auth-submit-code')).toBeNull();
       expect(host().querySelector('.ui-page-action-bar')).toBeNull();
+    });
+
+    it('words the wait while the first code is still on its way — sending, never «sent» or «checking», and nothing to resend', async () => {
+      let answer: (value: unknown) => void = () => undefined;
+      requestChallenge.mockReturnValue(
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+      );
+      await fillEmailAndSubmit();
+
+      expect(query('auth-otp')?.dataset['phase']).toBe('SENDING');
+      expect(query('auth-otp-title')?.textContent?.trim()).toBe(
+        'auth.code.sendingTitle',
+      );
+      expect(query('auth-otp-disc')?.dataset['phase']).toBe('busy');
+      expect(host().textContent).not.toContain('auth.code.sentTo');
+      expect(query('auth-resend')).toBeNull();
+      expect(query('auth-resend-cooldown')).toBeNull();
+      expect(
+        host().querySelector<HTMLInputElement>('.ui-otp-field__slot')?.disabled,
+      ).toBe(true);
+
+      answer(Result.ok(OtpId.of('challenge_1')));
+      await settle();
+      expect(query('auth-otp')?.dataset['phase']).toBe('WAITING');
+      expect(query('auth-resend-cooldown')).not.toBeNull();
+    });
+
+    it('offers the person’s own webmail, in a new tab, when the address names one', async () => {
+      await fillEmailAndSubmit('ivan.petrov@abv.bg');
+
+      const link = query<HTMLAnchorElement>('auth-open-webmail');
+      expect(link?.getAttribute('href')).toBe('https://www.abv.bg/');
+      expect(link?.getAttribute('target')).toBe('_blank');
+      expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
+      expect(link?.closest('.ui-page-action-bar')).not.toBeNull();
+    });
+
+    it('holds the accepted code on screen — the disc filled, the slots lit, no way back — until the hand-off', async () => {
+      await fillEmailAndSubmit();
+
+      emitCode('123456');
+      pressEnterInOtpField();
+      await settle();
+
+      expect(query('auth-otp')?.dataset['phase']).toBe('ACCEPTED');
+      expect(query('auth-otp-disc')?.dataset['phase']).toBe('complete');
+      expect(query('auth-otp-title')?.textContent?.trim()).toBe(
+        'auth.code.doneTitle',
+      );
+      expect(
+        host().querySelector('.ui-otp-field')?.hasAttribute('data-accepted'),
+      ).toBe(true);
+      expect(query<HTMLButtonElement>('auth-back')?.disabled).toBe(true);
+      expect(query('auth-resend-cooldown')).toBeNull();
+      expect(query('auth-settling')).toBeNull();
     });
 
     it('clears the digits when the code is wrong and hides the error once typing resumes', async () => {
@@ -266,11 +329,13 @@ describe('ClientAuth', () => {
       vi.useFakeTimers();
       emitCode('123456');
 
-      // Micro-delay pending: nothing sent yet, but the checking state is
-      // already visible — the inline progress row shows and the field is
-      // locked (the loading Verify button this replaced is gone).
+      // Micro-delay pending: nothing sent yet, but the checking phase is
+      // already visible — the disc's ring turns and the field is locked
+      // (the loading Verify button and the spinner row are both gone).
       expect(verifyChallenge).not.toHaveBeenCalled();
-      expect(query('auth-otp-checking')).not.toBeNull();
+      expect(query('auth-otp')?.dataset['phase']).toBe('CHECKING');
+      expect(query('auth-otp-disc')?.dataset['phase']).toBe('busy');
+      expect(query('auth-otp-checking')).toBeNull();
       expect(
         host().querySelector<HTMLInputElement>('.ui-otp-field__slot')?.disabled,
       ).toBe(true);
@@ -323,8 +388,10 @@ describe('ClientAuth', () => {
       const cooldown = query('auth-resend-cooldown');
       expect(cooldown).not.toBeNull();
       // The ticking countdown is informational caption text (owner ruling
-      // 2026-07-25), no longer a disabled button.
+      // 2026-07-25), no longer a disabled button — with a ring draining
+      // beside it.
       expect(cooldown?.tagName).toBe('P');
+      expect(query('auth-resend-ring')).not.toBeNull();
     });
 
     it('adds the escalation footnote from the third send on, once each countdown has run out (OR-9, OR-10)', async () => {

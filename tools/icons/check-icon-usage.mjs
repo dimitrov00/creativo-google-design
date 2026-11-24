@@ -90,7 +90,7 @@ const CHECKS = [
 export const INLINE_SVG_ALLOWED = [
   'libs/ui/controls/src/lib/progress-ring/progress-ring.ts',
   'libs/ui/patterns/src/lib/toast/toast.ts',
-  'libs/ui/patterns/src/lib/reward-moment/reward-moment.ts',
+  'libs/ui/patterns/src/lib/progress-disc/progress-disc.ts',
   'libs/ui/patterns/src/lib/gauge/gauge.ts',
   // The chart kit's drawings (staff-analytics-v2 «Chart kit»): hand-drawn
   // SVG over the DS tokens, chosen by the chart-library survey.

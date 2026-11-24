@@ -6,6 +6,7 @@ import {
   numberAttribute,
 } from '@angular/core';
 import { UiConfetti } from '../confetti/confetti';
+import { UiProgressDisc } from '../progress-disc/progress-disc';
 
 /**
  * The success mark — an accent disc that settles in, a check that draws
@@ -17,7 +18,12 @@ import { UiConfetti } from '../confetti/confetti';
  * that needed it — two copies of an 80-line animation recipe is exactly how
  * the six hand-rolled eyebrows in the UI/UX case study happened.
  *
- * The confetti rides a WRAPPER around the badge, not the badge itself: an
+ * The disc and its drawn check are `ui-progress-disc`'s, in its `complete`
+ * phase at the `large` size (lifted out of here 2026-11-23, when the sign-in
+ * code step needed the same mark before the success as well). This
+ * component adds the burst.
+ *
+ * The confetti rides a WRAPPER around the disc, not the disc itself: an
  * isolated stacking context lets the overlay sit at `z-index: -1`, so
  * particles erupt from the disc's centre but fly out from BEHIND it — never
  * across the check.
@@ -33,31 +39,14 @@ import { UiConfetti } from '../confetti/confetti';
  */
 @Component({
   selector: 'ui-reward-moment',
-  imports: [UiConfetti],
+  imports: [UiConfetti, UiProgressDisc],
   template: `
     <span class="ui-reward-moment__burst">
       <ui-confetti
         [uiCount]="uiConfettiCount()"
         [uiDelay]="uiConfettiDelay()"
       />
-      <span class="ui-reward-moment__badge">
-        <svg
-          class="ui-reward-moment__mark"
-          viewBox="0 0 48 48"
-          aria-hidden="true"
-        >
-          <!-- pathLength-normalized so the stroke draw animates 1 → 0. -->
-          <path
-            class="ui-reward-moment__check"
-            d="M15 24.5l6.2 6.2L33 18"
-            pathLength="1"
-            fill="none"
-            stroke-width="3.5"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
-      </span>
+      <ui-progress-disc uiPhase="complete" uiControlSize="large" />
     </span>
   `,
   styleUrl: './reward-moment.css',

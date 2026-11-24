@@ -22,6 +22,7 @@ export * from './lib/metric/metric';
 export * from './lib/notice/notice';
 export * from './lib/page-action-bar/page-action-bar';
 export * from './lib/pass-card/pass-card';
+export * from './lib/progress-disc/progress-disc';
 export * from './lib/quick-actions/quick-actions';
 export * from './lib/rating/rating';
 export * from './lib/reference/reference';
