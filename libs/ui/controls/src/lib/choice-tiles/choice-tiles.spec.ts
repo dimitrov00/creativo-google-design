@@ -116,4 +116,51 @@ describe('UiChoiceTiles', () => {
     expect(fixture.componentInstance.picked).toEqual(['200', 'up']);
     expect(document.activeElement).toBe(q('tile-up'));
   });
+
+  it('jumps to the ends on Home and End and wraps past them, as the segmented control does', async () => {
+    const { fixture, q } = await render();
+    const press = (key: string, id: string) => {
+      const event = new KeyboardEvent('keydown', {
+        key,
+        bubbles: true,
+        cancelable: true,
+      });
+      q(id)?.dispatchEvent(event);
+      fixture.detectChanges();
+      return event;
+    };
+    expect(press('End', 'tile-none').defaultPrevented).toBe(true);
+    expect(fixture.componentInstance.selected()).toBe('other');
+    expect(document.activeElement).toBe(q('tile-other'));
+    press('ArrowRight', 'tile-other');
+    expect(fixture.componentInstance.selected()).toBe('none');
+    press('ArrowLeft', 'tile-none');
+    expect(fixture.componentInstance.selected()).toBe('other');
+    press('Home', 'tile-other');
+    expect(fixture.componentInstance.selected()).toBe('none');
+    expect(document.activeElement).toBe(q('tile-none'));
+    // A key the group does not own is left to the page.
+    expect(press('Enter', 'tile-none').defaultPrevented).toBe(false);
+    expect(fixture.componentInstance.selected()).toBe('none');
+  });
+
+  it('is one tab stop: the chosen tile, else the first that can be chosen', async () => {
+    const { fixture, host } = await render();
+    const stops = () =>
+      Array.from(host.querySelectorAll<HTMLElement>('[role="radio"]')).map(
+        (tile) => tile.getAttribute('tabindex'),
+      );
+    expect(stops()).toEqual(['0', '-1', '-1', '-1', '-1']);
+    fixture.componentInstance.selected.set('up');
+    fixture.detectChanges();
+    expect(stops()).toEqual(['-1', '-1', '-1', '0', '-1']);
+    // Nothing chosen, and a chosen tile that is disabled, both hand the stop
+    // to the first tile that can take focus.
+    fixture.componentInstance.selected.set(null);
+    fixture.detectChanges();
+    expect(stops()).toEqual(['0', '-1', '-1', '-1', '-1']);
+    fixture.componentInstance.selected.set('off');
+    fixture.detectChanges();
+    expect(stops()).toEqual(['0', '-1', '-1', '-1', '-1']);
+  });
 });

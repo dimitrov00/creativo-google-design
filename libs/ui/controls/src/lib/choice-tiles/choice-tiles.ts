@@ -3,11 +3,13 @@ import {
   Component,
   ElementRef,
   ViewEncapsulation,
+  computed,
   inject,
   input,
   output,
 } from '@angular/core';
 import { UiInteractiveDirective } from '@creativo/ui/modifiers';
+import { radioGroupStep, radioGroupTabStop } from '../radio-group/radio-group';
 
 export type UiChoiceTileSize = 'regular' | 'large' | 'wide';
 
@@ -40,8 +42,10 @@ export interface UiChoiceTile {
  * beneath, the chosen one washed and ringed in the accent.
  *
  * Semantics are a RADIO GROUP: `role="radiogroup"` on the grid, `role="radio"`
- * + `aria-checked` on every tile, the arrow keys moving the check the way
- * native radios do. The consumer owns the selection and answers `uiPicked`
+ * + `aria-checked` on every tile, the arrow keys (and Home and End) moving
+ * the check the way native radios do, and ONE tab stop for the whole grid —
+ * the keyboard model `ui-segmented-control` has, from the same two functions
+ * (`radio-group.ts`). The consumer owns the selection and answers `uiPicked`
  * with a new `uiSelectedId`, exactly like `ui-choice-menu`.
  *
  * Every tile takes the house `[data-interactive]` grammar, so hover, press
@@ -75,6 +79,7 @@ export interface UiChoiceTile {
           [attr.data-size]="tile.size ?? 'regular'"
           [attr.data-tile-id]="tile.id"
           [attr.data-testid]="tile.testId ?? null"
+          [attr.tabindex]="tile.id === tabStop() ? 0 : -1"
           [disabled]="tile.disabled ?? false"
           (click)="pick(tile)"
           (keydown)="onKeydown($event)"
@@ -104,24 +109,23 @@ export class UiChoiceTiles {
   readonly uiColumns = input(3);
   readonly uiPicked = output<string>();
 
+  /** One tab stop: the chosen tile, else the first that can be. */
+  protected readonly tabStop = computed(() =>
+    radioGroupTabStop(this.uiTiles(), this.uiSelectedId()),
+  );
+
   protected pick(tile: UiChoiceTile): void {
     if (tile.disabled) return;
     this.uiPicked.emit(tile.id);
   }
 
-  /** Arrow keys on a tile move the check through the enabled tiles, wrapping — native radios. */
+  /** The arrows, Home and End move the check through the enabled tiles — native radios. */
   protected onKeydown(event: KeyboardEvent): void {
-    const step =
-      event.key === 'ArrowRight' || event.key === 'ArrowDown'
-        ? 1
-        : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
-          ? -1
-          : 0;
-    if (step === 0) return;
     const tiles = this.uiTiles().filter((tile) => !tile.disabled);
-    if (tiles.length === 0) return;
     const current = tiles.findIndex((tile) => tile.id === this.uiSelectedId());
-    const next = tiles[(current + step + tiles.length) % tiles.length];
+    const step = radioGroupStep(event.key, current, tiles.length);
+    if (step === null) return;
+    const next = tiles[step];
     if (next === undefined) return;
     event.preventDefault();
     this.uiPicked.emit(next.id);

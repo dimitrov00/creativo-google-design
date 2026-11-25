@@ -11,6 +11,7 @@ import {
 import { UiInteractiveDirective } from '@creativo/ui/modifiers';
 import { UiIcon } from '@creativo/ui/icons';
 import type { UiIconName } from '@creativo/ui/icons';
+import { radioGroupStep, radioGroupTabStop } from '../radio-group/radio-group';
 
 export type UiSegmentedControlSize = 'small' | 'regular';
 /** `rounded` is UISegmentedControl's own corner; `capsule` the toolbar PILL of iOS 26's bars. */
@@ -76,7 +77,7 @@ export interface UiSegment {
           [attr.data-icon-only]="segment.iconOnly ? '' : null"
           [attr.data-segment-id]="segment.id"
           [attr.data-testid]="segment.testId ?? null"
-          [attr.tabindex]="tabIndexOf(segment)"
+          [attr.tabindex]="segment.id === tabStop() ? 0 : -1"
           [disabled]="segment.disabled ?? false"
           (click)="pick(segment)"
           (keydown)="onKeydown($event)"
@@ -130,14 +131,9 @@ export class UiSegmentedControl {
   );
 
   /** One tab stop: the chosen segment, else the first that can be. */
-  protected tabIndexOf(segment: UiSegment): number {
-    const selected = this.selectedIndex() >= 0 ? this.uiSelectedId() : null;
-    const stop =
-      selected ??
-      this.uiSegments().find((entry) => !entry.disabled)?.id ??
-      null;
-    return segment.id === stop ? 0 : -1;
-  }
+  protected readonly tabStop = computed(() =>
+    radioGroupTabStop(this.uiSegments(), this.uiSelectedId()),
+  );
 
   protected pick(segment: UiSegment): void {
     if (segment.disabled) return;
@@ -146,29 +142,12 @@ export class UiSegmentedControl {
 
   protected onKeydown(event: KeyboardEvent): void {
     const segments = this.uiSegments().filter((segment) => !segment.disabled);
-    if (segments.length === 0) return;
     const current = segments.findIndex(
       (segment) => segment.id === this.uiSelectedId(),
     );
-    let next: UiSegment | undefined;
-    switch (event.key) {
-      case 'ArrowRight':
-      case 'ArrowDown':
-        next = segments[(current + 1 + segments.length) % segments.length];
-        break;
-      case 'ArrowLeft':
-      case 'ArrowUp':
-        next = segments[(current - 1 + segments.length) % segments.length];
-        break;
-      case 'Home':
-        next = segments[0];
-        break;
-      case 'End':
-        next = segments[segments.length - 1];
-        break;
-      default:
-        return;
-    }
+    const step = radioGroupStep(event.key, current, segments.length);
+    if (step === null) return;
+    const next = segments[step];
     if (next === undefined) return;
     event.preventDefault();
     this.uiPicked.emit(next.id);
