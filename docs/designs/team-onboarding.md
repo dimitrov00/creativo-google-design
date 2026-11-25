@@ -810,7 +810,8 @@ until the new start. Then an invite or «Свържи профил».
 **The staff schedule** shows a lane for a `DEPARTED` barber on any day that
 has bookings for them.
 
-**Reminder cards.** On the staff home and the Team page, the admin sees a
+**Reminder cards.** On «Анализи» (the staff home until 2026-11-25; the
+schedule's chart button counts them) and the Team page, the admin sees a
 card for every member whose last day is within 7 days: «Последният ден на
 {{name}} е {{date}} · Удължи». A system decides which cards show (none for a
 period of 7 days or less). Derived from the record and `ShopNow`; no cron,
@@ -1310,6 +1311,17 @@ behind can be opened, moved or cancelled where every other visit is.
   `EmploymentSystem.isReminded`); no read of their own, nothing for anyone
   who does not manage the team. Its own component, so the schedule page,
   whose file only shrinks, mounts it with one tag.
+  **Moved 2026-11-25** (owner ruling Q2 of the role-aware homes brief: the
+  shop's view is the schedule's chart button, labelled, with the pending
+  decisions on top of the page it opens). The notices pushed the day down
+  when the team stream answered after the first frame, so they now stand
+  on top of «Анализи» (`lib-analytics-reminders`), and the schedule only
+  counts them: a badge on the chart button (`AnalyticsEntry.pending`, the
+  DS's `uiBadgeCount`), which moves nothing. The same system answers both,
+  behind the same gate. The rule (`REMINDER_DAYS`, `isReminded`,
+  `remindersOf`) moved with them out of `EmploymentSystem` into
+  `EmploymentReminderSystem`, so a screen that only reminds does not load
+  the close's systems (about 30 kB on the analytics route).
 - The close now names the account it leaves alone because it assigns
   roles (an admin, kept by the last-admin rule): `barberKeptAccessUserId`
   on the departed record, beside `barberDepartedUserId`. No access is

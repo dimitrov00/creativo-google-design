@@ -237,6 +237,7 @@ export async function renderAnalyticsScreen<T>(
         provide: TeamCatalogService,
         useValue: {
           teamBarbers: signal(options.barbers ?? []),
+          teamKnown: signal(true),
           workedBarbers: signal(options.barbers ?? []),
           findTeamBarber: (id: BarberId) =>
             (options.barbers ?? []).find((barber) => barber.id === id),

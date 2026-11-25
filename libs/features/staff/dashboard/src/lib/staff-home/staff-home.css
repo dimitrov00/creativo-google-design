@@ -1,5 +1,5 @@
-/* THE STAFF HOME'S OWN PARTS — above the schedule: the reminders and the
-   setup card, a stack at the page's gutter; nothing while there are none.
+/* THE STAFF HOME'S OWN PARTS — above the schedule: the setup card, a stack
+   at the page's gutter; nothing while there is none.
    The welcome page keeps its own sheet (`staff-welcome.css`). Every
    selector is `staff-home`-prefixed. */
 /* The host takes no box: the notices' stack is the one thing laid out,
@@ -22,7 +22,6 @@
   padding-block: var(--sys-space-compact);
 }
 
-.staff-home__notices > lib-schedule-reminders,
 .staff-home__notices > lib-staff-setup-card {
   display: contents;
 }

@@ -524,6 +524,22 @@
     box-shadow: 0 0 0 2px var(--sys-color-background);
     pointer-events: none;
   }
+  /* THE COUNT BADGE (`uiBadgeCount`, SwiftUI `.badge(_:)` with a number):
+     the DS's solid badge (`ui-badge`, `increased`) on the box's
+     top-trailing corner, half outside it as iOS hangs a toolbar item's
+     count, ringed in the page's ground like the dot so it reads as cut
+     out of the control. Its face — the primary fill, the on-primary ink,
+     the square minimum that keeps one digit round — is the badge's own. */
+  .ui-button[data-badge-count] {
+    position: relative;
+  }
+  .ui-button__badge {
+    position: absolute;
+    inset-block-start: calc(var(--sys-space-tight) * -1);
+    inset-inline-end: calc(var(--sys-space-tight) * -1);
+    box-shadow: 0 0 0 2px var(--sys-color-background);
+    pointer-events: none;
+  }
   .ui-button:focus-visible {
     outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
     outline-offset: var(--sys-focus-ring-offset);

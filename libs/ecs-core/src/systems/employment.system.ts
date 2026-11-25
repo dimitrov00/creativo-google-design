@@ -260,62 +260,6 @@ export const EmploymentSystem = {
   LINGER_DAYS: 400,
 
   /**
-   * How many days ahead a last working day is worth a reminder — and how
-   * long a period has to be for one: a guest booked for a week needs no
-   * card saying the week ends (team onboarding D10, the reminder cards).
-   */
-  REMINDER_DAYS: 7,
-
-  /**
-   * Is a working period's last day close enough to decide on? Today, or
-   * within `REMINDER_DAYS` of it, on a period longer than that. The record
-   * has to work — the caller asks only of one that does.
-   */
-  isReminded(
-    barberStartsLocalDate: LocalDate,
-    barberLastWorkingLocalDate: LocalDate | null,
-    today: LocalDate,
-  ): boolean {
-    const last = barberLastWorkingLocalDate;
-    return (
-      last !== null &&
-      last >= today &&
-      last <= LocalDate.addDays(today, EmploymentSystem.REMINDER_DAYS) &&
-      LocalDate.addDays(barberStartsLocalDate, EmploymentSystem.REMINDER_DAYS) <
-        last
-    );
-  },
-
-  /**
-   * The working barbers whose last day is close enough to decide on
-   * (`isReminded`), soonest first, then in the order given — the
-   * schedule's reminders, from the records the staff's team stream holds.
-   */
-  remindersOf(barbers: readonly Barber[], today: LocalDate): readonly Barber[] {
-    const due: Barber[] = [];
-    for (let i = 0; i < barbers.length; i++) {
-      const barber = barbers[i] as Barber;
-      if (
-        BarberLifecycle.isLive(barber) &&
-        EmploymentSystem.isReminded(
-          barber.barberStartsLocalDate,
-          barber.barberLastWorkingLocalDate,
-          today,
-        )
-      ) {
-        due.push(barber);
-      }
-    }
-    // Stable: barbers on one day keep the order they were given in.
-    return due.sort((a, b) =>
-      LocalDate.compare(
-        a.barberLastWorkingLocalDate as LocalDate,
-        b.barberLastWorkingLocalDate as LocalDate,
-      ),
-    );
-  },
-
-  /**
    * The barbers who have left and may still hold visits (team onboarding
    * D10, the leftover lane): the DEPARTED records whose last working day
    * is no more than `LINGER_DAYS` behind `today`, in the order given. A
