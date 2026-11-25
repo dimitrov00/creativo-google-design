@@ -73,6 +73,11 @@ jobs:
       - run: pnpm icons:check
       - run: node tools/icons/build-material-glyphs.mjs --check
 
+      # The element index (docs/ui-elements.md): every exported element of
+      # libs/ui carries its index tags, and the committed file matches them.
+      # Regardless of the affected graph, like the icon sweep above.
+      - run: pnpm ui:index:check
+
       - run: pnpm audit --audit-level=high
 
       - uses: gitleaks/gitleaks-action@v2

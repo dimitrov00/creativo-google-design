@@ -129,6 +129,13 @@ type EdgeLabel = {
  * Accessibility: the `svg` is `role="img"` named by `uiLabel`; a visually
  * hidden table lists every point's word and figure, since only the last
  * figure is printed beside the line.
+ *
+ * @uiPurpose A full line chart of one period against a comparison period, with
+ *   an average rule and end labels.
+ * @uiSwiftUI Swift Charts `LineMark`, with `AreaMark` for the fill and
+ *   `RuleMark` for the average
+ * @uiAliases line chart, line graph, trend, time series, area chart
+ * @uiNotThis A tiny axis-less trend inside a card is `ui-spark-line`.
  */
 @Component({
   selector: 'ui-line-chart',

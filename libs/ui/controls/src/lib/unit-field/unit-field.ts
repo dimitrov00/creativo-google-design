@@ -30,6 +30,13 @@ let nextUnitId = 0;
  *
  * Focus is drawn on the whole field, the way the time field draws it, so
  * the three fields of a sheet wear one ring.
+ *
+ * @uiPurpose A typed figure with its unit beside it, such as 30 min or 10,00
+ *   €.
+ * @uiSwiftUI `TextField(_:value:format:)`
+ * @uiAliases number input, numeric field, suffix, price input, duration, unit
+ * @uiNotThis A sum that is the whole screen is `ui-amount-field`; a time of
+ *   day is `ui-time-field`; a bounded value is `ui-slider`.
  */
 @Component({
   selector: 'ui-unit-field',

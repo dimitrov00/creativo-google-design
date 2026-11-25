@@ -30,6 +30,11 @@ export type UiForegroundStyle =
  * UNSET writes nothing: the element inherits its ink, as it always did. An
  * EXPLICIT `primary` stamps the attribute and takes the ink back, so a fact
  * inside a quiet line is ink instead of the grey it would inherit.
+ *
+ * @uiPurpose Sets an element's text and glyph colour from the semantic ink
+ *   styles.
+ * @uiSwiftUI `.foregroundStyle(_:)`
+ * @uiAliases color, text color, foreground, ink, tint
  */
 @Directive({
   selector: '[uiForegroundStyle]',

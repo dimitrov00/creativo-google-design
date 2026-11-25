@@ -16,7 +16,16 @@ export type UiSpacing =
   | 'spacious';
 export type UiAlignment = 'leading' | 'center' | 'trailing' | 'stretch';
 
-/** Flex-layout primitive — horizontal/vertical/z-stack, the workhorse layout building block. */
+/**
+ * Flex-layout primitive — horizontal/vertical/z-stack, the workhorse layout building block.
+ *
+ * @uiPurpose Lays its children out in a row, a column or on top of each other,
+ *   with token spacing and alignment.
+ * @uiSwiftUI `VStack` / `HStack` / `ZStack`
+ * @uiAliases flex, flexbox, row, column, vstack, hstack
+ * @uiNotThis Children that must wrap onto new lines go in `ui-flow`; equal
+ *   columns are `ui-grid`.
+ */
 @Component({
   selector: 'ui-stack',
   template: `<ng-content />`,

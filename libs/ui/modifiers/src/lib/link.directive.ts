@@ -12,6 +12,12 @@ import { Directive } from '@angular/core';
  * button semantically. NOT for standalone footer actions (those are
  * `plain` uiButtons per the SwiftUI-parity ruling); uiLink is for links
  * living inside running text.
+ *
+ * @uiPurpose Styles an anchor or button as an underlined text link inside a
+ *   sentence.
+ * @uiSwiftUI `Link`, or a Markdown link inside `Text`
+ * @uiAliases link, anchor, hyperlink, inline link, underline
+ * @uiNotThis A standalone action such as a footer link is a plain `uiButton`.
  */
 @Directive({
   selector: 'a[uiLink], button[uiLink]',

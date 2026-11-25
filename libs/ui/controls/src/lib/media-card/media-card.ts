@@ -36,6 +36,13 @@ import { UiOverlayDirective, UiRadiusDirective } from '@creativo/ui/modifiers';
  *   </ui-stack>
  * </ui-media-card>
  * ```
+ *
+ * @uiPurpose A cover-art card: the picture is the card and the caption sits
+ *   inside it over a scrim.
+ * @uiSwiftUI `AsyncImage` with `.overlay(alignment: .bottom)`
+ * @uiAliases image card, cover card, photo tile, catalog card, hero card
+ * @uiNotThis A plain picture is `ui-async-image`; a surface for content
+ *   without a picture is `ui-card`.
  */
 @Component({
   selector: 'ui-media-card',

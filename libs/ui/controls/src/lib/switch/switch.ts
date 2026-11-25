@@ -31,6 +31,12 @@ import {
  *   <button uiSwitch uiTrailing [(uiOn)]="saveToProfile" aria-label="…"></button>
  * </ui-list-row>
  * ```
+ *
+ * @uiPurpose An on/off switch for one setting that takes effect the moment it
+ *   is flipped.
+ * @uiSwiftUI `Toggle`
+ * @uiAliases switch, toggle, checkbox, on off, setting
+ * @uiNotThis A pill that toggles a filter is `uiChip`.
  */
 @Component({
   selector: 'button[uiSwitch]',

@@ -90,6 +90,14 @@ interface StreakCell {
  * `small` — marks of two dots, no captions: the glance tile, beside the
  * stamp card's metric, so the two half tiles are one part and share
  * their lines.
+ *
+ * @uiPurpose Draws a streak: the count of periods kept in a row over the
+ *   last few periods, with kept, protected, missed and open marks.
+ * @uiSwiftUI none
+ * @uiAliases streak, habit tracker, visit rhythm, loyalty streak, run of
+ *   visits
+ * @uiNotThis The steps of a flow are `ui-stepper`; a single share of a
+ *   whole is `ui-gauge`.
  */
 @Component({
   selector: 'ui-streak-track',

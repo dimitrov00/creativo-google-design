@@ -73,6 +73,13 @@ const GLYPH_SCALES = {
  *
  * All spans, so it sits inside a `button[uiCard]` or a list row (a button
  * admits phrasing content only). Never interactive itself.
+ *
+ * @uiPurpose One labelled figure read at a glance: a value with its unit,
+ *   a caption under it and an optional delta.
+ * @uiSwiftUI none
+ * @uiAliases metric, stat, kpi, figure, statistic, number tile
+ * @uiNotThis A value drawn as a ring or a bar against a maximum is
+ *   `ui-gauge`; `ui-metric` prints the figure and never meters it.
  */
 @Component({
   selector: 'ui-metric',

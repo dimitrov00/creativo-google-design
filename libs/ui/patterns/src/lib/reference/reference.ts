@@ -28,6 +28,12 @@ import { UiInteractiveDirective } from '@creativo/ui/modifiers';
  * new value starts unconfirmed.
  *
  * DS inputs only; the consumer decides whether there is a line at all.
+ *
+ * @uiPurpose The line a failed call leaves for a support report: a
+ *   reference id printed in full and copied to the clipboard on a tap.
+ * @uiSwiftUI none
+ * @uiAliases reference code, error id, copy to clipboard, support code,
+ *   trace id
  */
 @Component({
   selector: 'ui-reference',

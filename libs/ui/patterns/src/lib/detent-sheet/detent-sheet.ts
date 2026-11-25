@@ -90,6 +90,15 @@ const DRAG_THRESHOLD = 8;
  * The host must sit inside a `position: relative` container that has a real
  * height — it positions itself against that, not against the viewport, so a
  * map pane and a full-page use both work.
+ *
+ * @uiPurpose A non-modal bottom panel that rests at set heights and is dragged
+ *   between them while what is behind it stays usable.
+ * @uiSwiftUI `.sheet` with `.presentationDetents` and
+ *   `.presentationBackgroundInteraction(.enabled)`
+ * @uiAliases bottom sheet, drawer, draggable sheet, map sheet, persistent
+ *   bottom sheet, panel
+ * @uiNotThis A sheet that interrupts and needs an answer before the person
+ *   continues is the modal `ui-modal-sheet`.
  */
 @Component({
   selector: 'ui-detent-sheet',

@@ -56,6 +56,14 @@ import { UiModalSheet } from '../modal-sheet/modal-sheet';
  *   </ui-detail-sheet>
  * }
  * ```
+ *
+ * @uiPurpose The ready-made sheet for reading about one thing and acting on
+ *   it: large title, summary, media, sections and a docked action bar.
+ * @uiSwiftUI `.sheet` holding a `ScrollView` with `.safeAreaInset(edge:
+ *   .bottom)`
+ * @uiAliases detail sheet, bottom sheet, product sheet, drawer, quick view
+ * @uiNotThis A sheet with content of its own shape (a form, a picker) is
+ *   `ui-modal-sheet`; a yes/no question is `ui-alert`.
  */
 @Component({
   selector: 'ui-detail-sheet',

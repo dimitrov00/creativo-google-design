@@ -50,6 +50,13 @@ export type UiDateBadgeState = 'plain' | 'selected' | 'outside' | 'unavailable';
  * Driven by `--ui-date-badge-size`, which `ui-calendar-grid` sets for every
  * badge inside it (see its `uiSize`) — set once on the grid rather than passed
  * to forty-two badges.
+ *
+ * @uiPurpose Shows one calendar day number with its selected, today and
+ *   unavailable looks and an optional events dot.
+ * @uiSwiftUI none
+ * @uiAliases day, day cell, calendar day, date number, day badge
+ * @uiNotThis A captioned date stamp at the start of a row is `ui-date-tile`; a
+ *   status capsule is `uiBadge`.
  */
 @Component({
   selector: 'ui-date-badge',

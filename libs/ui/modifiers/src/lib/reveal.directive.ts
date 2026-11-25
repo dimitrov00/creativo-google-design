@@ -44,6 +44,11 @@ function readDurationMs(raw: string, fallback: number): number {
  *
  * Replaces `crFadeUp`, per-section rAF entrance sweeps, and bespoke WAAPI
  * observers.
+ *
+ * @uiPurpose Plays the one entrance animation when an element scrolls into view
+ *   or first renders.
+ * @uiSwiftUI `.scrollTransition(_:axis:transition:)` / `.transition(_:)`
+ * @uiAliases animation, fade in, scroll reveal, entrance, intersection observer
  */
 @Directive({
   selector: '[uiReveal]',

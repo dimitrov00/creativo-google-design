@@ -58,6 +58,14 @@ import {
  *
  * Carries no date logic whatsoever, like `ui-calendar-grid`: it is a scroll
  * box with a rhythm.
+ *
+ * @uiPurpose A scroll box for a continuous run of month sections under a
+ *   heading that scrolls away with them.
+ * @uiSwiftUI `ScrollView` over a stack of months
+ * @uiAliases calendar, scrolling calendar, month list, continuous calendar,
+ *   date range
+ * @uiNotThis One month on its own is `ui-month-picker`; the cells of each month
+ *   go in a `ui-calendar-grid`.
  */
 @Component({
   selector: 'ui-calendar-scroller',

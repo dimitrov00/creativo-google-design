@@ -95,6 +95,13 @@ export type UiListRowTrailingProminence = 'secondary' | 'primary';
  * `uiSelected` would have rendered its selection indistinguishable from
  * it. Emphasis that borrows a state's signal is not emphasis; it is
  * ambiguity.
+ *
+ * @uiPurpose One row of a list: a leading glyph or avatar, a label and a
+ *   trailing detail, as a link, a button or a static row.
+ * @uiSwiftUI a `List` row / `LabeledContent`; the prominent rung is
+ *   `.listRowBackground`
+ * @uiAliases row, list item, cell, table row, nav row, settings row
+ * @uiNotThis An action inside a `ui-menu` is `uiMenuItem`.
  */
 @Component({
   // `li[uiListRow]` — semantic-list rows (schedules, menus that must stay

@@ -28,6 +28,13 @@ const ADDED_BEAT_MS = 550;
  * Accessible as what it is: at zero one button that adds; above zero a
  * group with a remove button, the live count, and an add button. Every
  * button names the THING (`uiLabel`), not just its verb.
+ *
+ * @uiPurpose A − / + counter for how many of a thing: one + square at zero
+ *   that opens into − n +.
+ * @uiSwiftUI `Stepper`
+ * @uiAliases stepper, counter, quantity, plus minus, number spinner
+ * @uiNotThis The steps of a flow are `ui-stepper`; a typed figure is
+ *   `ui-unit-field`; a sum of money is `ui-amount-field`.
  */
 @Component({
   selector: 'ui-count-stepper',

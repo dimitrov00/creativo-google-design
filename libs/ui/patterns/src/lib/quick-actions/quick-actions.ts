@@ -72,6 +72,13 @@ export type UiQuickActionProminence = 'standard' | 'accent';
  *     --ui-quick-action-fill: var(--sys-color-fill);
  *     --ui-quick-action-ink: var(--sys-color-foreground);
  *   }
+ *
+ * @uiPurpose A centred run of round icon buttons with a word under each,
+ *   the first verbs under a person or a place (call, message, repeat).
+ * @uiSwiftUI none
+ * @uiAliases quick actions, action row, contact actions, icon buttons,
+ *   shortcut buttons
+ * @uiNotThis A bar of controls along the top of a screen is `ui-toolbar`.
  */
 @Component({
   selector: 'ui-quick-actions',
@@ -133,6 +140,10 @@ export class UiQuickActions {
  *     Използвай
  *     <span uiQuickActionBadge uiBadge uiProminence="increased">2</span>
  *   </button>
+ *
+ * @uiPartOf ui-quick-actions
+ * @uiPurpose One verb of the run: a link or a button drawn as a glyph on a
+ *   round disc with its word under it.
  */
 @Component({
   selector: 'a[uiQuickAction], button[uiQuickAction]',

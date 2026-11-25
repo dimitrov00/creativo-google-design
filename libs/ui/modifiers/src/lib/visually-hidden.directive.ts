@@ -6,6 +6,10 @@ import { Directive } from '@angular/core';
  * modifiers.css: the element stays in the accessibility tree (section
  * headings, SR-only hints) while rendering as a 1px clipped box. Replaces
  * per-section `.cr-visually-hidden` utilities.
+ *
+ * @uiPurpose Hides an element from sight while screen readers still read it.
+ * @uiSwiftUI none
+ * @uiAliases sr-only, screen reader only, visually hidden, a11y, accessibility
  */
 @Directive({
   selector: '[uiVisuallyHidden]',

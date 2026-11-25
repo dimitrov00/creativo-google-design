@@ -73,6 +73,13 @@ let nextTitleId = 0;
  * action: a notice with nothing left for the viewer to do shows its facts
  * alone. It does not animate itself either — a consumer inserting one
  * live runs the enter on its own host.
+ *
+ * @uiPurpose A standing message in the flow of a page (a pause, a warning,
+ *   a failed load with its retry) that stays until the fact changes.
+ * @uiSwiftUI none
+ * @uiAliases banner, callout, inline alert, info box, error message, retry
+ * @uiNotThis A receipt that leaves by itself is `ui-toast`; a question that
+ *   blocks the screen until it is answered is `ui-alert`.
  */
 @Component({
   selector: 'ui-notice',

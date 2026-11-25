@@ -50,6 +50,17 @@ export type UiProgressDiscSize = 'regular' | 'large';
  * ```html
  * <ui-progress-disc [uiPhase]="phase()"><ui-icon uiName="auth.email" /></ui-progress-disc>
  * ```
+ *
+ * @uiPurpose The hero symbol of a step that shows its errand's progress with
+ *   no copy: a ring while the work is out, a badge when it landed, a drawn
+ *   check when it is done.
+ * @uiSwiftUI `Image(systemName:)` in a tinted `Circle` with a `ProgressView`
+ *   ring and `.symbolEffect(.replace)` to a checkmark
+ * @uiAliases status disc, step hero, sending indicator, success check,
+ *   processing mark
+ * @uiNotThis A bare spinner or bar is `ui-progress-view`; a measured ring
+ *   around a figure is `ui-progress-ring`; the whole celebration is
+ *   `ui-reward-moment`.
  */
 @Component({
   selector: 'ui-progress-disc',

@@ -19,7 +19,9 @@
     "verify:runbook": "pnpm nx run verify-tools:runbook-gates",
     "preflight": "node tools/verify/preflight/preflight.mjs",
     "icons:glyphs": "node tools/icons/build-material-glyphs.mjs",
-    "icons:check": "node tools/icons/check-icon-usage.mjs"
+    "icons:check": "node tools/icons/check-icon-usage.mjs",
+    "ui:index": "node tools/ui-index/build-ui-index.mjs",
+    "ui:index:check": "node tools/ui-index/build-ui-index.mjs --check"
   },
   "lint-staged": {
     "*.{ts,html,css,json,md}": [

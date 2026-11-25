@@ -8,6 +8,11 @@ import {
  * SwiftUI parity: `Spacer()` — a flexible gap that pushes its flex siblings
  * apart. For use inside `ui-stack`/`ui-toolbar` rows; replaces ad-hoc
  * `justify-content: space-between` wrappers and `margin-*: auto` pins.
+ *
+ * @uiPurpose A flexible gap that pushes its siblings apart inside a stack or
+ *   toolbar row.
+ * @uiSwiftUI `Spacer`
+ * @uiAliases spacer, space-between, flex grow, margin auto, gap
  */
 @Component({
   selector: 'ui-spacer',

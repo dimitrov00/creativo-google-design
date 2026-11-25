@@ -45,6 +45,13 @@ import { UiDatePill } from '../date-pill/date-pill';
  *   (uiCleared)="last.set(null)"
  * />
  * ```
+ *
+ * @uiPurpose A form row that asks for a date: the label, and a capsule at the
+ *   trailing edge that pops the month.
+ * @uiSwiftUI `DatePicker` with `.datePickerStyle(.compact)` in a `Form`
+ * @uiAliases date row, form date, date input, datepicker row, optional date
+ * @uiNotThis Outside a list group the capsule alone is `ui-date-pill`; a date
+ *   typed as digits is `ui-date-field`.
  */
 @Component({
   selector: 'ui-date-row',

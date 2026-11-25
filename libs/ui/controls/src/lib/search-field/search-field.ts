@@ -121,6 +121,13 @@ export type UiSearchFieldDropdownPlacement = 'below' | 'above';
  * WHAT IT DOES NOT DO. It does not fold the page's large title — that is
  * the page's (`ui-sheet-headline`), told by the focus this reports — and it
  * holds no query of its own: the owner's value is the value.
+ *
+ * @uiPurpose The search field: leading glyph, clear button, busy ring,
+ *   optional filter tokens and a suggestions dropdown.
+ * @uiSwiftUI `.searchable(text:)`, with `.searchable(text:tokens:)` for the
+ *   tokens
+ * @uiAliases search, search box, search bar, filter, autocomplete, typeahead
+ * @uiNotThis Free text that is not a search is `uiTextField`.
  */
 @Component({
   selector: 'ui-search-field',

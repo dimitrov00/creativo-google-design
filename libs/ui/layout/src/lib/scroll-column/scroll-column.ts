@@ -21,6 +21,13 @@ export type UiScrollColumnSnap = 'none' | 'start' | 'center';
  * mandatory — a vertical frame that refuses to rest between its items traps
  * the thumb at its end. Scrolling chains to the page when the frame is
  * done, as a nested scroll view should.
+ *
+ * @uiPurpose A column that stacks its children and scrolls them vertically
+ *   inside a frame of capped height.
+ * @uiSwiftUI `ScrollView(.vertical)`
+ * @uiAliases vertical scroll, scroll area, overflow-y, max-height, scrollable
+ *   list
+ * @uiNotThis A sideways carousel is `ui-scroll-row`.
  */
 @Component({
   selector: 'ui-scroll-column',

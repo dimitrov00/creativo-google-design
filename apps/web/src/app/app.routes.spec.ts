@@ -97,7 +97,12 @@ describe('appRoutes — where a person lands (owner rulings 2026-11-25)', () => 
     expect(await landingOf(principalFixture.client(), '/admin')).toBe(
       '/account',
     );
-  });
+    // The first test of the file to follow these redirects pays for the
+    // lazy route chunks they load (the schedule, the programs, the account)
+    // — seconds on a CI runner busy with a wide affected run, where the
+    // 5 s default failed twice at 5.03 s (2026-11-25). The later tests reuse
+    // what this one imported.
+  }, 30_000);
 
   test('the schedule opens on the person’s own chair when their account links one', async () => {
     expect(

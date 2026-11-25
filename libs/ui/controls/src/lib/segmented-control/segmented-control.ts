@@ -49,6 +49,14 @@ export interface UiSegment {
  * recipe.
  *
  * A radiogroup to assistive tech: one tab stop, arrows move the choice.
+ *
+ * @uiPurpose Two to five short, exclusive answers side by side on one track: a
+ *   view toggle or a scope.
+ * @uiSwiftUI `Picker` with `.pickerStyle(.segmented)`
+ * @uiAliases segmented, tabs, view toggle, toggle group, switcher, button
+ *   group
+ * @uiNotThis Options with a second line are `ui-choice-tiles`; a long list is
+ *   `ui-choice-menu`.
  */
 @Component({
   selector: 'ui-segmented-control',

@@ -35,6 +35,11 @@ interface LogoVariant {
  *   <ui-logo uiLabel="Creativo" />                  <!-- announced as the brand -->
  *   <ui-logo />                                     <!-- decorative, e.g. beside the name -->
  *   <ui-logo uiScheme="dark" />                     <!-- over media -->
+ *
+ * @uiPurpose Draws the brand mark, in the light or dark cut the theme asks for.
+ * @uiSwiftUI `Image(_:)` with the brand asset
+ * @uiAliases logo, brand mark, wordmark, brand
+ * @uiNotThis Any other glyph is `ui-icon`.
  */
 @Component({
   selector: 'ui-logo',

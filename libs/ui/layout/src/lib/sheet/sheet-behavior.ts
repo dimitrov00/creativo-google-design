@@ -76,6 +76,14 @@ const FOCUSABLE_SELECTOR =
  * methods from wherever its template attaches them (backdrop, dialog,
  * drag handle, scroller). Dismissal is *requested*, never performed:
  * `uiSheetDismissed` fires and the owner flips its own open state.
+ *
+ * @uiPurpose The shared modal behaviour a sheet surface hosts: scroll lock,
+ *   focus trap and restore, Escape and backdrop dismissal, drag to dismiss.
+ * @uiSwiftUI none
+ * @uiAliases focus trap, scroll lock, modal behaviour, drag to dismiss,
+ *   backdrop, escape key
+ * @uiNotThis Features never host it themselves; present `ui-modal-sheet`, which
+ *   already carries it.
  */
 @Directive({
   selector: '[uiSheetBehavior]',

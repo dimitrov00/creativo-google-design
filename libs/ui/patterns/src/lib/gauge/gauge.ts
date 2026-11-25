@@ -155,6 +155,12 @@ const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
  * подстригване»). Inside a button or an image the meter is presentational
  * and the container's own name must carry the same words. All spans, so it
  * sits inside a button.
+ *
+ * @uiPurpose Draws where a lasting value stands in its range, as a bar, a stamp
+ *   card, a row of steps or a ring.
+ * @uiSwiftUI `Gauge`; the ring is its `.accessoryCircularCapacity` style
+ * @uiAliases meter, gauge, progress bar, stamp card, level, ring
+ * @uiNotThis Work that is loading or under way is `ui-progress-view`.
  */
 @Component({
   selector: 'ui-gauge',

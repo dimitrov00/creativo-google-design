@@ -11,6 +11,14 @@ import type { UiAlignment, UiSpacing } from '../stack/stack';
  * FlowLayout — the wrapping HStack). An `HStack` never wraps; a chip/tag
  * cluster that must break onto new lines is its own layout, so it gets its
  * own primitive rather than a wrap flag on `ui-stack`.
+ *
+ * @uiPurpose Lays children out in a row that wraps onto new lines, for clusters
+ *   of chips or tags.
+ * @uiSwiftUI a custom `Layout` (the WWDC22 `FlowLayout` sample); SwiftUI ships
+ *   no built-in wrapping stack
+ * @uiAliases wrap, flex-wrap, flow layout, tag cloud, chip group
+ * @uiNotThis A single row or column that never wraps is `ui-stack`; equal
+ *   columns are `ui-grid`.
  */
 @Component({
   selector: 'ui-flow',

@@ -65,6 +65,14 @@ import {
  *   />
  * </ng-container>
  * ```
+ *
+ * @uiPurpose A ring that draws how much of a whole is done, with projected
+ *   content at its centre.
+ * @uiSwiftUI `ProgressView(value:)` with `.progressViewStyle(.circular)`
+ * @uiAliases progress ring, circular progress, completion ring, activity ring,
+ *   donut
+ * @uiNotThis A spinner or a linear bar is `ui-progress-view`; a standing level
+ *   such as loyalty points is `ui-gauge`.
  */
 @Component({
   selector: 'ui-progress-ring',

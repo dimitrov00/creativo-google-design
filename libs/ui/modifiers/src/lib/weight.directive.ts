@@ -8,6 +8,10 @@ export type UiFontWeight = 'regular' | 'medium' | 'semibold' | 'bold';
  * (§3), so this is an override for when a caller wants to deviate from a
  * role's own weight, not a value every `uiFont`/`uiText` usage must repeat.
  * Unset omits the attribute entirely, leaving the role's baked-in weight.
+ *
+ * @uiPurpose Overrides the font weight that an element's text style carries.
+ * @uiSwiftUI `.fontWeight(_:)`
+ * @uiAliases font-weight, bold, semibold, weight
  */
 @Directive({
   selector: '[uiWeight]',

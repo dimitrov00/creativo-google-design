@@ -41,6 +41,10 @@ export type UiHeadlineStyle = 'standard' | 'hero';
  * control is the face. The head only needs to KNOW one is there, and
  * `contentChild` sees only an imported directive — hence the bundle,
  * `UI_SHEET_HEADLINE`, which every consumer with a face imports.
+ *
+ * @uiPartOf ui-sheet-headline
+ * @uiPurpose Marks the one projected avatar or medal as the headline's
+ *   face.
  */
 @Directive({
   selector: '[uiHeadlineMedia]',
@@ -56,6 +60,10 @@ export class UiHeadlineMedia {}
  * it: it rises with it, it leaves with it, it is `aria-hidden` with it.
  * The consumer says its words in a visually hidden `span` after the quiet
  * line.
+ *
+ * @uiPartOf ui-sheet-headline
+ * @uiPurpose Marks the badge that stands on the lower rim of a hero
+ *   headline's face, such as a client's tier.
  */
 @Directive({
   selector: '[uiHeadlinePlate]',
@@ -156,6 +164,17 @@ interface HeadlineRing {
  *
  * The ring, the plate and the stage belong to the hero: on a `standard`
  * head they draw nothing, and development says so once.
+ *
+ * @uiPurpose The head of a sheet page in its content: the large title, up
+ *   to two quiet lines under it and an optional face, folding away while a
+ *   search is engaged.
+ * @uiSwiftUI a large `.navigationTitle` with a `.navigationSubtitle`; the
+ *   fold is the `.searchable` grammar
+ * @uiAliases large title, page title, headline, hero header, profile
+ *   header, subtitle
+ * @uiNotThis The bar pinned above it, with the grabber and the compact
+ *   title, is `ui-sheet-header`; a heading inside the page is
+ *   `ui-section-header`.
  */
 @Component({
   selector: 'ui-sheet-headline',

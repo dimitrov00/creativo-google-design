@@ -1,0 +1,8 @@
+{
+  "name": "ui-index-tools",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "tools/ui-index",
+  "projectType": "library",
+  "tags": ["scope:tooling", "type:util"],
+  "targets": {}
+}

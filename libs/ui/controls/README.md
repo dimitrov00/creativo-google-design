@@ -1,7 +1,10 @@
 # controls
 
-This library was generated with [Nx](https://nx.dev).
+The design system's controls (`@creativo/ui/controls`).
 
-## Running unit tests
+Which element to use for a job is answered by
+[`docs/ui-elements.md`](../../../docs/ui-elements.md), generated from each
+element's own docblock tags. Live examples are in the showcase app
+(`pnpm nx serve showcase`).
 
-Run `nx test controls` to execute the unit tests.
+Run `pnpm nx test controls` for the unit tests.

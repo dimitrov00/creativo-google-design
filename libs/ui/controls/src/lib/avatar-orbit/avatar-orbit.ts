@@ -43,6 +43,13 @@ const INNER_SEATS = 3;
  *   consumer says otherwise).
  * - **One mark.** `role="img"` named by the consumer's `aria-label`
  *   (everyone it stands for); the discs are decoration.
+ *
+ * @uiPurpose A hero picture of one person at the centre with up to six others
+ *   turning slowly around them.
+ * @uiSwiftUI none
+ * @uiAliases avatar orbit, team hero, people cluster, welcome picture,
+ *   orbiting avatars
+ * @uiNotThis A compact row of people is `ui-avatar-group`.
  */
 @Component({
   selector: 'ui-avatar-orbit',

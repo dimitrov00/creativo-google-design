@@ -88,6 +88,13 @@ export type UiPageActionBarAnchor = 'page' | 'pane';
  *   </button>
  * </ui-page-action-bar>
  * ```
+ *
+ * @uiPurpose The bottom action row of a full-height page, pinned in the
+ *   thumb zone with the primary action at the trailing edge.
+ * @uiSwiftUI `.safeAreaInset(edge: .bottom)` on a page, or a
+ *   `ToolbarItem(placement: .bottomBar)`
+ * @uiAliases bottom bar, action bar, sticky footer, cta bar, dock
+ * @uiNotThis Inside a sheet the bottom row is `ui-sheet-action-bar`.
  */
 @Component({
   selector: 'ui-page-action-bar',

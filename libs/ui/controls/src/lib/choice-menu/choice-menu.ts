@@ -111,7 +111,13 @@ type UiChoiceSection = {
   readonly options: readonly UiChoiceOption[];
 };
 
-/** The consumer's own leading rail: `<ng-template uiChoiceLeading let-option>`. */
+/**
+ * The consumer's own leading rail: `<ng-template uiChoiceLeading let-option>`.
+ *
+ * @uiPartOf  ui-choice-menu
+ * @uiPurpose The consumer's own leading content (a portrait, a glyph) for each
+ *   option row of the menu.
+ */
 @Directive({ selector: 'ng-template[uiChoiceLeading]' })
 export class UiChoiceLeading {
   readonly template =
@@ -139,6 +145,14 @@ export class UiChoiceLeading {
  *
  * `uiPresented` is a model: the consumer opens it from the trigger's click
  * and may close it when another popover opens; a pick closes it here.
+ *
+ * @uiPurpose The select: one option out of a list, picked from a popover that
+ *   opens from the consumer's own trigger.
+ * @uiSwiftUI `Picker` with `.pickerStyle(.menu)`
+ * @uiAliases select, dropdown, combobox, picker, option list, popover menu
+ * @uiNotThis Two to five short answers all worth seeing are
+ *   `ui-segmented-control`; a few figures as a grid are `ui-choice-tiles`; a
+ *   menu of actions is `ui-menu`.
  */
 @Component({
   selector: 'ui-choice-menu',

@@ -33,6 +33,12 @@ import {
  *   <a uiListRow [uiInteractive]="true">…</a>
  * </ui-list-group>
  * ```
+ *
+ * @uiPurpose Groups list rows into one segmented run, each row its own surface
+ *   with a hairline seam between them.
+ * @uiSwiftUI `List` with `Section`, in the `.insetGrouped` list style
+ * @uiAliases list, grouped list, section, table, settings list, menu list
+ * @uiNotThis Free content on one surface is `ui-card`.
  */
 @Component({
   selector: 'ui-list-group, ul[uiListGroup], nav[uiListGroup]',

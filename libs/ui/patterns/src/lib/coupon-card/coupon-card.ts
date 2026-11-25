@@ -87,6 +87,12 @@ import { UiOccasionBand } from './occasion-band';
  * shadow, for `drop-shadow()`), `--ui-coupon-card-foot`,
  * `--ui-coupon-card-notch`, `--ui-coupon-card-tear` (where the tear runs,
  * from the top).
+ *
+ * @uiPurpose A ticket-shaped card for one offer: its value, name and code over
+ *   a tear line, with its conditions and the call to use it.
+ * @uiSwiftUI none
+ * @uiAliases coupon, voucher, ticket, discount, promo code, offer
+ * @uiNotThis A plain content surface is `ui-card`.
  */
 @Component({
   selector: 'button[uiCouponCard], article[uiCouponCard]',

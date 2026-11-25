@@ -41,6 +41,13 @@ export type UiSliderMark = UiMark & { readonly label: string };
  * (they used to hang half a word past the track), and a word that would
  * overprint its neighbour is dropped — the owner's `uiValueText` still
  * says every value.
+ *
+ * @uiPurpose A value dragged along a bounded range, on a plain rail or a ruler
+ *   of ticks with worded marks.
+ * @uiSwiftUI `Slider`
+ * @uiAliases slider, range, range input, scrubber, ruler
+ * @uiNotThis A count of things is `ui-count-stepper`; a typed figure is
+ *   `ui-unit-field`.
  */
 @Component({
   selector: 'ui-slider',

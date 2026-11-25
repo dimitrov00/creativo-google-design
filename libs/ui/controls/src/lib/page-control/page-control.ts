@@ -53,6 +53,12 @@ export function uiPageDots(count: number, index: number): readonly UiPageDot[] {
  * nothing. Decorative unless `uiLabel` names it («Страница 3 от 12»): the
  * pages themselves carry their names, so a consumer whose pages are
  * labelled leaves it empty and the dots stay hidden from assistive tech.
+ *
+ * @uiPurpose The row of dots under a paged carousel that shows which page is
+ *   on screen.
+ * @uiSwiftUI `TabView` with `.tabViewStyle(.page)` (the `UIPageControl` dots)
+ * @uiAliases page dots, carousel dots, pagination dots, page indicator, pager
+ * @uiNotThis The steps of a flow are `ui-stepper`.
  */
 @Component({
   selector: 'ui-page-control',

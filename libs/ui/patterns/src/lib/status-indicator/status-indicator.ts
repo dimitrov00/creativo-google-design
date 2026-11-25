@@ -24,6 +24,12 @@ export type UiStatusIndicatorTone = 'success' | 'warning' | 'destructive';
  *   <span uiDetail>{{ closesAt }}</span>
  * </ui-status-indicator>
  * ```
+ *
+ * @uiPurpose A flat status line: a coloured dot, the state in words (open,
+ *   closed, available) and an optional quiet detail after it.
+ * @uiSwiftUI a `Label` whose icon is `Circle().fill(tone)`
+ * @uiAliases status dot, status line, open closed, availability, presence
+ * @uiNotThis A state drawn as a tinted capsule is `uiBadge`.
  */
 @Component({
   selector: 'ui-status-indicator',

@@ -440,7 +440,10 @@ nothing.
   `@core/pipelines`.
 - **Design system:** `libs/ui/*` (`ui-*` elements, `--sys-*` tokens), with
   taste rules in `docs/styling-conventions.md` and the design-research docs.
-  Unchanged by the ECS move; Angular classes are expected there.
+  Unchanged by the ECS move; Angular classes are expected there. **Which
+  element to use is answered by `docs/ui-elements.md`** (generated from the
+  elements' own docblock tags, `pnpm ui:index`; `pnpm ui:index:check` fails
+  on an untagged element) — look a control up there before writing one.
 - **Boundaries** are enforced by `@nx/enforce-module-boundaries` in
   `eslint.config.mjs` (`scope:*` + `type:*` tags, documented in
   `docs/architecture/module-boundaries.md`). The layering arrows stay: ui

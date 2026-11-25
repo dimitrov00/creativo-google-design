@@ -29,6 +29,12 @@ export type CameraCaptureState =
  * through `uiCaptured`, and the camera is released with it. The camera
  * comes through the DS's one camera token, so a test drives it with a
  * double. Copy is the host's: the four states are said in its words.
+ *
+ * @uiPurpose A camera viewfinder that takes one picture, cropped to the frame,
+ *   when the host's own button calls its shutter.
+ * @uiSwiftUI none
+ * @uiAliases camera, photo, take photo, capture, viewfinder, webcam
+ * @uiNotThis Reading a QR code or a barcode is `ui-code-scanner`.
  */
 @Component({
   selector: 'ui-camera-capture',

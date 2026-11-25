@@ -46,6 +46,13 @@ export type UiSheetPresentationSizing = 'automatic' | 'page';
  * lock is left to that surface's own sheet. Where popovers do not exist
  * the sheet stays in place, held inside the surface by its transform —
  * still over the content, just not over the chrome.
+ *
+ * @uiPurpose The low-level modal surface: a bottom sheet on phones and a side
+ *   drawer or dialog on desktop, with no chrome of its own.
+ * @uiSwiftUI `.sheet(isPresented:onDismiss:content:)`
+ * @uiAliases sheet, modal, dialog, drawer, bottom sheet, popup
+ * @uiNotThis Features normally present `ui-modal-sheet` (a form) or
+ *   `ui-detail-sheet` (a record); a yes/no question is `ui-alert`.
  */
 @Component({
   selector: 'ui-sheet',

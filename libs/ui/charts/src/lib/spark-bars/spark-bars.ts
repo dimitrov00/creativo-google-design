@@ -59,6 +59,12 @@ type SparkBarsNode = SparkBarsShape & { readonly leaving: boolean };
  * Accessibility: the `svg` is `role="img"` named by `uiLabel`; a visually
  * hidden table lists each bar's word (`uiLabels`, else `1 … n`) and its
  * figure (`uiValueText`, the kit formats no number).
+ *
+ * @uiPurpose A tiny bar graph without axes or words, for a card.
+ * @uiSwiftUI Swift Charts `BarMark` in a `Chart` with its axes hidden
+ * @uiAliases sparkline, spark bars, mini chart, tiny bar chart, micro chart
+ * @uiNotThis A chart with labels, a value grid or bars that can be picked is
+ *   `ui-bar-chart`.
  */
 @Component({
   selector: 'ui-spark-bars',

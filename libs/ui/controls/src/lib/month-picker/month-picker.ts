@@ -73,6 +73,13 @@ export interface UiMonthPickerRelative {
  *   (uiPicked)="goToDay($event)"
  * />
  * ```
+ *
+ * @uiPurpose A month of days to page through and pick one from, with the
+ *   chosen day and today marked; it has no trigger of its own.
+ * @uiSwiftUI `DatePicker` with `.datePickerStyle(.graphical)`
+ * @uiAliases calendar, month view, date picker, day grid, datepicker
+ * @uiNotThis A date somebody opens from a capsule is `ui-date-pill`, in a form
+ *   `ui-date-row`; a typed birthday is `ui-date-field`.
  */
 @Component({
   selector: 'ui-month-picker',

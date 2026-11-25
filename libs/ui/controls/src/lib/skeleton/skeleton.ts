@@ -8,7 +8,15 @@ import { UiRadiusDirective } from '@creativo/ui/modifiers';
 
 export type UiSkeletonAnimation = 'shimmer' | 'pulse' | 'none';
 
-/** Custom element — placeholder block; radius composed from UiRadiusDirective. */
+/**
+ * Custom element — placeholder block; radius composed from UiRadiusDirective.
+ *
+ * @uiPurpose A shimmering placeholder block standing where content will appear
+ *   once it has loaded.
+ * @uiSwiftUI `.redacted(reason: .placeholder)`
+ * @uiAliases skeleton, placeholder, shimmer, loading block, ghost
+ * @uiNotThis A spinner or progress bar is `ui-progress-view`.
+ */
 @Component({
   selector: 'ui-skeleton',
   template: '',

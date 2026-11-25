@@ -37,6 +37,14 @@ const INSET = 5;
  * so the viewBox is the drawing's own pixels: the dot stays round and the
  * strokes keep their width. Accessibility: `role="img"` named by
  * `uiLabel`, one sentence the presenter writes with both figures in it.
+ *
+ * @uiPurpose A tiny trend line without axes or words, beside a dashed
+ *   comparison line, for a card.
+ * @uiSwiftUI Swift Charts `LineMark` and `AreaMark` in a `Chart` with its axes
+ *   hidden
+ * @uiAliases sparkline, spark line, mini chart, tiny line chart, trend line
+ * @uiNotThis A chart with an average rule and printed values is
+ *   `ui-line-chart`.
  */
 @Component({
   selector: 'ui-spark-line',

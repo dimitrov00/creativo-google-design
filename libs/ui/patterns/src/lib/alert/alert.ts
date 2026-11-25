@@ -79,6 +79,13 @@ let sequence = 0;
  *
  * Built from the modifiers alone — controls depend on patterns, so a
  * pattern's buttons are its own plain buttons, as the toast's are.
+ *
+ * @uiPurpose Asks one short question the person must answer before anything
+ *   else happens, with a few answers to pick from.
+ * @uiSwiftUI `.alert`
+ * @uiAliases alert, confirm, dialog, alert dialog, confirmation, modal
+ * @uiNotThis A form or anything to fill in is `ui-modal-sheet`; a passing
+ *   message that needs no answer is `ui-toast`.
  */
 @Component({
   selector: 'ui-alert',

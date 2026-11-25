@@ -23,6 +23,13 @@ export type UiAsyncImageState = 'idle' | 'loaded' | 'error';
  *   UiFrame, intrinsic media geometry has no finite semantic scale.
  *   Without it, the host takes its size from the loaded image or the
  *   consumer's frame.
+ *
+ * @uiPurpose A lazily loaded cover image that shows a placeholder until the
+ *   picture arrives, then fades it in.
+ * @uiSwiftUI `AsyncImage`
+ * @uiAliases image, img, picture, photo, lazy image, cover
+ * @uiNotThis A person's face is `ui-avatar`; a picture with a caption over it
+ *   is `ui-media-card`.
  */
 @Component({
   selector: 'ui-async-image',
