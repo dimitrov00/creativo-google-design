@@ -205,9 +205,11 @@ lib-booking-bag-sheet {
   min-inline-size: 0;
   /* The SURFACE is not bound by the trigger's own width, and it has to hold
      the widest thing an option can say: an unpinned barber's full span,
-     "30 – 45 мин · 13,00 € – 15,00 €". A rung narrower and the row's label
-     clipped it mid-price. */
-  --ui-menu-min-width: 20rem;
+     "30 – 45 мин · 13,00 € – 15,00 €", on one line beside the check's
+     column, which a `ui-choice-menu` row keeps on every row so the rows
+     line up. A rung narrower and the terms wrap mid-price. On a 390px
+     phone this ends on the page's gutter. */
+  --ui-menu-min-width: 21rem;
 }
 
 /* ── The bar ─────────────────────────────────────────────────────────── */
