@@ -7,19 +7,25 @@ import {
   TranslocoLoader,
   provideTransloco,
 } from '@jsverse/transloco';
-import { Observable, of } from 'rxjs';
+import { BehaviorSubject, Observable, of } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AuthDeployment,
   AuthStrategy,
   AuthStrategyKind,
+  type Principal,
   RegistrationField,
   SessionKind,
 } from '@core/components';
 import { OtpId, Result } from '@core/primitives';
 import { PipelineError } from '@core/errors';
 import { OtpLimits } from '@core/systems';
-import { memoryAuthSessionPorts, memoryOtpChallengePorts } from '@core/testing';
+import {
+  memoryAuthSessionPorts,
+  memoryOtpChallengePorts,
+  principalFixture,
+} from '@core/testing';
+import { HomeLandingService } from '@creativo/features/client/account-state';
 import {
   AUTH_DEPLOYMENT_PORTS,
   AUTH_SESSION_PORTS,
@@ -70,9 +76,15 @@ function verifyRefused(status: string, errorCode: string) {
 describe('ClientAuth', () => {
   const requestChallenge = vi.fn();
   const verifyChallenge = vi.fn();
+  /** Where a signed-in person goes — the landing's own spec covers where that is. */
+  const enter = vi.fn(async () => true);
   let fixture: ComponentFixture<ClientAuth>;
 
-  async function setup(deployment?: AuthDeployment): Promise<void> {
+  async function setup(
+    deployment?: AuthDeployment,
+    principal?: Principal,
+  ): Promise<void> {
+    enter.mockClear();
     requestChallenge
       .mockReset()
       .mockResolvedValue(Result.ok(OtpId.of('challenge_1')));
@@ -93,8 +105,17 @@ describe('ClientAuth', () => {
               },
             ]
           : []),
-        // Nobody signed in: the session double's anonymous principal.
-        { provide: AUTH_SESSION_PORTS, useValue: memoryAuthSessionPorts() },
+        // Nobody signed in unless a principal is given: the session
+        // double's anonymous principal.
+        {
+          provide: AUTH_SESSION_PORTS,
+          useValue: principal
+            ? memoryAuthSessionPorts({
+                principals$: new BehaviorSubject<Principal>(principal),
+              })
+            : memoryAuthSessionPorts(),
+        },
+        { provide: HomeLandingService, useValue: { enter } },
         {
           provide: OTP_CHALLENGE_PORTS,
           useValue: {
@@ -280,6 +301,13 @@ describe('ClientAuth', () => {
       expect(query<HTMLButtonElement>('auth-back')?.disabled).toBe(true);
       expect(query('auth-resend-cooldown')).toBeNull();
       expect(query('auth-settling')).toBeNull();
+    });
+
+    it('hands a person already signed in to the landing at once — no link to follow, so their own home (owner rulings 2026-11-25)', async () => {
+      TestBed.resetTestingModule();
+      await setup(undefined, principalFixture.client());
+      await settle();
+      expect(enter).toHaveBeenCalledWith('/');
     });
 
     it('clears the digits when the code is wrong and hides the error once typing resumes', async () => {

@@ -198,10 +198,12 @@ export class SiteFooterComponent {
                 target: '/account',
               }
             : {
+                // «Вход» means "sign me in", not "take me to my account":
+                // no `?redirect=`, so the person lands on their own home
+                // (owner rulings 2026-11-25) — the schedule for staff.
                 labelKey: 'landing.footer.links.login',
                 footerLinkTarget: FooterLinkTarget.Router,
                 target: '/auth',
-                queryParams: { redirect: '/account' },
               },
         ],
       },

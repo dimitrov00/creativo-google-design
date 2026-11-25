@@ -2,12 +2,15 @@ import {
   type AccessDecision,
   AccessTarget,
   AccessVerdict,
+  HomeDestination,
+  type HomeLanding,
   Principal,
   PrincipalKind,
   RouteCapabilities,
   type RouteCapability,
   RouteGate,
   type RouteGateRule,
+  Roles,
   SessionReadiness,
   type SessionReadinessState,
   type StaffPermissions,
@@ -17,10 +20,11 @@ import type { PrincipalTag } from './guest-guard.system';
 import { StaffAccessSystem } from './staff-access.system';
 
 /**
- * SessionAccessSystem — who may enter which route, and when a session is
- * ready to be asked (blueprint §2.8). The pure halves of
- * `apps/web/src/app/guards/*` (`activeGuard`, `anonGuard`, `homeGuard`,
- * `rolesGuard`) and of `EnsureSessionReadyUseCase`'s refresh backoff (the
+ * SessionAccessSystem — who may enter which route, where a person lands,
+ * and when a session is ready to be asked (blueprint §2.8). The pure halves
+ * of `apps/web/src/app/guards/*` (`activeGuard`, `anonGuard`, `homeGuard`,
+ * `rolesGuard`), of the web's landing (`HomeLandingService`) and of
+ * `EnsureSessionReadyUseCase`'s refresh backoff (the
  * legacy identity application lib's `ensure-session-ready.use-case.ts`,
  * deleted in Phase 4b).
  *
@@ -127,6 +131,61 @@ export const SessionAccessSystem = {
     );
   },
 
+  /**
+   * WHERE A PERSON LANDS with no link to follow (owner rulings 2026-11-25,
+   * Q3 of the role-aware homes brief): the home of their main job, read off
+   * the token's roles — whoever works the book on the schedule (the admin
+   * with no chair, the sysadmin and the receptionist included), a content
+   * manager who does not on the programs, everyone else on their account.
+   * Each is a route the same roles open (`decide`'s `ROLES` and `ACTIVE`
+   * gates), so a landing is never `/forbidden`; a principal that is not
+   * active has no home of its own and gets the account, which sends it on.
+   */
+  homeOf(principal: Principal): HomeDestination {
+    if (Principal.hasAnyRole(principal, Roles.BOOK)) {
+      return HomeDestination.Schedule;
+    }
+    if (Principal.hasAnyRole(principal, Roles.CATALOG)) {
+      return HomeDestination.Programs;
+    }
+    return HomeDestination.Account;
+  },
+
+  /**
+   * The landing whole (Q4): the home, and on the schedule the person's own
+   * chair — `linkedBarberId`, the account's link to a barber record, read
+   * from the account document. No link (an admin with no chair, a barber
+   * role with no record, a barber whose period was closed) is every chair.
+   * Off the schedule there is no chair to open on.
+   */
+  landingOf(
+    principal: Principal,
+    linkedBarberId: BarberId | null,
+  ): HomeLanding {
+    const homeDestination = SessionAccessSystem.homeOf(principal);
+    return {
+      homeDestination,
+      homeBarberId:
+        homeDestination === HomeDestination.Schedule ? linkedBarberId : null,
+    };
+  },
+
+  /**
+   * `/`, THE DISPATCHER: whether a visit to the root lands somewhere, and
+   * where. An installed-app launch (`standalone`) by an active principal
+   * lands on their home; anyone else — a browser tab, a visitor, a session
+   * not yet active — sees the landing page (`null`). Whether a signed-in
+   * staff member's browser tab should also skip it is the brief's open Q5.
+   */
+  rootLandingOf(
+    principal: Principal,
+    standalone: boolean,
+  ): HomeDestination | null {
+    return standalone && Principal.isActive(principal)
+      ? SessionAccessSystem.homeOf(principal)
+      : null;
+  },
+
   /** The route decision for a settled principal. */
   decide(principal: Principal, gate: RouteGateRule): AccessDecision {
     switch (gate.routeGate) {
@@ -138,10 +197,6 @@ export const SessionAccessSystem = {
       case RouteGate.SignedIn:
         return principal.principalKind === PrincipalKind.Anonymous
           ? redirect(AccessTarget.Auth, false)
-          : ALLOW;
-      case RouteGate.Home:
-        return gate.standalone && Principal.isActive(principal)
-          ? redirect(AccessTarget.Account, false)
           : ALLOW;
       case RouteGate.Roles:
         return Principal.hasAnyRole(principal, gate.roles)

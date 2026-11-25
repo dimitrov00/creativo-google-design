@@ -5,7 +5,7 @@ import type { AdminRhythmLeaving } from '@creativo/features/admin/loyalty';
 import { activeGuard } from './guards/active.guard';
 import { anonGuard } from './guards/anon.guard';
 import { capabilityGuard } from './guards/capability.guard';
-import { homeGuard } from './guards/home.guard';
+import { homeGuard, landingGuard } from './guards/home.guard';
 import { rolesGuard } from './guards/roles.guard';
 
 /**
@@ -193,14 +193,15 @@ export const appRoutes: Route[] = [
     redirectTo: 'staff/schedule',
   },
   {
-    // The admin area's door: its one page with a body today is the
-    // rhythm's (OR-24 — the impersonation placeholder that answered here is
-    // deleted). Deliberately UNGUARDED, like `staff` and `admin/loyalty`:
-    // the redirect is not an authorization decision, and the target's own
-    // guards — the admin pair `isAdmin()` names — still run afterwards.
+    // The admin area's door, with no page of its own: the person's home
+    // (owner rulings 2026-11-25 — the rhythm page it opened before is one
+    // admin page among several, and a content manager or a barber who typed
+    // it landed on /forbidden). `activeGuard` first: nobody signed in has
+    // a home to go to.
     path: 'admin',
     pathMatch: 'full',
-    redirectTo: 'admin/loyalty/rhythm',
+    canActivate: [activeGuard, landingGuard],
+    children: [],
   },
   {
     // `Roles.CATALOG`, the twin of `isCatalogManager()` in firestore.rules —

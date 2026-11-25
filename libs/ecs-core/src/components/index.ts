@@ -129,6 +129,7 @@ export * from './grant-ref-fields.data';
 export * from './grid-event.data';
 export * from './grid-placement.data';
 export * from './history-note.data';
+export * from './home-landing.data';
 export * from './identifier.data';
 export * from './identity-call.data';
 export * from './impersonation-scope.data';

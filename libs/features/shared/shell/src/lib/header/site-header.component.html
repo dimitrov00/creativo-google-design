@@ -20,9 +20,11 @@
 
       <ui-stack uiAxis="horizontal" uiAlignment="center" uiSpacing="tight">
         @if (!isAuthed()) {
+          <!-- «Вход» means "sign me in", not "take me to my account": no
+               `?redirect=`, so the person lands on their own home (owner
+               rulings 2026-11-25) — the schedule for whoever works it. -->
           <a
             routerLink="/auth"
-            [queryParams]="{ redirect: '/account' }"
             uiButton
             [uiButtonStyle]="isSolid() ? 'bordered' : 'glass'"
             [uiOnMedia]="!isSolid()"

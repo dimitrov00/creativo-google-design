@@ -54,6 +54,7 @@ import {
   translateCodedError,
   wordFlowFailure,
 } from '@creativo/infrastructure/i18n';
+import { HomeLandingService } from '@creativo/features/client/account-state';
 import { AuthFlowStore } from '../auth-flow.store';
 import { codeStepVm } from '../code-step.presenter';
 import { CodeStepPhase, type CodeStepVm } from '../code-step.vm';
@@ -165,6 +166,8 @@ export class ClientAuth {
   private readonly deployment = inject(AUTH_DEPLOYMENT_PORTS).authDeployment;
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  /** Where a signed-in person goes: the link they came for, else their home. */
+  private readonly landing = inject(HomeLandingService);
   private readonly transloco = inject(TranslocoService);
 
   protected readonly store = inject(AuthFlowStore);
@@ -322,9 +325,7 @@ export class ClientAuth {
     effect(() => {
       const settled = this.latched();
       if (settled === SettledVerdict.Active) {
-        void this.router.navigateByUrl(
-          RedirectPath.authDestination(this.redirect()),
-        );
+        void this.landing.enter(this.redirect());
       } else if (settled === SettledVerdict.Onboarding) {
         void this.router.navigate(['/onboarding'], {
           queryParams: { redirect: this.redirect() },
@@ -544,9 +545,7 @@ export class ClientAuth {
     ]);
 
     if (session === SessionKind.Returning) {
-      await this.router.navigateByUrl(
-        RedirectPath.authDestination(this.redirect()),
-      );
+      await this.landing.enter(this.redirect());
     } else {
       await this.router.navigate(['/onboarding'], {
         queryParams: { redirect: this.redirect() },

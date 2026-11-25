@@ -4,12 +4,14 @@ import {
   AccessTarget,
   AccessVerdict,
   AuthClaims,
+  HomeDestination,
   type Principal,
   Principal as P,
   Role,
   RouteCapabilities,
   type RouteCapability,
   RouteGate,
+  Roles,
   SessionReadiness,
   type SessionReadinessState,
   StaffPermissions,
@@ -18,6 +20,7 @@ import {
   AccessScope,
   BarberId,
   StaffCapability,
+  Tag,
   TenantId,
   UserId,
 } from '@core/primitives';
@@ -33,9 +36,9 @@ import {
  * `docs/architecture/flips/phase-4b-delete.md` §11.1), COPIED and re-targeted:
  * the use case's loop (observe → refresh on the backoff → observe) is driven
  * here by `SessionAccessSystem.readiness` over the same principal sequences,
- * and the refresh count is the number of `REFRESH` steps taken. Then the four
- * route guards of apps/web/src/app/guards/* as decisions
- * (`home.guard.spec.ts`'s three cases copied).
+ * and the refresh count is the number of `REFRESH` steps taken. Then the
+ * route guards of apps/web/src/app/guards/* as decisions, and where a person
+ * lands (owner rulings 2026-11-25).
  */
 
 const UID = UserId.of('user_1');
@@ -123,8 +126,6 @@ describe('SessionAccessSystem.readiness (ensure-session-ready.use-case.spec.ts)'
 describe('SessionAccessSystem.decide (apps/web/src/app/guards/*)', () => {
   const active = { routeGate: RouteGate.Active } as const;
   const signedIn = { routeGate: RouteGate.SignedIn } as const;
-  const home = (standalone: boolean) =>
-    ({ routeGate: RouteGate.Home, standalone }) as const;
   const roles = (...required: Role[]) =>
     ({ routeGate: RouteGate.Roles, roles: required }) as const;
 
@@ -159,26 +160,6 @@ describe('SessionAccessSystem.decide (apps/web/src/app/guards/*)', () => {
     expect(SessionAccessSystem.decide(client, signedIn).accessVerdict).toBe(
       AccessVerdict.Allow,
     );
-  });
-
-  it('allows a non-standalone visitor through regardless of principal', () => {
-    expect(SessionAccessSystem.decide(client, home(false)).accessVerdict).toBe(
-      AccessVerdict.Allow,
-    );
-  });
-
-  it('allows a standalone-launch anonymous visitor through', () => {
-    expect(
-      SessionAccessSystem.decide(anonymous, home(true)).accessVerdict,
-    ).toBe(AccessVerdict.Allow);
-  });
-
-  it('redirects a standalone-launch active visitor to /account', () => {
-    expect(SessionAccessSystem.decide(client, home(true))).toEqual({
-      accessVerdict: AccessVerdict.Redirect,
-      to: AccessTarget.Account,
-      keepReturnUrl: false,
-    });
   });
 
   it('roles gate: any listed role lets in, anything else is /forbidden — never a bounce through /auth', () => {
@@ -408,6 +389,105 @@ describe('SessionAccessSystem.decide — the capability gate (staff permissions 
   });
 });
 
+describe('SessionAccessSystem — where a person lands (owner rulings 2026-11-25, Q3–Q4)', () => {
+  const as = (...roles: Role[]): Principal =>
+    P.fromClaims({
+      userId: UID,
+      claims: unwrapOk(AuthClaims.active(TENANT, roles)),
+    });
+  const IVAN = BarberId.of('ivan');
+
+  it('lands each job on its home: the book on the schedule, the programs, else the account', () => {
+    expect(SessionAccessSystem.homeOf(as(Role.Barber))).toBe(
+      HomeDestination.Schedule,
+    );
+    expect(SessionAccessSystem.homeOf(as(Role.Barber, Role.Admin))).toBe(
+      HomeDestination.Schedule,
+    );
+    expect(SessionAccessSystem.homeOf(as(Role.Receptionist))).toBe(
+      HomeDestination.Schedule,
+    );
+    expect(SessionAccessSystem.homeOf(as(Role.ContentManager))).toBe(
+      HomeDestination.Programs,
+    );
+    expect(
+      SessionAccessSystem.homeOf(as(Role.Client, Role.ContentManager)),
+    ).toBe(HomeDestination.Programs);
+    expect(SessionAccessSystem.homeOf(as(Role.Client))).toBe(
+      HomeDestination.Account,
+    );
+  });
+
+  it('Q3’s quiet rows: an admin with no chair, the sysadmin and a content manager at the desk land on the schedule', () => {
+    expect(SessionAccessSystem.landingOf(as(Role.Admin), null)).toEqual({
+      homeDestination: HomeDestination.Schedule,
+      homeBarberId: null,
+    });
+    expect(SessionAccessSystem.homeOf(as(Role.Sysadmin))).toBe(
+      HomeDestination.Schedule,
+    );
+    expect(
+      SessionAccessSystem.homeOf(as(Role.ContentManager, Role.Receptionist)),
+    ).toBe(HomeDestination.Schedule);
+  });
+
+  it('Q4: the schedule opens on the person’s own chair when the account links one, every chair when not — and no chair off the schedule', () => {
+    expect(
+      SessionAccessSystem.landingOf(as(Role.Barber, Role.Admin), IVAN),
+    ).toEqual({
+      homeDestination: HomeDestination.Schedule,
+      homeBarberId: IVAN,
+    });
+    expect(SessionAccessSystem.landingOf(as(Role.Barber), null)).toEqual({
+      homeDestination: HomeDestination.Schedule,
+      homeBarberId: null,
+    });
+    expect(SessionAccessSystem.landingOf(as(Role.Client), IVAN)).toEqual({
+      homeDestination: HomeDestination.Account,
+      homeBarberId: null,
+    });
+  });
+
+  it('a session that is not active has no home of its own: the account, which sends it on', () => {
+    expect(SessionAccessSystem.homeOf(anonymous)).toBe(HomeDestination.Account);
+    expect(SessionAccessSystem.homeOf(onboarding)).toBe(
+      HomeDestination.Account,
+    );
+  });
+
+  it('every one of the 64 role sets lands on a route its own roles open — never /forbidden', () => {
+    const all = Tag.values(Role);
+    expect(all).toHaveLength(6);
+    for (let mask = 1; mask < 1 << all.length; mask++) {
+      const held = all.filter((_, i) => (mask & (1 << i)) !== 0);
+      const principal = as(...held);
+      const home = SessionAccessSystem.homeOf(principal);
+      const gate =
+        home === HomeDestination.Schedule
+          ? ({ routeGate: RouteGate.Roles, roles: Roles.BOOK } as const)
+          : home === HomeDestination.Programs
+            ? ({ routeGate: RouteGate.Roles, roles: Roles.CATALOG } as const)
+            : ({ routeGate: RouteGate.Active } as const);
+      expect(
+        SessionAccessSystem.decide(principal, gate).accessVerdict,
+        held.join('+'),
+      ).toBe(AccessVerdict.Allow);
+    }
+  });
+
+  it('`/` dispatches only an installed-app launch by an active principal; a browser tab and a visitor see the landing page', () => {
+    expect(SessionAccessSystem.rootLandingOf(staff, true)).toBe(
+      HomeDestination.Schedule,
+    );
+    expect(SessionAccessSystem.rootLandingOf(client, true)).toBe(
+      HomeDestination.Account,
+    );
+    expect(SessionAccessSystem.rootLandingOf(staff, false)).toBeNull();
+    expect(SessionAccessSystem.rootLandingOf(anonymous, true)).toBeNull();
+    expect(SessionAccessSystem.rootLandingOf(onboarding, true)).toBeNull();
+  });
+});
+
 describe('SessionAccessSystem properties', () => {
   it('never refreshes more often than the schedule, and only ever settles on an active principal after a refresh', () => {
     fc.assert(
@@ -460,6 +540,8 @@ describe('SessionAccessSystem purity', () => {
         capability.permissions,
         capability.storedRoles,
       ),
+      landing: SessionAccessSystem.landingOf(principal, BarberId.of('petar')),
+      root: SessionAccessSystem.rootLandingOf(principal, true),
     });
     expect(run()).toEqual(run());
     expect(principal).toEqual(staff);
