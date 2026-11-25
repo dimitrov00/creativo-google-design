@@ -83,6 +83,16 @@ const LARGE_TITLE_SELECTOR = '[uisheetlargetitle]';
  * styles, which a sheet's open must not pay for), and until it ran the
  * page painted a sheet's bar — grabber shown, compact title in — for a
  * frame or two. `uiPage` stamps `data-page` on the first render.
+ *
+ * @uiPurpose The top bar of a sheet or a page: the grabber, a compact
+ *   title that lands when the large title scrolls under it, and trailing
+ *   actions.
+ * @uiSwiftUI a navigation bar whose large title collapses to
+ *   `.navigationBarTitleDisplayMode(.inline)` on scroll
+ * @uiAliases navigation bar, app bar, top bar, sheet header, collapsing
+ *   title, grabber
+ * @uiNotThis The large title in the content, with the lines under it, is
+ *   `ui-sheet-headline`; a plain bar of controls is `ui-toolbar`.
  */
 @Component({
   selector: 'ui-sheet-header',

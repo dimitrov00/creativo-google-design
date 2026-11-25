@@ -171,6 +171,12 @@ type BarMark = {
  *
  * Accessibility: the `svg` is `role="img"` named by `uiLabel` (required,
  * one sentence); each bar is a button named by its word and its value text.
+ *
+ * @uiPurpose A full bar chart: labelled vertical or horizontal bars, stacked
+ *   parts, an optional value grid, and bars that can be picked.
+ * @uiSwiftUI Swift Charts `BarMark`
+ * @uiAliases bar chart, column chart, histogram, stacked bars, graph
+ * @uiNotThis A tiny axis-less graph inside a card is `ui-spark-bars`.
  */
 @Component({
   selector: 'ui-bar-chart',

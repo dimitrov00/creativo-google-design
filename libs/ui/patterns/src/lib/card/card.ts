@@ -41,6 +41,13 @@ export type UiCardTone = 'plain' | 'accent' | 'muted' | 'elevated';
  * Neither form may contain further interactive content — nesting a control
  * inside a button is invalid HTML; reach for `ui-card` plus your own
  * control in that case.
+ *
+ * @uiPurpose An elevated surface that groups content; as a link or a button the
+ *   whole card is one thing to press.
+ * @uiSwiftUI `GroupBox`; the link and button forms are a `NavigationLink` or
+ *   `Button` whose label is the card
+ * @uiAliases card, surface, panel, tile, container
+ * @uiNotThis A run of rows, each its own segment, is `ui-list-group`.
  */
 @Component({
   selector: 'ui-card, a[uiCard], button[uiCard]',

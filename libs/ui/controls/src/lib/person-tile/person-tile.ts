@@ -32,6 +32,13 @@ import { UiAvatar } from '../avatar/avatar';
  * a set being ticked); `true` the accent check, and the accent ring round
  * the face, the way a service card in a grid says it is chosen. A choice
  * carries `aria-pressed`.
+ *
+ * @uiPurpose A person as a face over their name in a grid of people, with an
+ *   optional selected mark when the tile is a choice.
+ * @uiSwiftUI none
+ * @uiAliases person tile, people grid, barber picker, staff picker, face tile
+ * @uiNotThis A face with no name is `ui-avatar`; people listed with details
+ *   are `ui-list-row`s.
  */
 @Component({
   selector: 'button[uiPersonTile]',

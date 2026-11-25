@@ -120,6 +120,13 @@ const clamp01 = (value: number): number =>
  * (a headline, a ladder's row) is the ring's box and nothing more: the
  * chip hangs half its height under it, and whoever mounts it leaves that
  * room.
+ *
+ * @uiPurpose Shows one achievement family as a disc of art inside a progress
+ *   ring, the level won on its rim, a title and a caption under it.
+ * @uiSwiftUI none
+ * @uiAliases achievement, award, trophy, medal, level, badge
+ * @uiNotThis A status capsule is `uiBadge`; a ring that is only a meter is
+ *   `ui-gauge`.
  */
 @Component({
   selector: 'ui-medal, button[uiMedal]',

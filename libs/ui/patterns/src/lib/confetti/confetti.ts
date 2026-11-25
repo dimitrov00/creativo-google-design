@@ -62,6 +62,11 @@ const MAX_PARTICLES = 240;
  *   <ui-confetti [uiDelay]="260" />
  * </span>
  * ```
+ *
+ * @uiPurpose Plays one celebratory burst of confetti from the centre of its
+ *   anchor, then removes itself.
+ * @uiSwiftUI none
+ * @uiAliases confetti, celebration, particles, burst, success animation
  */
 @Component({
   selector: 'ui-confetti',

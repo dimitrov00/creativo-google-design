@@ -25,6 +25,11 @@ export interface UiMarkedRun {
  * ```html
  * <span uiText uiFont="body"><ui-marked-text [uiRuns]="runs" /></span>
  * ```
+ *
+ * @uiPurpose Prints a text cut into runs, the matched ones washed in the
+ *   accent: the one look of a search match.
+ * @uiSwiftUI `Text` drawn from an `AttributedString` with highlighted ranges
+ * @uiAliases highlight, mark, search highlight, matched text, highlighted text
  */
 @Component({
   selector: 'ui-marked-text',

@@ -55,7 +55,16 @@ export type UiButtonBorderShape = 'roundedRectangle' | 'capsule';
  * be invalid HTML. It takes no role, so its word reads as part of the
  * surface's name: leave it readable when the surface is named by the words
  * it prints (WCAG 2.5.3), and hide it with `aria-hidden` only inside a
- * cluster a reader is told about in other words. */
+ * cluster a reader is told about in other words.
+ *
+ * @uiPurpose The button: a press that does something or goes somewhere, in the
+ *   plain, bordered, prominent or glass style, with its own busy spinner.
+ * @uiSwiftUI `Button` with `.buttonStyle(_:)`, `.controlSize(_:)` and
+ *   `.buttonBorderShape(_:)`
+ * @uiAliases button, cta, link button, icon button, submit, action
+ * @uiNotThis A pill that stays on or off is `uiChip`; an on/off setting is
+ *   `uiSwitch`.
+ */
 @Component({
   selector: 'button[uiButton], a[uiButton], span[uiButton]',
   // BUSY (owner, 2026-09-17: "when saving or performing an async operation

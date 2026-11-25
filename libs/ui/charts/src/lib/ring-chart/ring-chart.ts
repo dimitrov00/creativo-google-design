@@ -84,6 +84,13 @@ function toneOf(tone: number | null): number | null {
  *
  * Accessibility: the `svg` is `role="img"` named by `uiLabel`; a visually
  * hidden table lists each segment's word and figure.
+ *
+ * @uiPurpose A donut chart of shares of a total, with a slot for a figure in
+ *   the hole.
+ * @uiSwiftUI Swift Charts `SectorMark` with an `innerRadius`
+ * @uiAliases donut chart, doughnut, pie chart, ring chart, radial chart
+ * @uiNotThis One value shown as progress toward a goal is `ui-progress-ring` or
+ *   `ui-gauge`.
  */
 @Component({
   selector: 'ui-ring-chart',

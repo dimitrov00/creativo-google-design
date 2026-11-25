@@ -46,6 +46,13 @@ export interface UiChoiceTile {
  *
  * Every tile takes the house `[data-interactive]` grammar, so hover, press
  * and focus read like every row and card in the app.
+ *
+ * @uiPurpose One option out of a few, shown as a grid of tiles with a figure
+ *   and a second line each, such as tip amounts.
+ * @uiSwiftUI none
+ * @uiAliases radio group, radio tiles, option grid, tip picker, quick amounts
+ * @uiNotThis Short one-word answers are `ui-segmented-control`; a long list is
+ *   `ui-choice-menu`.
  */
 @Component({
   selector: 'ui-choice-tiles',

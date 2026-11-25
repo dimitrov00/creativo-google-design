@@ -174,6 +174,12 @@ function capDigits(raw: string, max: number): string {
  * copy ships with English defaults — consumers localize via the `*Label`
  * inputs (the DS layer has no i18n runtime, same as UiOtpField's slot
  * labels).
+ *
+ * @uiPurpose A phone number field with a country picker, formatting as you
+ *   type and an E.164 value.
+ * @uiSwiftUI none
+ * @uiAliases phone input, tel, telephone, country code, mobile number
+ * @uiNotThis Plain text is `uiTextField`.
  */
 @Component({
   selector: 'ui-phone-field',

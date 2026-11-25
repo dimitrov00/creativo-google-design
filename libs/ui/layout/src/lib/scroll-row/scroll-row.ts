@@ -60,6 +60,14 @@ const FOCUSABLE =
  * row of buttons or links is already reachable and stays out of the tab
  * order. Whatever the consumer set itself (a tabindex, a role, a name) is
  * never written over or lifted.
+ *
+ * @uiPurpose A horizontal strip that scrolls its children sideways with
+ *   snapping and hidden scroll indicators.
+ * @uiSwiftUI `ScrollView(.horizontal)` with `.scrollIndicators(.hidden)` and
+ *   `.containerRelativeFrame(_:count:span:spacing:)`
+ * @uiAliases carousel, horizontal scroll, rail, slider, strip, overflow-x
+ * @uiNotThis A list that scrolls vertically inside a capped frame is
+ *   `ui-scroll-column`.
  */
 @Component({
   selector: 'ui-scroll-row',

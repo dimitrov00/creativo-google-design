@@ -60,6 +60,12 @@ export type UiIconScale = 'small' | 'medium' | 'large';
  *   <ui-icon uiName="footer.arrow" />                          <!-- rides the text -->
  *   <ui-icon uiName="appointment.launch" uiScale="large" />    <!-- fixed 24px -->
  *   <ui-icon uiName="visit.noShow" uiLabel="Не дойде" />       <!-- announced -->
+ *
+ * @uiPurpose Draws one icon from the registry by its semantic name, as an
+ *   inline SVG sized to the text.
+ * @uiSwiftUI `Image(systemName:)`
+ * @uiAliases icon, glyph, svg icon, symbol, material icon
+ * @uiNotThis The brand mark is `ui-logo`.
  */
 @Component({
   selector: 'ui-icon',

@@ -66,6 +66,10 @@ const BOTTOM_EDGE_PADDING = 56;
  * **Selection is a two-way conversation.** `uiSelectedPinId` drives which pin
  * is filled and where the camera sits; tapping a pin emits `uiPinSelect` and
  * the owner decides. Nothing is selected implicitly.
+ *
+ * @uiPurpose An interactive map with pins, one of which can be selected.
+ * @uiSwiftUI `Map` with `Marker`
+ * @uiAliases map, pins, markers, locations, maplibre
  */
 @Component({
   selector: 'ui-map',

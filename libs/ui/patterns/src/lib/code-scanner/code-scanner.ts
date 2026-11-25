@@ -84,6 +84,12 @@ const DEFAULT_FORMATS: readonly string[] = [
  * with doubles and a host can swap the reader.
  *
  * Copy is the host's: the four states are said in the host's words.
+ *
+ * @uiPurpose A camera viewfinder that reads the first QR code or barcode it
+ *   sees and reports its value once.
+ * @uiSwiftUI none
+ * @uiAliases qr, qr code, barcode, scanner, scan, camera
+ * @uiNotThis Taking a picture is `ui-camera-capture`.
  */
 @Component({
   selector: 'ui-code-scanner',

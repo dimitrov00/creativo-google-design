@@ -20,6 +20,12 @@ const bareToRegular = (
  * `data-padding-horizontal` / `data-padding-vertical`. Edge paddings
  * compose with (and win over) the all-edges value, exactly like chained
  * SwiftUI padding modifiers.
+ *
+ * @uiPurpose Pads an element on all edges, horizontally or vertically, with a
+ *   token spacing step.
+ * @uiSwiftUI `.padding(_:)` / `.padding(.horizontal, _:)` /
+ *   `.padding(.vertical, _:)`
+ * @uiAliases padding, inset, spacing, gutter
  */
 @Directive({
   selector: '[uiPadding], [uiPaddingHorizontal], [uiPaddingVertical]',

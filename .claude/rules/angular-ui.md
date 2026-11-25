@@ -62,6 +62,23 @@ injectables. That permission ends at the framework boundary.
 - Firebase SDK imports stay inside `libs/infrastructure/**`; features and UI
   consume ports.
 
+## Choosing an element
+
+- **Look it up first.** `docs/ui-elements.md` lists every element `libs/ui`
+  exports: what it is for, its SwiftUI counterpart, and the words people
+  search by (select, dropdown, toggle, modal, tabs …). Before writing any
+  control in a template, find it there.
+- **Never hand-roll one.** A feature does not style a native control, build
+  a control out of `div`s, or give a design-system element a look of its own
+  in feature CSS. If the element lacks something, extend the element.
+- **A new element is the owner's call.** Add one to `libs/ui` only when the
+  owner asks for it, and only for a use the index has no row for.
+- **A new or renamed element carries its index tags** (`@uiPurpose`,
+  `@uiSwiftUI`, `@uiAliases`, optionally `@uiNotThis`; a piece of another
+  element: `@uiPartOf` + `@uiPurpose`) in the docblock above its decorator.
+  Run `pnpm ui:index` and commit `docs/ui-elements.md`; CI runs
+  `pnpm ui:index:check`.
+
 ## Design-system taste rules still apply
 
 The accent law (one orange, words are ink), the interaction grammar, the

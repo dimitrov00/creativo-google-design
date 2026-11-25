@@ -27,6 +27,13 @@ export type UiAvatarSize = UiControlSize | 'tile' | 'extraLarge';
  * `AsyncImage(url:) { image } placeholder: { monogram }`: the initial IS
  * the placeholder, shown while bytes load, kept on error, and permanent
  * for a null src.
+ *
+ * @uiPurpose One person as a round disc: their photo, or their initial while
+ *   it loads or when there is none.
+ * @uiSwiftUI `AsyncImage` with `.clipShape(Circle())`
+ * @uiAliases avatar, profile picture, user photo, initials, monogram, face
+ * @uiNotThis Several people as one mark are `ui-avatar-group`; a face over a
+ *   name to choose from is `uiPersonTile`.
  */
 @Component({
   selector: 'ui-avatar',

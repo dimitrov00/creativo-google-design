@@ -64,6 +64,13 @@ import { UiReference } from '../reference/reference';
  * and `uiReferenceCopiedText` print a `ui-reference` under the sentence —
  * one tap copies it, for the report the person writes. `''` = no line,
  * and the toast is exactly the one-line pill it always was.
+ *
+ * @uiPurpose A transient receipt docked at the bottom: one sentence saying
+ *   what just happened, one action (undo) and a timed dismiss.
+ * @uiSwiftUI none
+ * @uiAliases snackbar, toast, undo bar, flash message, notification
+ * @uiNotThis A message that stays in the page is `ui-notice`; a question
+ *   that must be answered before anything else is `ui-alert`.
  */
 @Component({
   selector: 'ui-toast',

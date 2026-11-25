@@ -27,6 +27,18 @@ import { UiSheetHeader } from '@creativo/ui/patterns';
 /** Kept as the landing-facing name; the shape now lives in the DS layer. */
 export type ModalSheetScrollEvent = UiSheetScrollEvent;
 
+/**
+ * The modal sheet every consumer shares: the DS sheet primitives (`ui-sheet`,
+ * `ui-sheet-header`) behind one landing-facing API.
+ *
+ * @uiPurpose The modal sheet shell: a surface that rises over the page with a
+ *   grabber, a collapsing title and a close control, around content the
+ *   consumer projects.
+ * @uiSwiftUI `.sheet` with `.presentationSizing(_:)`
+ * @uiAliases modal, dialog, bottom sheet, drawer, popup, overlay
+ * @uiNotThis A yes/no question is `ui-alert`; the fixed read-and-act layout is
+ *   `ui-detail-sheet`; a sheet that rests at heights is `ui-detent-sheet`.
+ */
 @Component({
   selector: 'ui-modal-sheet',
   imports: [UiButton, UiIcon, UiMaterialDirective, UiSheet, UiSheetHeader],

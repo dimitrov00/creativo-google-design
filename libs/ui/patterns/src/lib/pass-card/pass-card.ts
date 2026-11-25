@@ -65,6 +65,12 @@ type UiPassCardPart = 'figure' | 'holder' | 'detail' | 'state';
  * The card measures itself (`container-type: inline-size`), so it needs a
  * column to stand in: a block, a stack, a grid cell. It is never sized by
  * its own content.
+ *
+ * @uiPurpose The client's loyalty card drawn as a wallet pass: the balance
+ *   on an accent field, the holder and the state on the foot.
+ * @uiSwiftUI none
+ * @uiAliases wallet pass, loyalty card, membership card, points card
+ * @uiNotThis A plain surface that groups content is `ui-card`.
  */
 @Component({
   selector: 'ui-pass-card',

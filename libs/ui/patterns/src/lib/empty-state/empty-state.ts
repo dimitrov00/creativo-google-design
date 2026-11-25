@@ -32,6 +32,13 @@ import {
  * `uiForegroundStyle="secondary"`, and a pattern that owned "the body
  * colour" would silently repaint three marketing screens. Ink stays with the
  * projected content until someone decides that repaint on purpose.
+ *
+ * @uiPurpose Says that a list or a section has nothing in it: an optional
+ *   title, a line of copy and a projected call to action.
+ * @uiSwiftUI `ContentUnavailableView`
+ * @uiAliases empty state, zero state, no results, placeholder, blank slate
+ * @uiNotThis A load that failed, with its retry, is `ui-notice`; content
+ *   still loading is `ui-skeleton`.
  */
 @Component({
   selector: 'ui-empty-state',

@@ -61,6 +61,12 @@ interface WeekdayCell {
  *
  * The consumer owns the set: `uiSelected` in, `uiSelectedChange` out, in
  * ISO order.
+ *
+ * @uiPurpose Which days of the week, as a row of seven round toggles, Monday
+ *   first.
+ * @uiSwiftUI none
+ * @uiAliases weekdays, days of week, repeat on, recurrence days, day toggles
+ * @uiNotThis A calendar day is `ui-month-picker`.
  */
 @Component({
   selector: 'ui-weekday-picker',

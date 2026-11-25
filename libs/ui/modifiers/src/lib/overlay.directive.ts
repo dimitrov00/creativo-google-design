@@ -18,6 +18,11 @@ export type UiOverlayStyle = 'plain' | 'ring' | 'scrim-media' | 'vignette';
  *
  * Gradient stops live once in modifiers.css — no literal rgb() scrims in
  * feature CSS.
+ *
+ * @uiPurpose Turns an element into a layer that covers its positioned parent: a
+ *   hairline ring, a media scrim, a vignette or a bare layer.
+ * @uiSwiftUI `.overlay(alignment:content:)`
+ * @uiAliases overlay, scrim, gradient, inset ring, vignette, absolute
  */
 @Directive({
   selector: '[uiOverlay]',

@@ -46,6 +46,13 @@ import {
  * reader. `uiRole="dialog"` names the surface, moves focus onto it as a
  * container, leaves the arrow keys to the month, and still closes on
  * Escape with focus handed back to the capsule.
+ *
+ * @uiPurpose A capsule that names the chosen day and pops the month over the
+ *   page to pick another.
+ * @uiSwiftUI `DatePicker` with `.datePickerStyle(.compact)`
+ * @uiAliases date picker, datepicker, date chip, calendar popover, day picker
+ * @uiNotThis A date that is a row of a form is `ui-date-row`; a date typed as
+ *   digits (a birthday) is `ui-date-field`.
  */
 @Component({
   selector: 'ui-date-pill',

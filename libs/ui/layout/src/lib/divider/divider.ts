@@ -8,7 +8,15 @@ import {
 /** SwiftUI parity: `Divider()` — axis follows the enclosing stack. */
 export type UiDividerOrientation = 'horizontal' | 'vertical';
 
-/** Hairline separator — the one sanctioned 1px `--sys-color-separator` rule. */
+/**
+ * Hairline separator — the one sanctioned 1px `--sys-color-separator` rule.
+ *
+ * @uiPurpose Draws the one hairline separator between two pieces of content.
+ * @uiSwiftUI `Divider`
+ * @uiAliases divider, separator, hr, hairline, rule, border
+ * @uiNotThis Rows of a list are grouped by `ui-list-group`, which needs no
+ *   dividers.
+ */
 @Component({
   selector: 'ui-divider',
   template: ``,

@@ -18,6 +18,12 @@ import { Directive, input } from '@angular/core';
  * stretch on their own. In a flex row the 100% becomes the flex-basis and
  * shrink absorbs it back to the leftover space, so it composes with
  * fixed-size siblings.
+ *
+ * @uiPurpose Sizes an element: a fixed width or height, a centred max-width
+ *   column, or full width.
+ * @uiSwiftUI `.frame(width:height:)` / `.frame(maxWidth:)`, `.frame(maxWidth:
+ *   .infinity)` for full width
+ * @uiAliases width, height, max-width, size, full width, container
  */
 @Directive({
   selector: '[uiFrame]',

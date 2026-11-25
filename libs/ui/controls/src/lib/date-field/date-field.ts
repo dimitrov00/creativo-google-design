@@ -98,6 +98,12 @@ let nextUniqueId = 0;
  * calendar date is the consumer's call (a domain VO), reported back via
  * the `error` input; `uiBlurred` fires when focus leaves the whole group
  * (validate on blur, never per keystroke).
+ *
+ * @uiPurpose A date typed as three labelled number boxes (day, month, year),
+ *   for dates people know by heart such as a birthday.
+ * @uiSwiftUI none
+ * @uiAliases date input, birthday, date of birth, dob, day month year
+ * @uiNotThis A date picked from a calendar is `ui-date-pill` or `ui-date-row`.
  */
 @Component({
   selector: 'ui-date-field',

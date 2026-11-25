@@ -18,6 +18,14 @@ import type { UiSpacing } from '../stack/stack';
  * — as many equal columns as fit, each at least the given length (any CSS
  * length; a raw length has no finite semantic scale, same exception as
  * above). When set it takes over the template and `uiColumns` is ignored.
+ *
+ * @uiPurpose Lays children out in equal columns, by a fixed count or as many as
+ *   fit above a minimum width.
+ * @uiSwiftUI `LazyVGrid` with `GridItem(.flexible())` or
+ *   `GridItem(.adaptive(minimum:))`
+ * @uiAliases grid, css grid, columns, auto-fill, tiles, gallery
+ * @uiNotThis One row or column is `ui-stack`; items of their own width that
+ *   wrap are `ui-flow`.
  */
 @Component({
   selector: 'ui-grid',

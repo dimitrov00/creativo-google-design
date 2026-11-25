@@ -42,6 +42,10 @@ export type UiMenuRole = 'menu' | 'dialog';
  * ownership of the control's own look and its `(click)`. The parent
  * restates `aria-haspopup` from its `uiRole`, so a trigger that opens a
  * dialog surface says so.
+ *
+ * @uiPartOf ui-menu
+ * @uiPurpose Marks the control that opens the menu, so the surface anchors to
+ *   it and the control announces what it opens.
  */
 @Directive({
   selector: '[uiMenuTrigger]',
@@ -59,6 +63,10 @@ export class UiMenuTrigger {
  * One action inside a `ui-menu`. A `button` or an `a`, or a `label` when
  * the action is "open a file picker" (the label form is the only way to
  * reach a hidden `<input type="file">` without scripting a click).
+ *
+ * @uiPartOf ui-menu
+ * @uiPurpose One action of the menu, on a button, a link or a file-picker
+ *   label; an option or a tick box when the menu expresses a choice.
  */
 @Directive({
   selector:
@@ -175,6 +183,17 @@ const DOCK_SELECTOR = '.ui-sheet-action-bar[data-visible], .ui-page-action-bar';
 /** The surface of the sheet a trigger lives in — the scope its docks are found in. */
 const SHEET_SURFACE_SELECTOR = '.ui-sheet__surface';
 
+/**
+ * ui-menu — the anchored action list. Its full account is the docblock above
+ * the constants that stand over this decorator.
+ *
+ * @uiPurpose A list of actions that opens next to the control that summoned it,
+ *   without dimming the page, and closes on any outside press.
+ * @uiSwiftUI `Menu`
+ * @uiAliases popover, context menu, action menu, overflow menu, dropdown menu
+ * @uiNotThis Choosing one value of a field is `ui-choice-menu`; a yes or no
+ *   question is `ui-alert`.
+ */
 @Component({
   selector: 'ui-menu',
   changeDetection: ChangeDetectionStrategy.OnPush,

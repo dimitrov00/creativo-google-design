@@ -41,6 +41,13 @@ export type UiBadgeProminence = 'decreased' | 'standard' | 'increased';
  * the system keeps "a label over media" apart from "a control over media":
  * a date on a photo tile is a label, and a button look on it would be a
  * second, smaller target inside the tappable tile.
+ *
+ * @uiPurpose A small static capsule that states a status, tier or count; it is
+ *   never pressed.
+ * @uiSwiftUI none
+ * @uiAliases badge, tag, label, status pill, capsule, lozenge
+ * @uiNotThis A pill somebody presses is `uiChip`; a dot with a word for a live
+ *   state is `ui-status-indicator`.
  */
 @Component({
   selector: 'span[uiBadge]',

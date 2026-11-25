@@ -17,6 +17,11 @@ import { UiIcon } from '@creativo/ui/icons';
  * ```html
  * <ui-rating [uiValue]="barber.rating">(128)</ui-rating>
  * ```
+ *
+ * @uiPurpose Shows a rating as a filled star beside its number, with room
+ *   for a trailing detail such as the review count; display only.
+ * @uiSwiftUI `Label("4.9", systemImage: "star.fill")`
+ * @uiAliases rating, stars, star rating, score, review score
  */
 @Component({
   selector: 'ui-rating',

@@ -22,7 +22,16 @@ export type UiToolbarPlacement = 'top' | 'bottom';
  */
 export type UiToolbarBackground = 'automatic' | 'hidden' | 'scrim';
 
-/** Horizontal bar — app header / action bar (top), or a bottom action bar. */
+/**
+ * Horizontal bar — app header / action bar (top), or a bottom action bar.
+ *
+ * @uiPurpose A horizontal bar for a page header or a bottom action bar that
+ *   holds its title and actions.
+ * @uiSwiftUI `.toolbar` with `ToolbarItem`
+ * @uiAliases toolbar, app bar, header bar, navbar, action bar
+ * @uiNotThis A sheet's own top bar is `ui-sheet-header`; a page's docked
+ *   actions are `ui-page-action-bar`.
+ */
 @Component({
   selector: 'ui-toolbar',
   template: `<ng-content />`,

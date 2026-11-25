@@ -74,6 +74,15 @@ import {
 /** How the bar finds its bottom edge. See the component doc. */
 export type UiSheetActionBarAnchor = 'overlay' | 'scroll';
 
+/**
+ * Sheet action bar. The component doc is the block above the anchor type.
+ *
+ * @uiPurpose The bottom action row docked to a sheet's bottom edge, the
+ *   primary action at the trailing edge, floating over the scrolling body.
+ * @uiSwiftUI `.safeAreaInset(edge: .bottom) { HStack { … } }` on a sheet
+ * @uiAliases sheet footer, bottom bar, action bar, cta bar, modal footer
+ * @uiNotThis On a full-height page the bottom row is `ui-page-action-bar`.
+ */
 @Component({
   selector: 'ui-sheet-action-bar',
   template: `<ng-content />`,

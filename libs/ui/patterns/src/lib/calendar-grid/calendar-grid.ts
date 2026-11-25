@@ -41,6 +41,13 @@ export type UiCalendarGridSize = 'regular' | 'large';
  * logic this grid exists without. A scrolling run of months wants that row
  * pinned once above all of them rather than repeated: see
  * `ui-calendar-scroller`.
+ *
+ * @uiPurpose Lays out projected weekday and day cells as a seven-column month,
+ *   with no date logic of its own.
+ * @uiSwiftUI `LazyVGrid` with seven columns
+ * @uiAliases calendar, month grid, month view, day grid, date grid
+ * @uiNotThis A finished month that knows its dates and picks a day is
+ *   `ui-month-picker`.
  */
 @Component({
   selector: 'ui-calendar-grid',

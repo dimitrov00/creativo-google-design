@@ -82,6 +82,14 @@ export type UiSectionHeaderEyebrowTone = 'accent' | 'secondary';
  * what hover, press and the focus ring paint, inside the column; the 44
  * target is a slop that paints nothing. A `regular` or `large` plain action
  * still renders inside the column, grows its row, and warns in development.
+ *
+ * @uiPurpose Opens a section: an eyebrow, title and lede on a landing, or
+ *   inside a sheet a heading with one trailing action or detail.
+ * @uiSwiftUI a `Section` header (`Section { … } header: { … }`)
+ * @uiAliases section header, heading, eyebrow, subheader, list header,
+ *   section title
+ * @uiNotThis The large title that heads a whole sheet page is
+ *   `ui-sheet-headline`.
  */
 @Component({
   selector: 'ui-section-header',

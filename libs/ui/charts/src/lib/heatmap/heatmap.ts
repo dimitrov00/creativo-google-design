@@ -40,6 +40,10 @@ const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
  * Accessibility: the grid is `role="img"` named by `uiLabel`, and a
  * visually hidden table beside it lists every row's cells, since no figure
  * is printed on the grid.
+ *
+ * @uiPurpose A grid of cells tinted by value, such as weekday by hour.
+ * @uiSwiftUI Swift Charts `RectangleMark`
+ * @uiAliases heatmap, heat map, density grid, matrix, calendar heatmap
  */
 @Component({
   selector: 'ui-heatmap',

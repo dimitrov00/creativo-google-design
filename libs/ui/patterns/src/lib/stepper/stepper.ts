@@ -42,6 +42,15 @@ export type UiStepperSegmentState = 'done' | 'current' | 'upcoming';
  *   [uiLabel]="t('auth.steps.label', { current: 2, total: 3 })"
  * />
  * ```
+ *
+ * @uiPurpose A progress trail through the steps of a flow: a row of thin
+ *   segments showing which step of a short, fixed sequence you are on.
+ * @uiSwiftUI none
+ * @uiAliases progress steps, step indicator, wizard steps, breadcrumbs of a
+ *   flow, journey progress
+ * @uiNotThis This is NOT a − / + counter: that is `ui-count-stepper`
+ *   (SwiftUI `Stepper`). Loading progress is `ui-progress-view`; dots for
+ *   swipeable pages are `ui-page-control`.
  */
 @Component({
   selector: 'ui-stepper',

@@ -33,6 +33,12 @@ export type UiCodeFieldAppearance = 'bordered' | 'plain';
  * sizer lets the field hug its code, and the owner draws the ring when it
  * says so (`--ui-field-ring`), the way the unit and time fields hand theirs
  * over.
+ *
+ * @uiPurpose A short code typed in capitals, such as a promo or gift code,
+ *   bordered on a form or plain inside a pill.
+ * @uiSwiftUI `TextField` with `.textInputAutocapitalization(.characters)`
+ * @uiAliases promo code, coupon, voucher code, gift code, code input
+ * @uiNotThis A one-time sign-in code is `ui-otp-field`.
  */
 @Component({
   selector: 'ui-code-field',

@@ -30,6 +30,13 @@ import { UiConfetti } from '../confetti/confetti';
  * <ui-reward-moment />
  * <h1 uiText uiFont="largeTitle">You're in</h1>
  * ```
+ *
+ * @uiPurpose The success mark at the end of a flow: an accent disc with a
+ *   check that draws itself and one burst of confetti.
+ * @uiSwiftUI none
+ * @uiAliases success, checkmark animation, celebration, done, confirmation
+ * @uiNotThis The particles alone, without the disc and the check, are
+ *   `ui-confetti`.
  */
 @Component({
   selector: 'ui-reward-moment',

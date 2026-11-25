@@ -84,6 +84,13 @@ export function visibleMarks(
  * keeps its thumb's half-width, so a point's word sits under the thumb's
  * centre at that value. The scale is decoration to a reader (`aria-hidden`):
  * the meter or slider that owns it says the value in words.
+ *
+ * @uiPurpose Prints the labels under a drawn range, each one placed under its
+ *   own point of the track.
+ * @uiSwiftUI none
+ * @uiAliases tick labels, scale, axis labels, marks, range labels
+ * @uiNotThis The range itself is `ui-gauge` or `ui-slider`, and each mounts
+ *   this scale for its own marks.
  */
 @Component({
   selector: 'ui-mark-scale',

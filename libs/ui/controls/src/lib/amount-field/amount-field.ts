@@ -88,6 +88,13 @@ export function parseAmountFigure(
  * Accessible as a group named for what it asks; the input carries the
  * same name and is described by the unit; each stepper button names its
  * act in the consumer's words.
+ *
+ * @uiPurpose One sum written large in the middle of the screen, typed or
+ *   stepped with a − / + pair and clamped to its range.
+ * @uiSwiftUI none
+ * @uiAliases amount input, money input, price, currency field, tip amount
+ * @uiNotThis A figure in a row of a form is `ui-unit-field`; a count of things
+ *   is `ui-count-stepper`; a value on a range is `ui-slider`.
  */
 @Component({
   selector: 'ui-amount-field',

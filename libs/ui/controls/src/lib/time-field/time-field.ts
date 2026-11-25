@@ -25,6 +25,12 @@ import { UiIcon } from '@creativo/ui/icons';
  * picker produced — on every `input` as well as `change`, because a field
  * that commits on blur makes the tap reaching for the save button the tap
  * that creates it. Empty draws `––:––`.
+ *
+ * @uiPurpose A time of day as HH:mm, picked with the platform's own time
+ *   picker behind the design system's face.
+ * @uiSwiftUI `DatePicker` with `displayedComponents: .hourAndMinute`
+ * @uiAliases time picker, time input, clock, hour, timepicker
+ * @uiNotThis A length of time in minutes is `ui-unit-field`.
  */
 @Component({
   selector: 'ui-time-field',

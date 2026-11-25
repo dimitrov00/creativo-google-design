@@ -27,6 +27,12 @@ export type UiDateTileControlSize = 'regular' | 'large';
  *
  * Decorative (`aria-hidden`): the row's own name carries the date in
  * words. The consumer passes the words; the tile formats nothing.
+ *
+ * @uiPurpose A square date stamp at the leading edge of a row: the day number
+ *   over a short word such as the weekday or the month.
+ * @uiSwiftUI none
+ * @uiAliases date stamp, date square, calendar tile, day tile, date icon
+ * @uiNotThis A day inside a calendar grid is `ui-date-badge`.
  */
 @Component({
   selector: 'ui-date-tile',

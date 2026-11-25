@@ -6,7 +6,17 @@ import {
 } from '@angular/core';
 import type { UiControlSize } from '../button/button';
 
-/** Native `<input>`/`<textarea>` element — free a11y semantics, zero ARIA hand-rolling. */
+/**
+ * Native `<input>`/`<textarea>` element — free a11y semantics, zero ARIA hand-
+ * rolling.
+ *
+ * @uiPurpose The text field: the look and sizes of a native input or textarea
+ *   for free text.
+ * @uiSwiftUI `TextField` and `TextEditor`
+ * @uiAliases input, text input, textarea, textbox, form field
+ * @uiNotThis A search is `ui-search-field`, a figure with a unit
+ *   `ui-unit-field`, a code `ui-code-field`, a phone number `ui-phone-field`.
+ */
 @Component({
   selector: 'input[uiTextField], textarea[uiTextField]',
   template: '',

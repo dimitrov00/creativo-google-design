@@ -20,6 +20,12 @@ type UiOtpSlotState = 'active' | 'filled' | 'idle';
  * suggestion, WebOTP — is DISTRIBUTED across the slots from the receiving
  * one onward (no `maxlength` attribute: browsers would truncate the paste
  * to one character before we ever saw it).
+ *
+ * @uiPurpose The one-time code: a fixed run of single-digit slots that takes a
+ *   paste or the keyboard's code suggestion.
+ * @uiSwiftUI `TextField` with `.textContentType(.oneTimeCode)`
+ * @uiAliases otp, one-time code, verification code, pin input, sms code
+ * @uiNotThis A promo or gift code is `ui-code-field`.
  */
 @Component({
   selector: 'ui-otp-field',

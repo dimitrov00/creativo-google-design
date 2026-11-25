@@ -14,6 +14,13 @@ import type { UiControlSize } from '../button/button';
  * ✕), and — projected FIRST — a `ui-avatar` for a chip that stands for a
  * person, which then sits flush with the leading edge (chip.css). Pick the
  * disc one rung under the chip: `small` in a `regular` chip.
+ *
+ * @uiPurpose A pill that toggles on and off: a filter, a choice among several,
+ *   or a removable token.
+ * @uiSwiftUI `Toggle` with `.toggleStyle(.button)`
+ * @uiAliases chip, filter chip, pill, tag, toggle button, token
+ * @uiNotThis A label that cannot be pressed is `uiBadge`; one of a few views
+ *   or scopes is `ui-segmented-control`.
  */
 @Component({
   selector: 'button[uiChip]',

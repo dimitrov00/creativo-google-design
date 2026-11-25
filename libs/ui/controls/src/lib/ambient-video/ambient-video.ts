@@ -23,6 +23,12 @@ import {
  *   an autoplay rejection falls back to the poster. Owners call nothing.
  * - Decorative by default (`aria-hidden`); pass `uiLabel` to expose it as
  *   a labelled `img` instead.
+ *
+ * @uiPurpose A muted, looping background video that fades in over its poster
+ *   and stays a still poster under reduced motion.
+ * @uiSwiftUI none
+ * @uiAliases video, background video, hero video, autoplay, poster
+ * @uiNotThis A still picture is `ui-async-image`.
  */
 @Component({
   selector: 'ui-ambient-video',

@@ -8,6 +8,12 @@ export type UiMaterialTier = 'thin' | 'regular' | 'thick';
  * maps each tier to `--sys-material-*-blur` (14 / 20 / 40px) with the shared
  * `--sys-material-fill` surface-alpha and `--sys-material-saturation`.
  * Replaces every hand-rolled `backdrop-filter: blur(...)` chrome recipe.
+ *
+ * @uiPurpose Gives chrome a translucent blurred glass background in one of
+ *   three thicknesses.
+ * @uiSwiftUI `.background(.thinMaterial)` / `.background(.regularMaterial)` /
+ *   `.background(.thickMaterial)`
+ * @uiAliases blur, glass, backdrop-filter, frosted, translucent, material
  */
 @Directive({
   selector: '[uiMaterial]',

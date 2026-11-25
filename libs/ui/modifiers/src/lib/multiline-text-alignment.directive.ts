@@ -26,6 +26,13 @@ export type UiTextAlignment = 'leading' | 'center' | 'trailing';
  * ```html
  * <ui-stack uiAlignment="center" uiMultilineTextAlignment="center"> … </ui-stack>
  * ```
+ *
+ * @uiPurpose Aligns the wrapped lines of a text block to the leading edge, the
+ *   centre or the trailing edge.
+ * @uiSwiftUI `.multilineTextAlignment(_:)`
+ * @uiAliases text-align, center text, text alignment, justify
+ * @uiNotThis Positioning sibling boxes is the alignment of `ui-stack`, not
+ *   this.
  */
 @Directive({
   selector: '[uiMultilineTextAlignment]',

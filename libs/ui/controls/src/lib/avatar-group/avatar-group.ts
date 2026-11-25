@@ -16,6 +16,13 @@ import type { UiControlSize } from '../button/button';
  * consumer says. More people than fit are a count in the last disc's
  * place. The group is one thing to assistive tech — `role="group"` and the
  * consumer's `aria-label` naming everyone — so the discs are decoration.
+ *
+ * @uiPurpose Several people as one mark: overlapping avatars with a +N count
+ *   when they do not all fit.
+ * @uiSwiftUI none
+ * @uiAliases avatar stack, facepile, avatar group, people, overlapping avatars
+ * @uiNotThis One person is `ui-avatar`; a welcome hero of faces circling one
+ *   person is `ui-avatar-orbit`.
  */
 @Component({
   selector: 'ui-avatar-group',

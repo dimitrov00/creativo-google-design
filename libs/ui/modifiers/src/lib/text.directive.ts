@@ -8,6 +8,11 @@ import { UiForegroundStyleDirective } from './foreground.directive';
  * — bundles the common text modifiers via `hostDirectives` composition
  * instead of a monolithic typography directive; each atomic modifier still
  * writes its own `data-*` attribute independently.
+ *
+ * @uiPurpose Sets font, weight and colour on a piece of text in one attribute.
+ * @uiSwiftUI `Text` with `.font(_:)`, `.fontWeight(_:)` and
+ *   `.foregroundStyle(_:)`
+ * @uiAliases text, typography, label, heading, paragraph
  */
 @Directive({
   selector: '[uiText]',

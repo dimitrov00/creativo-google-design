@@ -101,6 +101,12 @@ export const UI_OCCASION_FLECKS: readonly UiOccasionFleck[] = [
  * `--ui-occasion-band-height` (6rem), `--ui-occasion-band-surface`
  * (`--sys-color-accent`). Inside a ticket the height is set on the
  * TICKET, which places its tear by it; the band inherits it.
+ *
+ * @uiPurpose A solid accent banner that announces a moment such as a birthday,
+ *   as a card of its own or as the top of a coupon ticket.
+ * @uiSwiftUI none
+ * @uiAliases banner, occasion, birthday, celebration, hero band
+ * @uiNotThis A message about a state, a warning or an error is `ui-notice`.
  */
 @Component({
   selector: 'ui-occasion-band',

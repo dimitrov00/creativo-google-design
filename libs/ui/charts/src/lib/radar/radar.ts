@@ -145,6 +145,11 @@ type RadarRow = {
  *
  * Accessibility: the `svg` is `role="img"` named by `uiLabel`; a visually
  * hidden table lists every axis's word, value text and comparison figure.
+ *
+ * @uiPurpose A radar chart: one polygon over several axes, with an optional
+ *   comparison outline.
+ * @uiSwiftUI none
+ * @uiAliases radar, spider chart, web chart, polygon chart, star chart
  */
 @Component({
   selector: 'ui-radar',

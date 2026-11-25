@@ -11,6 +11,14 @@ import type { UiControlSize } from '../button/button';
  * spinner ring by default; binding `uiValue` (0…1) switches to the linear
  * determinate bar, exactly like SwiftUI's value-initialized form. The bar
  * fills its container's inline size — consumers own placement/measure.
+ *
+ * @uiPurpose The loading indicator: a spinner while the length is unknown, a
+ *   linear bar once a value is bound.
+ * @uiSwiftUI `ProgressView` and `ProgressView(value:)`
+ * @uiAliases spinner, loader, loading, progress bar, activity indicator
+ * @uiNotThis A circular share of a whole is `ui-progress-ring`; a placeholder
+ *   for content still loading is `ui-skeleton`; a busy button draws its own
+ *   spinner (`uiButton`).
  */
 @Component({
   selector: 'ui-progress-view',
