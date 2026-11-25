@@ -125,49 +125,6 @@
 }
 
 /*
- * ── The view switch ────────────────────────────────────────────────────
- * A segmented track: one recessed container, two options, the selected one
- * lifted onto its own surface. Feature-local rather than a DS component
- * because this is its only consumer today — promote it the moment a second
- * surface needs one, not before.
- */
-.appointments-views {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sys-space-tight);
-  padding: var(--sys-space-tight);
-  border-radius: var(--control-radius-capsule);
-  background: var(--sys-color-fill);
-}
-
-.appointments-views__option {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  inline-size: var(--control-size-small);
-  block-size: var(--control-size-small);
-  border: 0;
-  border-radius: var(--control-radius-capsule);
-  background: none;
-  color: var(--sys-color-secondary-label);
-  cursor: pointer;
-  transition:
-    background-color var(--sys-motion-duration-regular)
-      var(--sys-motion-ease-standard),
-    color var(--sys-motion-duration-regular) var(--sys-motion-ease-standard);
-}
-
-.appointments-views__option[data-selected] {
-  background: var(--sys-color-surface);
-  color: var(--sys-color-accent);
-}
-
-.appointments-views__option:focus-visible {
-  outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
-  outline-offset: var(--sys-focus-ring-offset);
-}
-
-/*
  * ── The browser under the bar ──────────────────────────────────────────
  * The jump pills and their rail are the shared browser's own now
  * (`lib-visit-pills`, client-card revision 3 §3.11 — moved from this page

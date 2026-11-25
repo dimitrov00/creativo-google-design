@@ -418,12 +418,6 @@ const ACCENT_INK_ALLOWED: readonly Allowed[] = [
       'an icon-only toggle over media: the glyph is the button’s only content, `aria-pressed` and the wash carry the state',
   },
   {
-    file: 'libs/features/client/appointments/src/lib/client-appointments/client-appointments.css',
-    selector: '.appointments-views__option[data-selected]',
-    reason:
-      'the list / calendar view toggle: an icon-only option, its glyph on the white thumb',
-  },
-  {
     file: 'libs/features/marketing/landing/src/lib/sections/services/service-tile.component.ts',
     selector: '.cr-services__bundle-chip',
     reason:

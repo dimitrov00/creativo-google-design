@@ -54,6 +54,8 @@ import {
   UiIcon,
   UiModalSheet,
   UiTextField,
+  UiSegmentedControl,
+  type UiSegment,
   UiSkeleton,
 } from '@creativo/ui/controls';
 import { UiSpacer, UiStack, UiToolbar } from '@creativo/ui/layout';
@@ -265,6 +267,7 @@ interface VisitMonthVm {
     UiRadiusDirective,
     UiReference,
     UiSheetActionBar,
+    UiSegmentedControl,
     UiSkeleton,
     UiSpacer,
     UiStack,
@@ -325,8 +328,33 @@ export class ClientAppointments {
 
   protected readonly view = signal<AppointmentsView>(AppointmentsView.List);
 
-  /** The template's dictionary, for the view toggle's compares. */
+  /** The template's dictionary, for the two views' compares. */
   protected readonly AppointmentsView = AppointmentsView;
+
+  /**
+   * The view toggle's two segments: a glyph each, named by its word. Empty
+   * until the catalogue has loaded, like every other word built here.
+   */
+  protected readonly viewSegments = computed((): readonly UiSegment[] => {
+    const lang = this.loadedLang();
+    if (lang === null) return [];
+    return [
+      {
+        id: AppointmentsView.List,
+        label: this.transloco.translate('appointments.view.list', {}, lang),
+        icon: 'view.list',
+        iconOnly: true,
+        testId: 'appointments-view-list',
+      },
+      {
+        id: AppointmentsView.Calendar,
+        label: this.transloco.translate('appointments.view.calendar', {}, lang),
+        icon: 'view.calendar',
+        iconOnly: true,
+        testId: 'appointments-view-calendar',
+      },
+    ];
+  });
 
   /**
    * What the funnel narrows to (`lib-visit-filter`, which draws the
@@ -762,6 +790,13 @@ export class ClientAppointments {
   }
 
   // ── Commands ─────────────────────────────────────────────────────────
+
+  /** The toggle answers with a segment's id, which is a view's tag. */
+  protected pickView(id: string): void {
+    if (id === AppointmentsView.List || id === AppointmentsView.Calendar) {
+      this.setView(id);
+    }
+  }
 
   protected setView(next: AppointmentsView): void {
     this.view.set(next);

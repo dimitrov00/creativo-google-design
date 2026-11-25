@@ -29,42 +29,17 @@
 
         <ui-spacer />
 
-        <!-- Two views of ONE set of visits, so a segmented track rather than
-           two separate buttons: the choice is exclusive and the control
-           should look like it. Icon-only — a list and a calendar are the two
-           glyphs nobody needs a word for. -->
-        <div
-          class="appointments-views"
-          role="tablist"
-          [attr.aria-label]="t('appointments.view.label')"
-        >
-          <button
-            type="button"
-            role="tab"
-            class="appointments-views__option"
-            [attr.aria-selected]="view() === AppointmentsView.List"
-            [attr.data-selected]="view() === AppointmentsView.List ? '' : null"
-            [attr.aria-label]="t('appointments.view.list')"
-            [title]="t('appointments.view.list')"
-            data-testid="appointments-view-list"
-            (click)="setView(AppointmentsView.List)"
-          >
-            <ui-icon uiName="view.list" uiScale="small" />
-          </button>
-          <button
-            type="button"
-            role="tab"
-            class="appointments-views__option"
-            [attr.aria-selected]="view() === AppointmentsView.Calendar"
-            [attr.data-selected]="view() === AppointmentsView.Calendar ? '' : null"
-            [attr.aria-label]="t('appointments.view.calendar')"
-            [title]="t('appointments.view.calendar')"
-            data-testid="appointments-view-calendar"
-            (click)="setView(AppointmentsView.Calendar)"
-          >
-            <ui-icon uiName="view.calendar" uiScale="small" />
-          </button>
-        </div>
+        <!-- Two views of ONE set of visits: the design system's segmented
+           control in its view-toggle form, a capsule of two glyphs. A list
+           and a calendar are the two glyphs nobody needs a word for; each
+           segment is still named by its word for a screen reader. -->
+        <ui-segmented-control
+          uiShape="capsule"
+          [uiSegments]="viewSegments()"
+          [uiSelectedId]="view()"
+          [uiLabel]="t('appointments.view.label')"
+          (uiPicked)="pickView($event)"
+        />
 
         <ui-spacer />
 
