@@ -42,7 +42,8 @@ type Exit = (typeof Exit)[keyof typeof Exit];
  * without its way out being decided. `visit` is the concrete URL this spec
  * opens; `null` where the page needs a seeded record (a team member, an
  * account, the person's own barber record) — those three take the same
- * fixed back link as the team list, proven in their own specs.
+ * fixed back link as the team list, proven in their own specs — and on
+ * `/support`, which only the sysadmin opens: its own test below.
  */
 const ROUTES: Readonly<Record<string, { exit: Exit; visit: string | null }>> = {
   '': { exit: Exit.Menu, visit: null },
@@ -82,6 +83,7 @@ const ROUTES: Readonly<Record<string, { exit: Exit; visit: string | null }>> = {
   'admin/team/account/:userId': { exit: Exit.Back, visit: null },
   'admin/loyalty': { exit: Exit.Redirect, visit: null },
   'admin/loyalty/rhythm': { exit: Exit.Back, visit: '/admin/loyalty/rhythm' },
+  support: { exit: Exit.Menu, visit: null },
   forbidden: { exit: Exit.Home, visit: null },
   '**': { exit: Exit.Redirect, visit: null },
 };
@@ -189,6 +191,22 @@ test.describe('no page is a dead end', () => {
     // The schedule's guard is the rules' `worksTheBook()`: not this person.
     await page.goto('/staff/schedule');
     await expect(page).toHaveURL(/\/forbidden$/);
+  });
+
+  test('/support, the sysadmin’s own root page, opens the account menu', async ({
+    page,
+  }) => {
+    const uid = `e2e-no-dead-ends-support-${test.info().testId}`;
+    await seedUserProfile(uid, { roles: [Role.Sysadmin] });
+    await emulateInstalledApp(page);
+    await signInAs(page, uid, [Role.Sysadmin]);
+
+    await page.goto('/support');
+    const trigger = page.locator(MENU_TRIGGER).first();
+    await expect(trigger).toBeVisible();
+    await trigger.click();
+    await expect(page.getByTestId('menu-sign-out')).toBeVisible();
+    await expect(page.getByTestId('menu-support')).toBeVisible();
   });
 
   test('/forbidden ends in one link home, which the installed app follows to the account', async ({
