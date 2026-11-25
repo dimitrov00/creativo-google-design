@@ -73,39 +73,79 @@
         </a>
       </ui-grid>
 
-      <!-- THE NEXT VISIT — the SHARED visit card (client-card revision 3
+      <!-- THE LEAD SLOT — one card, filled once (owner ruling Q6 of the
+           role-aware homes brief): the next visit, else «Пак същото», else
+           the honest empty state. Its state is the host's `data-lead`; the
+           next visit's own stays `data-upcoming`.
+
+           THE NEXT VISIT — the SHARED visit card (client-card revision 3
            §3.10, R2-I), the one the staff glance draws too: «Предстоящ час»
-           as the card's own heading, the day and the hour on the visit's
-           own calendar (the shop's zone, never the device's), the status in
-           the appointments screen's words as a capsule that hugs its word.
-           The whole card is a button (`account-upcoming`, its capsule
+           as the card's own heading, the services and the barber's face
+           (Q6), the day and the hour on the visit's own calendar (the
+           shop's zone, never the device's), the status in the appointments
+           screen's words as a capsule that hugs its word. The whole card is
+           a button (`account-upcoming`, its capsule
            `account-upcoming-status`): it opens the visit on «Моите часове».
-           Its state is the page's (`data-upcoming` on the host).
            Plain, like every card on this page (in light the same white
-           card as `elevated`; in dark it stays level with its neighbours).
-           No services and no face here (`/account`'s form, owner question
-           Q7). -->
+           card as `elevated`; in dark it stays level with its neighbours). -->
       @if (upcomingCard(); as card) {
       <lib-visit-card
         headerProminence="increased"
         tone="plain"
         interactive
-        [showServices]="false"
         [vm]="card"
         (open)="openUpcoming(card.id)"
       />
+      } @else if (sameAgain(); as again) {
+      <!-- «ПАК СЪЩОТО» — nothing is next: the visit the person had last,
+           as the same card in its LAST slot, a card to READ (its sentence
+           names it). At its foot what booking it again changes, and the
+           way to book it: `/book?repeat=<id>`, the bag rebuilt from the
+           same answer the notes word (`SameAgainSystem`). -->
+      <lib-visit-card
+        headerProminence="increased"
+        tone="plain"
+        [vm]="again.card"
+      >
+        <ui-stack
+          visitCardFoot
+          class="account-same-again__foot"
+          uiSpacing="regular"
+        >
+          @for (note of again.notes; track $index) {
+          <p
+            uiText
+            uiFont="footnote"
+            uiForegroundStyle="secondary"
+            data-testid="account-same-again-note"
+          >
+            {{ note }}
+          </p>
+          }
+          <a
+            uiButton
+            uiControlSize="regular"
+            routerLink="/book"
+            [queryParams]="{ repeat: again.card.id }"
+            data-testid="account-same-again-book"
+          >
+            {{ t('account.sameAgain.book') }}
+          </a>
+        </ui-stack>
+      </lib-visit-card>
       } @else {
-      <!-- Before the card: loading, an error, or the honest empty. Loading
+      <!-- Before a card: loading, an error, or the honest empty. Loading
            is its own state, never the empty one: a client with a booking
            must not be told "no upcoming appointments" while the live query
-           attaches, nor while the card's words load. -->
+           attaches, nor while the card's words, the history or the
+           catalogue load. -->
       <ui-card
         uiPadding="comfortable"
         data-testid="account-upcoming"
-        [attr.data-state]="upcomingWord()"
+        [attr.data-state]="leadWord()"
       >
         <p uiText uiFont="headline">{{ t('account.upcoming.title') }}</p>
-        @switch (upcomingState()) { @case (LoadState.Loading) {
+        @switch (leadState()) { @case (LoadState.Loading) {
         <ui-skeleton
           uiFrame
           uiFrameHeight="2.75rem"
@@ -123,7 +163,7 @@
         } @default {
         <ui-empty-state>
           <p uiText uiFont="body" uiForegroundStyle="secondary">
-            {{ t('account.upcoming.empty') }}
+            {{ t(emptyKey()) }}
           </p>
           <a
             uiActions

@@ -33,6 +33,7 @@ import { type ExceptionDetail, ExceptionReason } from './exception-detail.data';
 import type { ExceptionEffectRule } from './exception-effect-rule.data';
 import { type PartyMember, PartyRole } from './party-member.data';
 import { PrefillCompanions } from './prefill-companions.data';
+import { type SameAgain, SameAgainReach, SeatRebook } from './same-again.data';
 import {
   RecurrenceEnd,
   type RecurrenceEndRule,
@@ -91,6 +92,8 @@ dictionary(RecurrenceEnd satisfies Dictionary<RecurrenceEnd>);
 dictionary(WaitlistStatus satisfies Dictionary<WaitlistStatus>);
 dictionary(BookingFlowEventKind satisfies Dictionary<BookingFlowEventKind>);
 dictionary(PrefillCompanions satisfies Dictionary<PrefillCompanions>);
+dictionary(SeatRebook satisfies Dictionary<SeatRebook>);
+dictionary(SameAgainReach satisfies Dictionary<SameAgainReach>);
 
 // (2) Holds — each type is exactly its dictionary's values, one key each.
 export type BookingFlowDictionariesHold = [
@@ -113,6 +116,8 @@ export type BookingFlowDictionariesHold = [
   Expect<Holds<typeof WaitlistStatus, WaitlistStatus>>, // primitives/waitlist-status.data.ts
   Expect<Holds<typeof BookingFlowEventKind, BookingFlowEventKind>>, // components/booking-flow-event.data.ts
   Expect<Holds<typeof PrefillCompanions, PrefillCompanions>>, // components/prefill-companions.data.ts
+  Expect<Holds<typeof SeatRebook, SeatRebook>>, // components/same-again.data.ts
+  Expect<Holds<typeof SameAgainReach, SameAgainReach>>, // components/same-again.data.ts
 ];
 
 // (3) SCREAMING values (`ShopReach` and `WeekOfMonth` are exempt, §0.4).
@@ -132,6 +137,8 @@ export type BookingFlowScreamingChecks = [
   Expect<Screaming<WaitlistStatus>>,
   Expect<Screaming<BookingFlowEventKind>>,
   Expect<Screaming<PrefillCompanions>>,
+  Expect<Screaming<SeatRebook>>,
+  Expect<Screaming<SameAgainReach>>,
 ];
 
 // (4) N15 — a dictionary's field is camelCase(Dictionary), typed exactly by it.
@@ -152,6 +159,8 @@ export type BookingFlowDictionaryFields = [
   Expect<
     Equals<BookingFlowEvent['bookingFlowEventKind'], BookingFlowEventKind>
   >, // components/booking-flow-event.data.ts (N15: `BookingFlowEvent` is the union)
+  Expect<Equals<SameAgain['sameAgainReach'], SameAgainReach>>, // components/same-again.data.ts
+  Expect<Equals<SameAgain['seatRebooks'][number], SeatRebook>>, // N15-exempt: one tag per seat, the field is its plural
 ];
 
 // The move refusal (pass D, D-9.2): its code is exactly the three client-side

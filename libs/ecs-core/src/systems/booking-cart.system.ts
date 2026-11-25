@@ -153,13 +153,14 @@ export type CartLocatedOption = {
 
 /**
  * What a prefill reads off a stored seat — its service, variant and barber
- * and who sits in it. A whole `Seat` passes straight in.
+ * and who sits in it. A whole `Seat` passes straight in. The barber is
+ * `null` for a seat booked again with no barber chosen
+ * (`SameAgainSystem.rebookSeats`: the visit's barber is off the public
+ * list, or no longer performs the service).
  */
-export type PrefillSeat = Pick<
-  SeatCore,
-  'serviceId' | 'variantId' | 'barberId'
-> &
-  SeatOccupant;
+export type PrefillSeat = Pick<SeatCore, 'serviceId' | 'variantId'> & {
+  readonly barberId: BarberId | null;
+} & SeatOccupant;
 
 /** A bag rebuilt from a visit: the party and the cart. */
 export type CartPrefill = {

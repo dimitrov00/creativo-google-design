@@ -87,10 +87,11 @@ function hung(text: string): string {
  *   last visit, the time of a next one), the figure `callout` 14/600.
  * - `increased` (`/account`, no heading above): the label `headline`
  *   18/600, the facts `body` 15 primary, and with `showServices` false no
- *   services line — exactly today's «Предстоящ час» card. With the
- *   services shown under such a heading (owner question Q7) they are the
- *   row's title, `body` 15/500, and the facts step back to the quiet line
- *   under them: no two lines that touch share both size and tone.
+ *   services line — the bare heading-and-facts card. With the services
+ *   shown under such a heading (`/account`, owner ruling Q6, 2026-11-25)
+ *   they are the row's title, `body` 15/500, and the facts step back to
+ *   the quiet line under them: no two lines that touch share both size
+ *   and tone.
  *
  * States are the host's: the card draws a VM or nothing; loading, empty
  * and error stay with `/account` and with the glance's module.
@@ -143,7 +144,7 @@ export class VisitCard {
   readonly padding = input<UiCardPadding>('comfortable');
   /** The whole card is one `button[uiCard]` that emits `open`. */
   readonly interactive = input(false, { transform: booleanAttribute });
-  /** False leaves the services line out (`/account`, until owner question Q7 says otherwise). */
+  /** False leaves the services line out. */
   readonly showServices = input(true, { transform: booleanAttribute });
   /** The card was tapped (`interactive` only): the host opens the visit. */
   readonly open = output<void>();

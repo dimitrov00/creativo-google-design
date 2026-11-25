@@ -584,7 +584,22 @@
     "upcoming": {
       "title": "Upcoming appointment",
       "empty": "You have no upcoming appointments.",
+      "none": "You have no bookings yet.",
       "bookCta": "Book a visit"
+    },
+    "sameAgain": {
+      "title": "Same again",
+      "book": "Book the same again",
+      "barberAway": {
+        "one": "{{names}} no longer takes online bookings — pick a time with another barber.",
+        "other": "{{names}} no longer take online bookings — pick a time with another barber."
+      },
+      "barberAwayUnnamed": "Your barber no longer takes online bookings — pick a time with another barber.",
+      "serviceGone": {
+        "one": "{{names}} is no longer offered.",
+        "other": "{{names}} are no longer offered."
+      },
+      "serviceGoneUnnamed": "Some of the services are no longer offered."
     },
     "completion": {
       "title": "Complete your profile",
