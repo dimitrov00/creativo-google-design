@@ -10,12 +10,12 @@ import { AccessScope, BarberId, LocalDate, Locale } from '@core/primitives';
 import { FIXTURE_NOW_UTC_MS, barberFixture, localDate } from '@core/testing';
 import { StaffAccessService } from '@creativo/features/client/account-state';
 import { TeamCatalogService } from '@creativo/features/shared/catalog';
-import { StaffDayStore } from '../staff-day.store';
-import { ScheduleReminders } from './schedule-reminders';
-import { scheduleRemindersVm } from './schedule-reminders.presenter';
+import { AnalyticsReminders } from './analytics-reminders';
+import { analyticsRemindersVm } from './analytics-reminders.presenter';
 
 /*
- * The last days to decide on, above the schedule (team onboarding D10):
+ * The last days to decide on, on top of «Анализи» (team onboarding D10;
+ * owner ruling 2026-11-25, Q2):
  * the words, then the component over doubles of what it reads.
  */
 
@@ -34,9 +34,9 @@ const ending = (id: string, name: string, last: string): Barber =>
     barberLastWorkingLocalDate: localDate(last),
   });
 
-describe('scheduleRemindersVm', () => {
+describe('analyticsRemindersVm', () => {
   it('words each last day on one line by the first name — «Днес» on the day itself — with «Удължи»', () => {
-    const rows = scheduleRemindersVm({
+    const rows = analyticsRemindersVm({
       barbers: [
         ending('georgi', 'Георги Иванов', '2026-11-16'),
         ending('martin', 'Мартин Колев', '2026-11-20'),
@@ -52,25 +52,26 @@ describe('scheduleRemindersVm', () => {
         barberId: 'georgi',
         line: 'Днес е последният ден на Георги',
         action: 'Удължи',
-        testId: 'schedule-reminder-georgi',
+        testId: 'analytics-reminder-georgi',
       },
       {
         barberId: 'martin',
         line: 'Последният ден на Мартин е пт, 20.11',
         action: 'Удължи',
-        testId: 'schedule-reminder-martin',
+        testId: 'analytics-reminder-martin',
       },
     ]);
   });
 });
 
-describe('ScheduleReminders', () => {
+describe('AnalyticsReminders', () => {
   async function render(options: {
     readonly barbers: readonly Barber[];
     readonly scope?: AccessScope;
+    readonly today?: LocalDate | null;
   }) {
     TestBed.configureTestingModule({
-      imports: [ScheduleReminders],
+      imports: [AnalyticsReminders],
       providers: [
         provideRouter([]),
         provideTransloco({
@@ -95,7 +96,6 @@ describe('ScheduleReminders', () => {
             }
           },
         }),
-        { provide: StaffDayStore, useValue: { todayKey: signal(TODAY) } },
         {
           provide: TeamCatalogService,
           useValue: {
@@ -109,7 +109,11 @@ describe('ScheduleReminders', () => {
         },
       ],
     });
-    const fixture = TestBed.createComponent(ScheduleReminders);
+    const fixture = TestBed.createComponent(AnalyticsReminders);
+    fixture.componentRef.setInput(
+      'today',
+      options.today === undefined ? TODAY : options.today,
+    );
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -128,7 +132,7 @@ describe('ScheduleReminders', () => {
     const notices = host.querySelectorAll('ui-notice');
     expect(notices).toHaveLength(1);
     expect(notices[0]?.getAttribute('data-testid')).toBe(
-      'schedule-reminder-georgi',
+      'analytics-reminder-georgi',
     );
     expect(notices[0]?.getAttribute('data-tone')).toBe('accent');
     const navigate = vi
@@ -136,12 +140,18 @@ describe('ScheduleReminders', () => {
       .mockResolvedValue(true);
     host
       .querySelector<HTMLButtonElement>(
-        '[data-testid="schedule-reminder-extend"]',
+        '[data-testid="analytics-reminder-extend"]',
       )
       ?.click();
     expect(navigate).toHaveBeenCalledWith(['/admin/team/member', 'georgi'], {
       queryParams: { edit: 'period' },
     });
+  });
+
+  it('says nothing before the shop’s today is known', async () => {
+    const soon = ending('georgi', 'Георги Иванов', LocalDate.addDays(TODAY, 3));
+    const { host } = await render({ barbers: [soon], today: null });
+    expect(host.querySelector('ui-notice')).toBeNull();
   });
 
   it('says nothing to someone who does not manage the team, nor of a record that has left', async () => {

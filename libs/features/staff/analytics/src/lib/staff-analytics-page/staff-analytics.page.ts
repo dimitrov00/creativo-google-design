@@ -46,6 +46,7 @@ import {
   AnalyticsTool,
 } from '../analytics-home.vm';
 import { analyticsFreshnessInfoVm } from '../analytics.presenter';
+import { AnalyticsReminders } from '../analytics-reminders/analytics-reminders';
 import { StaffAnalyticsStore } from '../staff-analytics.store';
 import { AnalyticsCarousel } from './analytics-carousel';
 import { AnalyticsGoalSheet } from './analytics-goal-sheet';
@@ -70,6 +71,7 @@ const INFO_CLOSE = 'close';
   imports: [
     AnalyticsCarousel,
     AnalyticsGoalSheet,
+    AnalyticsReminders,
     RouterLink,
     UiAlert,
     UiAvatar,

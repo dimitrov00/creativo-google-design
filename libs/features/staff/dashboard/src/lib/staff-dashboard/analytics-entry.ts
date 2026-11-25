@@ -7,7 +7,10 @@ import {
   type LocalDate,
   StaffCapability,
 } from '@core/primitives';
+import { EmploymentReminderSystem } from '@core/systems';
 import { StaffAccessService } from '@creativo/features/client/account-state';
+import { TeamCatalogService } from '@creativo/features/shared/catalog';
+import { StaffDayStore } from '../staff-day.store';
 
 /** The query the chart button opens «Анализи» with. */
 export type AnalyticsEntryQuery = {
@@ -65,16 +68,22 @@ export function analyticsEntryQueryOf(
 
 /**
  * THE SCHEDULE'S CHART BUTTON (staff permissions P8): whether it is there,
- * and where it leads. It follows the `ANALYTICS` capability, as the route's
- * gate and the callable do: nobody hides it, everyone opens the chair on
- * screen, own opens the person's own. The page's chunk is fetched ahead
- * once the person is known to read analytics, and never for a session the
- * button is hidden from.
+ * where it leads, and what waits behind it. It follows the `ANALYTICS`
+ * capability, as the route's gate and the callable do: nobody hides it,
+ * everyone opens the chair on screen, own opens the person's own. The
+ * page's chunk is fetched ahead once the person is known to read
+ * analytics, and never for a session the button is hidden from.
+ *
+ * Since the owner's ruling of 2026-11-25 (Q2) it is the shop's view: it
+ * carries its word from 600px of bar, and a badge counting the decisions
+ * «Анализи» opens with (`pending`).
  */
 @Injectable()
 export class AnalyticsEntry {
   private readonly access = inject(StaffAccessService);
   private readonly router = inject(Router);
+  private readonly team = inject(TeamCatalogService);
+  private readonly day = inject(StaffDayStore);
 
   private readonly scope = computed(() =>
     this.access.scopeOf(StaffCapability.Analytics),
@@ -84,6 +93,27 @@ export class AnalyticsEntry {
   readonly reads = computed(() =>
     this.access.opens(RouteCapabilities.Analytics),
   );
+
+  /**
+   * How many decisions «Анализи» opens with — the team's last days
+   * (`EmploymentReminderSystem.remindersOf`), for whoever may extend them, exactly
+   * as `lib-analytics-reminders` lists them on the page: the badge on the
+   * chart button. From the team stream the schedule already holds; 0
+   * until it and the shop's today are known, and for anyone else.
+   */
+  readonly pending = computed(() => {
+    const today = this.day.todayKey();
+    if (
+      today === null ||
+      !this.reads() ||
+      !this.team.teamKnown() ||
+      this.access.scopeOf(StaffCapability.TeamManage) === AccessScope.None
+    ) {
+      return 0;
+    }
+    return EmploymentReminderSystem.remindersOf(this.team.teamBarbers(), today)
+      .length;
+  });
 
   private prefetched = false;
 

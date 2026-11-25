@@ -5,6 +5,7 @@ import {
   input,
 } from '@angular/core';
 import { UiPaddingDirective } from '@creativo/ui/modifiers';
+import { UiBadge } from '../badge/badge';
 import { UiProgressView } from '../progress-view/progress-view';
 
 /**
@@ -64,7 +65,22 @@ export type UiButtonBorderShape = 'roundedRectangle' | 'capsule';
   // a progress view into a label. The label keeps the box's width and goes
   // clear (button.css); the ring turns at the centre in the button's ink.
   // Hidden from assistive tech: `aria-busy` on the button already says it.
+  //
+  // A COUNT (`uiBadgeCount`, SwiftUI `.badge(_:)` with a number): the DS's
+  // own solid badge, on the top-trailing corner — never a feature's
+  // hand-placed copy. Hidden from assistive tech like the dot: the count
+  // belongs in the button's accessible name.
   template: `<ng-content />
+    @if (uiBadgeCount(); as count) {
+      <span
+        uiBadge
+        uiTone="accent"
+        uiProminence="increased"
+        class="ui-button__badge"
+        aria-hidden="true"
+        >{{ count }}</span
+      >
+    }
     @if (uiLoading()) {
       <span class="ui-button__progress" aria-hidden="true">
         <ui-progress-view
@@ -72,7 +88,7 @@ export type UiButtonBorderShape = 'roundedRectangle' | 'capsule';
         />
       </span>
     }`,
-  imports: [UiProgressView],
+  imports: [UiBadge, UiProgressView],
   styleUrl: './button.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
   // Unscoped: bare `.ui-*`/`[data-*]` selectors never match a component's
@@ -93,6 +109,7 @@ export type UiButtonBorderShape = 'roundedRectangle' | 'capsule';
     '[attr.data-multiline]': "uiMultiline() ? '' : null",
     '[attr.data-selected]': "uiSelected() ? '' : null",
     '[attr.data-dot-badge]': "uiDotBadge() ? '' : null",
+    '[attr.data-badge-count]': 'uiBadgeCount() || null',
     '[attr.aria-pressed]': 'uiSelected() ?? null',
     '[attr.aria-busy]': 'uiLoading() || null',
   },
@@ -135,4 +152,10 @@ export class UiButton {
    *  (the accent law). Say the state in the accessible name too: the dot
    *  is decoration. */
   readonly uiDotBadge = input(false);
+  /** SwiftUI `.badge(_:)` with a number: the solid count on the control's
+   *  top-trailing corner — how many things wait behind it (the iOS app
+   *  icon's badge, a toolbar item's count). Nothing at 0 or `null`: "0" is
+   *  noise. Decoration, like the dot: say the count in the accessible name
+   *  too. */
+  readonly uiBadgeCount = input<number | null>(null);
 }

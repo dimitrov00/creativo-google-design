@@ -1209,6 +1209,7 @@
       },
       "searchLabel": "Search",
       "analyticsLabel": "Analytics",
+      "analyticsPendingLabel": "Analytics, {{count}} to decide",
       "searchPlaceholder": "Name, phone, email, service…",
       "searchClear": "Clear search",
       "searchScope": "Looks through upcoming and past visits.",

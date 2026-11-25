@@ -4,6 +4,7 @@ import {
   ViewEncapsulation,
   computed,
   inject,
+  input,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
@@ -11,34 +12,39 @@ import { TranslocoService } from '@jsverse/transloco';
 import {
   AccessScope,
   type BarberId,
+  type LocalDate,
   Locale,
   StaffCapability,
   Tag,
 } from '@core/primitives';
-import { EmploymentSystem } from '@core/systems';
+import { EmploymentReminderSystem } from '@core/systems';
 import { StaffAccessService } from '@creativo/features/client/account-state';
 import { TeamCatalogService } from '@creativo/features/shared/catalog';
 import { UiButton } from '@creativo/ui/controls';
 import { UiNotice } from '@creativo/ui/patterns';
-import { StaffDayStore } from '../staff-day.store';
-import { scheduleRemindersVm } from './schedule-reminders.presenter';
-import type { ScheduleReminderVm } from './schedule-reminders.vm';
+import { analyticsRemindersVm } from './analytics-reminders.presenter';
+import type { AnalyticsReminderVm } from './analytics-reminders.vm';
 
 /**
- * THE LAST DAYS TO DECIDE ON, ON THE STAFF HOME (team onboarding D10, the
- * reminder cards): the Team page's reminders, said where whoever manages
- * the team lands every day — above the schedule, one compact notice each,
- * «Удължи» opening the record's working period
+ * THE DECISIONS ON TOP OF «АНАЛИЗИ» (owner ruling 2026-11-25, Q2 of the
+ * role-aware homes brief: the shop's view is the chart button, labelled,
+ * with the pending decisions on top of the page it opens). Today they are
+ * the Team page's reminders (team onboarding D10): one compact notice per
+ * last day, «Удължи» opening the record's working period
  * (`/admin/team/member/…?edit=period`).
  *
+ * They stood above the schedule until then, and pushed the day down when
+ * the team stream answered after the first frame. The schedule now says
+ * only how many, as a badge on the chart button (`AnalyticsEntry.pending`,
+ * the same system's answer, the same gate), and nothing moves the day.
+ *
  * Derived from the records the staff's team stream already holds and the
- * shop's today (`EmploymentSystem.remindersOf`): no read of its own,
+ * shop's today (`EmploymentReminderSystem.remindersOf`): no read of its own,
  * nothing stored, nothing sent. Nobody else sees them — «Удължи» is
- * theirs alone. Its own component, so the schedule page, whose file only
- * shrinks, mounts it with one tag.
+ * theirs alone.
  */
 @Component({
-  selector: 'lib-schedule-reminders',
+  selector: 'lib-analytics-reminders',
   imports: [UiButton, UiNotice],
   template: `
     @for (row of rows(); track row.barberId) {
@@ -55,7 +61,7 @@ import type { ScheduleReminderVm } from './schedule-reminders.vm';
           uiButtonStyle="bordered"
           uiTint="neutral"
           uiControlSize="regular"
-          data-testid="schedule-reminder-extend"
+          data-testid="analytics-reminder-extend"
           (click)="extend(row.barberId)"
         >
           {{ row.action }}
@@ -63,17 +69,19 @@ import type { ScheduleReminderVm } from './schedule-reminders.vm';
       </ui-notice>
     }
   `,
-  styleUrl: './schedule-reminders.css',
+  styleUrl: './analytics-reminders.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  // Every selector in the stylesheet is `schedule-reminders`-prefixed.
+  // Every selector in the stylesheet is `analytics-reminders`-prefixed.
   encapsulation: ViewEncapsulation.None,
   host: {
-    class: 'schedule-reminders',
-    '[attr.data-testid]': '"schedule-reminders"',
+    class: 'analytics-reminders',
+    '[attr.data-testid]': '"analytics-reminders"',
   },
 })
-export class ScheduleReminders {
-  private readonly store = inject(StaffDayStore);
+export class AnalyticsReminders {
+  /** The shop's today (`StaffAnalyticsStore.today`); `null` until its zone is known. */
+  readonly today = input<LocalDate | null>(null);
+
   private readonly team = inject(TeamCatalogService);
   private readonly access = inject(StaffAccessService);
   private readonly transloco = inject(TranslocoService);
@@ -81,9 +89,9 @@ export class ScheduleReminders {
 
   private readonly copyTable = toSignal(this.transloco.selectTranslation());
 
-  protected readonly rows = computed<readonly ScheduleReminderVm[]>(() => {
+  protected readonly rows = computed<readonly AnalyticsReminderVm[]>(() => {
     this.copyTable();
-    const today = this.store.todayKey();
+    const today = this.today();
     if (
       today === null ||
       !this.team.teamKnown() ||
@@ -97,8 +105,11 @@ export class ScheduleReminders {
       key: string,
       params?: Readonly<Record<string, string>>,
     ): string => this.transloco.translate<string>(key, params);
-    return scheduleRemindersVm({
-      barbers: EmploymentSystem.remindersOf(this.team.teamBarbers(), today),
+    return analyticsRemindersVm({
+      barbers: EmploymentReminderSystem.remindersOf(
+        this.team.teamBarbers(),
+        today,
+      ),
       today,
       locale,
       words: {

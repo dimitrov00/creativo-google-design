@@ -1209,6 +1209,7 @@
       },
       "searchLabel": "Търсене",
       "analyticsLabel": "Анализи",
+      "analyticsPendingLabel": "Анализи, {{count}} за решаване",
       "searchPlaceholder": "Име, телефон, имейл, услуга…",
       "searchClear": "Изчисти търсенето",
       "searchScope": "Търси в предстоящи и минали посещения.",
