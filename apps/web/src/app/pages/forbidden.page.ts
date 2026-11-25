@@ -1,6 +1,7 @@
-import { Component } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Component, inject, signal } from '@angular/core';
+import { RouterLink, type UrlTree } from '@angular/router';
 import { TranslocoPipe } from '@jsverse/transloco';
+import { HomeLandingService } from '@creativo/features/client/account-state';
 import { UiButton } from '@creativo/ui/controls';
 import { UiSpacer, UiStack } from '@creativo/ui/layout';
 import {
@@ -16,9 +17,10 @@ import {
  * stay placeholders beyond what guards/redirects need).
  *
  * It ends in ONE way out (2026-11-24): the installed app has no browser
- * back, so a page with only a sentence on it was a dead end. `/` is the
- * dispatcher — the installed app's home gate sends a signed-in person on
- * to their home, a browser tab shows the landing with its menu.
+ * back, so a page with only a sentence on it was a dead end. The link is
+ * the person's own home (`HomeLandingService`, owner rulings 2026-11-25):
+ * the schedule on their chair, the programs or the account — in a browser
+ * tab too, where `/` would be the landing page. `/` until it is known.
  */
 @Component({
   selector: 'cr-forbidden-page',
@@ -56,7 +58,7 @@ import {
             {{ 'shell.forbidden.body' | transloco }}
           </p>
           <a
-            routerLink="/"
+            [routerLink]="home()"
             uiButton
             uiButtonStyle="bordered"
             uiControlSize="regular"
@@ -70,4 +72,12 @@ import {
     </main>
   `,
 })
-export class ForbiddenPage {}
+export class ForbiddenPage {
+  protected readonly home = signal<UrlTree | string>('/');
+
+  constructor() {
+    void inject(HomeLandingService)
+      .homeUrl()
+      .then((url) => this.home.set(url));
+  }
+}

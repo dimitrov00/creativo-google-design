@@ -21,7 +21,6 @@ const ABSOLUTE_OR_DANGEROUS = /^(\/[/\\]|[a-z][a-z0-9+.-]*:)/i;
 export type RedirectPath = Brand<string, 'RedirectPath'>;
 
 const ROOT = '/' as RedirectPath;
-const ACCOUNT_HOME = '/account' as RedirectPath;
 
 export const RedirectPath = {
   /** The smart constructor — the ONLY way an untrusted `?redirect=` becomes a RedirectPath. */
@@ -60,11 +59,14 @@ export const RedirectPath = {
   },
 
   /**
-   * Where to send a user AFTER authentication: a redirect of `/` carries no
-   * intent (the public landing is not a post-auth destination), so it
-   * collapses to the app home `/account`; any other path is honoured as is.
+   * The link to follow AFTER authentication, or `null` when there is none:
+   * a redirect of `/` carries no intent (the public landing is not a
+   * post-auth destination). With none the person lands on their own home,
+   * which their roles decide (`SessionAccessSystem.homeOf`, owner ruling
+   * 2026-11-25) — never a fixed page named here. Any other path is honoured
+   * as is.
    */
-  authDestination(path: RedirectPath): RedirectPath {
-    return path === ROOT ? ACCOUNT_HOME : path;
+  intentOf(path: RedirectPath): RedirectPath | null {
+    return path === ROOT ? null : path;
   },
 } as const;

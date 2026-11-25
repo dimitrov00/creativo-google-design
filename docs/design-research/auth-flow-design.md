@@ -62,7 +62,7 @@ Landing "Book" CTA ──► /auth (identify)
    │
    ├─ invalid identifier ──► inline error, stay on identify
    ├─ request_failed(blocked) ──► blocked (terminal, calm cool-down copy)
-   ├─ latched active principal ──► redirect().authDestination()   (already signed in)
+   ├─ latched active principal ──► HomeLandingService.enter(redirect())   (already signed in: the link, else their home — 2026-11-25)
    ├─ latched onboarding principal ──► /onboarding?redirect=…
    │
    └─ code sent ──► /auth/code (otp)
