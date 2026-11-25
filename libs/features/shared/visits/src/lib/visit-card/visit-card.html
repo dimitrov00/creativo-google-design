@@ -172,5 +172,13 @@
   </div>
   }
   <ng-container *ngTemplateOutlet="capsule; context: { drawn: true }" />
+  <!-- The host's own foot — what a reader acts on after reading the card
+       (`/account`'s «Пак същото»: what changed, and the way to book it
+       again). Real text and real controls, after the hidden words: the
+       group's name stays the card's sentence. The host's element, so the
+       host's stylesheet sets its distance (`regular`, as the thumbs
+       stand). A static card only — a control may not sit inside the
+       interactive card's button. -->
+  <ng-content select="[visitCardFoot]" />
 </ui-card>
 }

@@ -30,3 +30,12 @@
 .account-completion__item .ui-icon {
   color: var(--sys-color-secondary-label);
 }
+
+/* ── «Пак същото» ──────────────────────────────────────────────────── */
+
+/* The card's foot (`[visitCardFoot]`, this page's own element): what
+   booking it again changes and the way to book it stand off the card's
+   words as its thumbs do (`regular`, the visit card's own distance). */
+.account-same-again__foot {
+  margin-block-start: var(--sys-space-regular);
+}

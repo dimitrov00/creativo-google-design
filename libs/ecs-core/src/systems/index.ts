@@ -99,6 +99,7 @@ export * from './season.system';
 export * from './seating-rule.system';
 export * from './service-conflict.system';
 export * from './session-access.system';
+export * from './same-again.system';
 export * from './shop-reach.system';
 export * from './shop-zone.system';
 export * from './staff-access.system';

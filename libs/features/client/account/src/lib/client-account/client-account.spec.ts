@@ -18,17 +18,27 @@ import {
   DEFAULT_LOCATION_PORTS,
   INBOX_PORTS,
   LOCATION_LOAD_PORTS,
+  MEDIA_RESOLVE_PORTS,
   ShopZoneService,
+  TEAM_BARBER_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import type {
   AppointmentReadPorts,
   FindAvatar,
   LoadLocation,
 } from '@core/ports';
-import type { Appointment, User } from '@core/entities';
-import { BirthDate, type Principal, Seat } from '@core/components';
+import type { Appointment, Barber, User } from '@core/entities';
+import {
+  BirthDate,
+  BookingLifecycle,
+  CancellationReason,
+  CancellationReasonSet,
+  type Principal,
+  Seat,
+} from '@core/components';
 import {
   AppointmentId,
+  BarberId,
   BusyKey,
   LocalDate,
   LocationId,
@@ -39,6 +49,7 @@ import { RepositoryError } from '@core/errors';
 import { ZonedTimeSystem } from '@core/systems';
 import {
   appointmentFixture,
+  barberFixture,
   locationFixture,
   memoryAppointmentReadPorts,
   memoryAuthSessionPorts,
@@ -48,11 +59,13 @@ import {
   memoryDefaultLocationPorts,
   memoryInboxPorts,
   memoryLocationLoadPorts,
+  memoryMediaResolvePorts,
   memoryProgramsWorld,
   minute,
   principalFixture,
   registeredUserFixture,
   seatFixture,
+  serviceFixture,
   unwrapOk,
 } from '@core/testing';
 import { AccountStateService } from '@creativo/features/client/account-state';
@@ -130,7 +143,10 @@ class TestTranslationLoader implements TranslocoLoader {
     // by, and the app's own error words; every other key renders as itself.
     return of({
       errors: bgCatalogue()['errors'],
-      account: { upcoming: { title: 'Предстоящ час' } },
+      account: {
+        upcoming: { title: 'Предстоящ час' },
+        sameAgain: (bgCatalogue()['account'] as Translation)['sameAgain'],
+      },
       appointments: { status: { confirmed: 'Потвърден' } },
       visits: {
         card: { name: '{{label}}: {{sentence}}' },
@@ -181,6 +197,14 @@ async function configure(
     readonly find?: FindAvatar;
     /** Stands in for the shops' read — the zone the card's "now" is read in. */
     readonly loadLocation?: LoadLocation;
+    /** The live catalogue — empty unless a spec names it. */
+    readonly catalog?: Parameters<typeof memoryCatalogReadPorts>[0];
+    /** The account's newest visits — none unless a spec names them. */
+    readonly history?: readonly Appointment[];
+    /** Wraps the history read, for a spec that holds or counts it. */
+    readonly observeHistory?: AppointmentReadPorts['observeHistory'];
+    /** Barber records off the public list, read by id. */
+    readonly offList?: readonly Barber[];
   } = {},
 ): Promise<ComponentFixture<ClientAccount>> {
   const upcoming$ = Array.isArray(upcoming)
@@ -193,8 +217,33 @@ async function configure(
     providers: [
       provideRouter([]),
       ...provideTestI18n(),
-      // The site header's menu links only the landing sections drawn.
-      { provide: CATALOG_PORTS, useValue: memoryCatalogReadPorts() },
+      // The site header's menu links only the landing sections drawn, and
+      // the cards name the services and the barber from the same reads.
+      {
+        provide: CATALOG_PORTS,
+        useValue: memoryCatalogReadPorts(
+          options.catalog ?? {
+            services: [serviceFixture()],
+            barbers: [barberFixture()],
+            locations: [locationFixture()],
+          },
+        ),
+      },
+      // The catalogue resolves its covers and faces (none in this one).
+      { provide: MEDIA_RESOLVE_PORTS, useValue: memoryMediaResolvePorts() },
+      {
+        // A past visit's barber off the public list is read by id.
+        provide: TEAM_BARBER_PORTS,
+        useValue: {
+          observeTeamBarbers: () => NEVER,
+          loadBarbers: async (ids: readonly BarberId[]) =>
+            EcsResult.ok(
+              (options.offList ?? []).filter((barber) =>
+                ids.includes(barber.id),
+              ),
+            ),
+        },
+      },
       { provide: AccountStateService, useValue: accountState },
       {
         provide: AUTH_SESSION_PORTS,
@@ -233,8 +282,11 @@ async function configure(
         // the one member wrapped, so a spec can hold its answer back.
         provide: APPOINTMENT_READ_PORTS,
         useValue: {
-          ...memoryAppointmentReadPorts([]),
+          ...memoryAppointmentReadPorts(options.history ?? []),
           observeUpcoming: () => upcoming$,
+          ...(options.observeHistory === undefined
+            ? {}
+            : { observeHistory: options.observeHistory }),
         } satisfies AppointmentReadPorts,
       },
       {
@@ -362,14 +414,17 @@ describe('ClientAccount', () => {
     expect(host.getAttribute('data-upcoming')).toBe('populated');
 
     // The card the staff glance draws too (client-card revision 3 §3.10),
-    // in `/account`'s form: the label is the heading, no services line, no
-    // face, plain like every card on this page — and the WHOLE card is the
-    // control, named by the words it prints (WCAG 2.5.3).
+    // in `/account`'s form: the label is the heading, then the services
+    // and the barber's face (owner ruling Q6, 2026-11-25), plain like every
+    // card on this page — and the WHOLE card is the control, named by the
+    // words it prints (WCAG 2.5.3).
     const card = host.querySelector<HTMLElement>('lib-visit-card');
     expect(card?.getAttribute('data-header-prominence')).toBe('increased');
     expect(card?.getAttribute('data-kind')).toBe('next');
-    expect(card?.querySelector('.visit-card__services')).toBeNull();
-    expect(card?.querySelector('.visit-card__face')).toBeNull();
+    expect(
+      card?.querySelector('.visit-card__services')?.textContent?.trim(),
+    ).toBe('Класическо подстригване');
+    expect(card?.querySelector('.visit-card__face')).not.toBeNull();
     const upcoming = host.querySelector('[data-testid="account-upcoming"]');
     expect(upcoming?.tagName).toBe('BUTTON');
     expect(upcoming?.closest('lib-visit-card')).toBe(card);
@@ -378,16 +433,20 @@ describe('ClientAccount', () => {
     expect(upcoming?.getAttribute('data-padding')).toBe('comfortable');
     expect(upcoming?.hasAttribute('aria-label')).toBe(false);
     expect(upcoming?.textContent?.trim()).toMatch(
-      /^Предстоящ час.*10:00\s*Потвърден$/,
+      /^Предстоящ час.*10:00\s·\sИван\s*Потвърден$/s,
     );
     const label = upcoming?.querySelector('.visit-card__label');
     expect(label?.textContent?.trim()).toBe('Предстоящ час');
     expect(label?.getAttribute('data-font')).toBe('headline');
     expect(label?.hasAttribute('data-foreground-style')).toBe(false);
-    // The day and the hour as one quiet line in the body's ink — the hour
-    // is the fact.
+    // The services are the row's title under the heading, so the day, the
+    // hour and the barber step back to the quiet line — the hour is the
+    // fact, in the primary ink.
+    const services = upcoming?.querySelector('.visit-card__services');
+    expect(services?.getAttribute('data-font')).toBe('body');
     const line = upcoming?.querySelector('.visit-card__line');
-    expect(line?.getAttribute('data-font')).toBe('body');
+    expect(line?.getAttribute('data-font')).toBe('callout');
+    expect(line?.getAttribute('data-foreground-style')).toBe('secondary');
     expect(line?.textContent?.replace(/\s+/g, ' ')).toContain('10:00');
     expect(
       upcoming?.querySelector('.visit-card__run[data-fact]')?.textContent,
@@ -571,7 +630,7 @@ describe('ClientAccount', () => {
     const card = () =>
       host.querySelector<HTMLElement>('[data-testid="account-upcoming"]');
     expect(host.getAttribute('data-upcoming')).toBe('populated');
-    expect(card()?.textContent?.trim()).toMatch(/10:00\s*Потвърден$/);
+    expect(card()?.textContent?.trim()).toMatch(/10:00\s·\sИван\s*Потвърден$/);
 
     // A sooner booking at the same shop becomes the soonest.
     upcoming$.next(
@@ -586,11 +645,11 @@ describe('ClientAccount', () => {
     expect(
       host.querySelector('[data-testid="account-upcoming-skeleton"]'),
     ).toBeNull();
-    expect(card()?.textContent?.trim()).toMatch(/09:00\s*Потвърден$/);
+    expect(card()?.textContent?.trim()).toMatch(/09:00\s·\sИван\s*Потвърден$/);
 
     await settle(fixture);
     expect(host.getAttribute('data-upcoming')).toBe('populated');
-    expect(card()?.textContent?.trim()).toMatch(/09:00\s*Потвърден$/);
+    expect(card()?.textContent?.trim()).toMatch(/09:00\s·\sИван\s*Потвърден$/);
     expect(zoneOf).toHaveBeenCalledTimes(1);
   });
 
@@ -622,7 +681,7 @@ describe('ClientAccount', () => {
     const card = host.querySelector<HTMLButtonElement>(
       '[data-testid="account-upcoming"]',
     );
-    expect(card?.textContent?.trim()).toMatch(/10:00\s*Потвърден$/);
+    expect(card?.textContent?.trim()).toMatch(/10:00\s·\sИван\s*Потвърден$/);
     card?.click();
     expect(navigate).toHaveBeenCalledWith(['/account/appointments'], {
       queryParams: { visit: 'appt_next' },
@@ -692,7 +751,7 @@ describe('ClientAccount', () => {
       host
         .querySelector('[data-testid="account-upcoming"]')
         ?.textContent?.trim(),
-    ).toMatch(/11:00\s*Потвърден$/);
+    ).toMatch(/11:00\s·\sИван\s*Потвърден$/);
     // Each shop's zone asked for once, by its own id.
     expect(zoneOf.mock.calls.map(([id]) => id).sort()).toEqual([
       'loc-center',
@@ -746,7 +805,7 @@ describe('ClientAccount', () => {
     const card = host.querySelector<HTMLButtonElement>(
       '[data-testid="account-upcoming"]',
     );
-    expect(card?.textContent?.trim()).toMatch(/11:00\s*Потвърден$/);
+    expect(card?.textContent?.trim()).toMatch(/11:00\s·\sИван\s*Потвърден$/);
     card?.click();
     expect(navigate).toHaveBeenCalledWith(['/account/appointments'], {
       queryParams: { visit: 'appt_home' },
@@ -911,5 +970,200 @@ describe('ClientAccount', () => {
 
     expect(host.getAttribute('data-completion')).toBe('complete');
     expect(host.querySelector('[data-testid="account-completion"]')).toBeNull();
+  });
+});
+
+/** The client's visit on 2026-09-20 at 10:00 — before the pinned now — as `lifecycle` left it. */
+function pastVisit(
+  id: string,
+  lifecycle: BookingLifecycle = BookingLifecycle.complete(
+    unwrapOk(
+      ZonedTimeSystem.toUtc(
+        unwrapOk(LocalDate.parse('2026-09-20')),
+        minute(660),
+        unwrapOk(ZonedTimeSystem.checkZone('Europe/Sofia')),
+      ),
+    ),
+  ),
+  seat = seatFixture(),
+): Appointment {
+  const day = unwrapOk(LocalDate.parse('2026-09-20'));
+  return appointmentFixture({
+    id: AppointmentId.of(id),
+    ownerUserId: PRINCIPAL.userId,
+    localDate: day,
+    startMinutes: seat.startMinutes,
+    endMinutes: Seat.endMinutes(seat),
+    utcEpochMs: unwrapOk(
+      ZonedTimeSystem.toUtc(
+        day,
+        seat.startMinutes,
+        unwrapOk(ZonedTimeSystem.checkZone('Europe/Sofia')),
+      ),
+    ),
+    seats: [seat],
+    barberIds: [seat.barberId],
+    busyKeys: [BusyKey.of(seat.barberId, day)],
+    lifecycle,
+  });
+}
+
+describe('ClientAccount — «Пак същото» when nothing is next (owner ruling Q6)', () => {
+  const ready = () =>
+    accountStateStub({ accountLoading: false, account: user() });
+
+  it('leads with the last visit the person had: the cut, the barber, and the way to book it again', async () => {
+    const fixture = await configure(ready(), [], {
+      history: [pastVisit('appt_past')],
+    });
+    await settle(fixture);
+
+    const host: HTMLElement = fixture.nativeElement;
+    expect(host.getAttribute('data-upcoming')).toBe('empty');
+    expect(host.getAttribute('data-lead')).toBe('same-again');
+    // The shared card in its LAST slot, a card to read.
+    const card = host.querySelector<HTMLElement>(
+      '[data-testid="account-same-again"]',
+    );
+    expect(card?.getAttribute('role')).toBe('group');
+    expect(card?.closest('lib-visit-card')?.getAttribute('data-kind')).toBe(
+      'last',
+    );
+    expect(card?.querySelector('.visit-card__label')?.textContent?.trim()).toBe(
+      'Пак същото',
+    );
+    expect(
+      card?.querySelector('.visit-card__services')?.textContent?.trim(),
+    ).toBe('Класическо подстригване');
+    expect(card?.querySelector('.visit-card__face')).not.toBeNull();
+    // Nothing changed, so nothing to say before the button.
+    expect(
+      host.querySelectorAll('[data-testid="account-same-again-note"]'),
+    ).toHaveLength(0);
+    const book = host.querySelector<HTMLAnchorElement>(
+      '[data-testid="account-same-again-book"]',
+    );
+    expect(book?.textContent?.trim()).toBe('Запази пак същото');
+    expect(book?.getAttribute('href')).toBe('/book?repeat=appt_past');
+    // The waiting card has gone: the slot is filled once.
+    expect(host.querySelector('[data-testid="account-upcoming"]')).toBeNull();
+  });
+
+  it('says so when the barber no longer takes online bookings — by name, read by id', async () => {
+    const petar = barberFixture({
+      id: BarberId.of('b-petar'),
+      name: { bg: 'Петър', en: 'Petar' },
+    });
+    const services = [
+      serviceFixture({
+        offerings: [{ ...serviceFixture().offerings[0]!, barberId: petar.id }],
+      }),
+    ];
+    const fixture = await configure(ready(), [], {
+      history: [pastVisit('appt_past')],
+      catalog: { services, barbers: [petar], locations: [locationFixture()] },
+      offList: [barberFixture()],
+    });
+    await settle(fixture);
+
+    const notes = [
+      ...fixture.nativeElement.querySelectorAll(
+        '[data-testid="account-same-again-note"]',
+      ),
+    ].map((note: Element) => note.textContent?.trim());
+    expect(notes).toEqual([
+      'Иван вече не приема онлайн часове — избери час при друг бръснар.',
+    ]);
+  });
+
+  it('skips a newer visit that did not happen, and books from the one before it', async () => {
+    const called = pastVisit(
+      'appt_called',
+      BookingLifecycle.cancel(
+        memoryClockPorts().nowUtcMs(),
+        CancellationReasonSet.of([CancellationReason.ClientUnwell]),
+      ),
+      seatFixture({ startMinutes: minute(900) }),
+    );
+    const fixture = await configure(ready(), [], {
+      history: [called, pastVisit('appt_had')],
+    });
+    await settle(fixture);
+
+    expect(
+      fixture.nativeElement
+        .querySelector('[data-testid="account-same-again-book"]')
+        ?.getAttribute('href'),
+    ).toBe('/book?repeat=appt_had');
+  });
+
+  it('keeps the honest empty state when nothing of the visit is offered any more', async () => {
+    const fixture = await configure(ready(), [], {
+      history: [pastVisit('appt_past')],
+      catalog: {
+        services: [],
+        barbers: [barberFixture()],
+        locations: [locationFixture()],
+      },
+    });
+    await settle(fixture);
+
+    const host: HTMLElement = fixture.nativeElement;
+    expect(host.getAttribute('data-lead')).toBe('empty');
+    expect(host.querySelector('[data-testid="account-same-again"]')).toBeNull();
+    expect(
+      host
+        .querySelector('[data-testid="account-upcoming"]')
+        ?.getAttribute('data-state'),
+    ).toBe('empty');
+    expect(
+      host.querySelector('[data-testid="account-upcoming-book-cta"]'),
+    ).not.toBeNull();
+  });
+
+  it('tells an account that has booked nothing yet so, and offers the booking', async () => {
+    const fixture = await configure(ready(), []);
+    await settle(fixture);
+
+    const host: HTMLElement = fixture.nativeElement;
+    const waiting = host.querySelector('[data-testid="account-upcoming"]');
+    expect(waiting?.getAttribute('data-state')).toBe('empty');
+    expect(waiting?.textContent).toContain('account.upcoming.none');
+    expect(
+      host.querySelector('[data-testid="account-upcoming-book-cta"]'),
+    ).not.toBeNull();
+  });
+
+  it('holds the skeleton, never the empty state, while the history has not answered', async () => {
+    const fixture = await configure(ready(), [], {
+      observeHistory: () => NEVER,
+    });
+    await settle(fixture);
+
+    const host: HTMLElement = fixture.nativeElement;
+    expect(host.getAttribute('data-lead')).toBe('loading');
+    expect(
+      host.querySelector('[data-testid="account-upcoming-skeleton"]'),
+    ).not.toBeNull();
+    expect(
+      host.querySelector('[data-testid="account-upcoming-book-cta"]'),
+    ).toBeNull();
+  });
+
+  it('opens no history read while a visit is next — the next visit leads the slot', async () => {
+    const asked: number[] = [];
+    const fixture = await configure(ready(), [appointment()], {
+      history: [pastVisit('appt_past')],
+      observeHistory: (_owner, limit) => {
+        asked.push(limit);
+        return NEVER;
+      },
+    });
+    await settle(fixture);
+
+    const host: HTMLElement = fixture.nativeElement;
+    expect(host.getAttribute('data-lead')).toBe('next');
+    expect(host.querySelector('[data-testid="account-same-again"]')).toBeNull();
+    expect(asked).toEqual([]);
   });
 });

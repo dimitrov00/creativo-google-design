@@ -6,8 +6,9 @@ import {
   input,
   untracked,
 } from '@angular/core';
+import { toObservable } from '@angular/core/rxjs-interop';
 import { TranslocoService } from '@jsverse/transloco';
-import { firstValueFrom, take } from 'rxjs';
+import { filter, firstValueFrom, take } from 'rxjs';
 import {
   APPOINTMENT_READ_PORTS,
   WAITLIST_READ_PORTS,
@@ -20,7 +21,13 @@ import {
 } from '@core/primitives';
 import { BookingFlowStep, Principal } from '@core/components';
 import { MoveRefusal } from '@core/errors';
-import { MoveSystem, ShopReachSystem } from '@core/systems';
+import type { Appointment } from '@core/entities';
+import {
+  MoveSystem,
+  type PrefillSeat,
+  SameAgainSystem,
+  ShopReachSystem,
+} from '@core/systems';
 import { NgTemplateOutlet } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { TranslocoDirective } from '@jsverse/transloco';
@@ -166,6 +173,8 @@ export class ClientBooking {
   private readonly appointments = inject(APPOINTMENT_READ_PORTS);
   private readonly transloco = inject(TranslocoService);
   private readonly catalog = inject(CatalogContentService);
+  /** The catalogue's services and barbers have both answered (`answered`), as a stream a landing awaits. */
+  private readonly catalogueAnswered = toObservable(this.catalog.answered);
 
   /**
    * Land the deep link: fetch the caller's own request and rebuild the flow
@@ -230,8 +239,34 @@ export class ClientBooking {
       this.store.attachRepeatSource(found);
       return;
     }
-    this.store.repeat(found, (ordinal) =>
-      this.transloco.translate('booking.party.guest', { number: ordinal }),
+    const seats = await this.rebookSeatsOf(found);
+    this.store.repeat(
+      found,
+      (ordinal) =>
+        this.transloco.translate('booking.party.guest', { number: ordinal }),
+      seats,
+    );
+  }
+
+  /**
+   * The visit's seats as today's public catalogue books them again
+   * (`SameAgainSystem.rebookSeats`) — the answer the «Пак същото» card on
+   * `/account` words, so the basket holds what the card promised: a barber
+   * off the list is left open, a retired service left out. It waits for
+   * the services and the barbers to answer; where either read failed, the
+   * seats as stored (the flow's own steps say what they cannot book).
+   */
+  private async rebookSeatsOf(
+    appointment: Appointment,
+  ): Promise<readonly PrefillSeat[]> {
+    await firstValueFrom(this.catalogueAnswered.pipe(filter(Boolean)));
+    if (!this.catalog.servicesKnown() || !this.catalog.barbersKnown()) {
+      return appointment.seats;
+    }
+    return SameAgainSystem.rebookSeats(
+      appointment.seats,
+      this.catalog.barbers(),
+      this.catalog.services(),
     );
   }
 

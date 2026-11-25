@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import type { Translation } from '@jsverse/transloco';
-import { BehaviorSubject, NEVER, Observable, of } from 'rxjs';
+import { BehaviorSubject, NEVER, Observable, filter, of } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CATALOG_PORTS,
@@ -789,6 +789,116 @@ describe('ClientBooking — the sign-in round trip keeps the booking source', ()
     // Their party, not the old visit's: nobody's bag was overwritten.
     expect(guestIds(back)).toEqual(['guest-0']);
     expect(host(back).getAttribute('data-state')).toBe('services');
+  });
+});
+
+describe('ClientBooking — «the same again» books what today’s catalogue can', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    TestBed.resetTestingModule();
+  });
+
+  /** The landed bag's lines, as service and barber (`null`: no barber chosen). */
+  function landedLines(fixture: ComponentFixture<ClientBooking>): readonly {
+    readonly serviceId: string;
+    readonly barberId: string | null;
+  }[] {
+    const cart = fixture.debugElement.injector.get(BookingFlowStore).cart();
+    return (cart?.cartSeats ?? []).flatMap((seat) =>
+      seat.lines.map((line) => ({
+        serviceId: line.serviceId,
+        barberId: line.barberId,
+      })),
+    );
+  }
+
+  it('keeps the barber who did it while he is listed and performs the service', async () => {
+    const fixture = await renderShell(
+      { repeat: 'appt-source' },
+      {
+        principal: signedIn('client-1'),
+        visit: pastVisit('appt-source'),
+        catalog: {
+          services: [catalogService()],
+          barbers: [activeBarber('ivan')],
+        },
+      },
+    );
+    await settle(fixture);
+
+    const store = fixture.debugElement.injector.get(BookingFlowStore);
+    expect(store.bookedFrom()).toBe('appt-source');
+    expect(landedLines(fixture)).toEqual([
+      { serviceId: 'svc-fade', barberId: 'ivan' },
+    ]);
+  });
+
+  it('leaves the barber open when he is off the public list — never a chair nobody can book', async () => {
+    const fixture = await renderShell(
+      { repeat: 'appt-source' },
+      {
+        principal: signedIn('client-1'),
+        visit: pastVisit('appt-source'),
+        catalog: {
+          services: [catalogService()],
+          barbers: [activeBarber('petar')],
+        },
+      },
+    );
+    await settle(fixture);
+
+    expect(landedLines(fixture)).toEqual([
+      { serviceId: 'svc-fade', barberId: null },
+    ]);
+  });
+
+  it('falls through to the ordinary entry when nothing of the visit is offered any more', async () => {
+    const fixture = await renderShell(
+      { repeat: 'appt-source' },
+      {
+        principal: signedIn('client-1'),
+        visit: pastVisit('appt-source'),
+        catalog: {
+          services: [catalogService('svc-other')],
+          barbers: [activeBarber('ivan')],
+        },
+      },
+    );
+    await settle(fixture);
+
+    const store = fixture.debugElement.injector.get(BookingFlowStore);
+    expect(store.lineCount()).toBe(0);
+    expect(store.bookedFrom()).toBeNull();
+  });
+
+  it('waits for the barbers before it rebuilds the bag, then books what it can', async () => {
+    const barbers = new BehaviorSubject<
+      Result<readonly Barber[], RepositoryError> | undefined
+    >(undefined);
+    const fixture = await renderShell(
+      { repeat: 'appt-source' },
+      {
+        principal: signedIn('client-1'),
+        visit: pastVisit('appt-source'),
+        catalog: {
+          services: [catalogService()],
+          barbers: barbers.pipe(
+            filter(
+              (answer): answer is Result<readonly Barber[], RepositoryError> =>
+                answer !== undefined,
+            ),
+          ),
+        },
+      },
+    );
+    await settle(fixture);
+    expect(landedLines(fixture)).toEqual([]);
+
+    barbers.next(Result.ok([activeBarber('ivan')]));
+    await settle(fixture);
+    expect(landedLines(fixture)).toEqual([
+      { serviceId: 'svc-fade', barberId: 'ivan' },
+    ]);
   });
 });
 
