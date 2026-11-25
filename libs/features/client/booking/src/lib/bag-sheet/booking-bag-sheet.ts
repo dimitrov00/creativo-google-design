@@ -32,20 +32,19 @@ import {
   UiAsyncImage,
   UiAvatar,
   UiButton,
+  UiChoiceMenu,
+  type UiChoiceOption,
   UiIcon,
   UiModalSheet,
 } from '@creativo/ui/controls';
 import { UiStack } from '@creativo/ui/layout';
 import {
   UiForegroundStyleDirective,
-  UiInteractiveDirective,
   UiTextDirective,
 } from '@creativo/ui/modifiers';
 import {
   UiListGroup,
   UiListRow,
-  UiMenu,
-  UiMenuItem,
   UiMenuTrigger,
   UiSheetActionBar,
 } from '@creativo/ui/patterns';
@@ -122,6 +121,8 @@ interface BagSelectVm {
   readonly avatarSrc: string | null;
   readonly showsFace: boolean;
   readonly options: readonly BagOptionVm[];
+  /** The same options as `ui-choice-menu` draws them, in the same order. */
+  readonly choices: readonly UiChoiceOption[];
 }
 
 /** One thing in the bag, described down to what it will actually cost. */
@@ -192,11 +193,9 @@ interface BagGroupVm {
     UiButton,
     UiForegroundStyleDirective,
     UiIcon,
-    UiInteractiveDirective,
+    UiChoiceMenu,
     UiListGroup,
     UiListRow,
-    UiMenu,
-    UiMenuItem,
     UiMenuTrigger,
     UiModalSheet,
     UiSheetActionBar,
@@ -332,6 +331,47 @@ export class BookingBagSheet {
     this.openMenu.set(this.openMenu() === key ? null : key);
   }
 
+  /** A menu says it closed (a pick, Escape, a press outside): if it is the
+   *  open one, none is. Its opening is the trigger's own doing. */
+  protected menuPresented(key: string, presented: boolean): void {
+    if (!presented && this.openMenu() === key) this.openMenu.set(null);
+  }
+
+  /** The menu answers with an option's key; the option says which write. */
+  protected pickChoice(
+    seat: SeatScopeVm,
+    line: BagLineVm,
+    select: BagSelectVm,
+    key: string,
+  ): void {
+    const option = select.options.find((entry) => entry.key === key);
+    if (option !== undefined) this.pick(seat, line, option);
+  }
+
+  /**
+   * A select's options as menu rows: the name, its terms on a second line so
+   * the choice is priced before it is made, and for a performer a face —
+   * "anyone" is an answer like any other and takes a face-shaped mark too.
+   */
+  private choices(
+    lineKey: string,
+    options: readonly BagOptionVm[],
+  ): readonly UiChoiceOption[] {
+    return options.map((option): UiChoiceOption => {
+      const row = {
+        id: option.key,
+        label: option.name,
+        description: option.terms,
+        selected: option.selected,
+        testId: `booking-bag-${BAG_SELECT_WORDS[option.bagSelect]}-option-${lineKey}-${option.key}`,
+      };
+      if (option.bagSelect === BagSelect.Variant) return row;
+      return option.id === null
+        ? { ...row, avatarSrc: null, icon: 'booking.anyBarber' }
+        : { ...row, avatarSrc: option.avatarSrc };
+    });
+  }
+
   /**
    * Commit a pick.
    *
@@ -431,6 +471,19 @@ export class BookingBagSheet {
   ): BagSelectVm | null {
     if (vm.variants.length === 0) return null;
     const chosen = vm.variants.find((candidate) => candidate.id === variantId);
+    const options = vm.variants.map((variant): BagOptionVm => ({
+      bagSelect: BagSelect.Variant,
+      key: variant.id,
+      id: variant.id,
+      name: this.content.text(variant.name),
+      avatarSrc: null,
+      // Priced on the CURRENT performer answer, so switching variant shows
+      // what it would cost the way this line is actually set up.
+      terms: this.termsLabel(
+        TermsSpanSystem.spanFor(service, variant.id, barberId),
+      ),
+      selected: variant.id === variantId,
+    }));
     return {
       key: `${lineKey}:variant`,
       bagSelect: BagSelect.Variant,
@@ -440,19 +493,8 @@ export class BookingBagSheet {
       ariaLabel: this.transloco.translate('booking.configure.variant'),
       avatarSrc: null,
       showsFace: false,
-      options: vm.variants.map((variant): BagOptionVm => ({
-        bagSelect: BagSelect.Variant,
-        key: variant.id,
-        id: variant.id,
-        name: this.content.text(variant.name),
-        avatarSrc: null,
-        // Priced on the CURRENT performer answer, so switching variant shows
-        // what it would cost the way this line is actually set up.
-        terms: this.termsLabel(
-          TermsSpanSystem.spanFor(service, variant.id, barberId),
-        ),
-        selected: variant.id === variantId,
-      })),
+      options,
+      choices: this.choices(lineKey, options),
     };
   }
 
@@ -510,6 +552,7 @@ export class BookingBagSheet {
         selected: barberId === entry.barber.id,
       }));
 
+    const options = [anyone, ...named];
     return {
       key: `${lineKey}:barber`,
       bagSelect: BagSelect.Barber,
@@ -519,7 +562,8 @@ export class BookingBagSheet {
       ariaLabel: this.transloco.translate('booking.configure.barber'),
       avatarSrc: barber?.avatarSrc || null,
       showsFace: barber !== undefined,
-      options: [anyone, ...named],
+      options,
+      choices: this.choices(lineKey, options),
     };
   }
 }

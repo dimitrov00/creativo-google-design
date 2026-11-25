@@ -200,7 +200,7 @@ lib-booking-bag-sheet {
  * press. Hugging is also what the sheet's own decision bar does with these
  * two, which is the whole point of sharing their stylesheet.
  */
-.bag-line__opts ui-menu {
+.bag-line__opts ui-choice-menu {
   max-inline-size: 100%;
   min-inline-size: 0;
   /* The SURFACE is not bound by the trigger's own width, and it has to hold
@@ -208,16 +208,6 @@ lib-booking-bag-sheet {
      "30 – 45 мин · 13,00 € – 15,00 €". A rung narrower and the row's label
      clipped it mid-price. */
   --ui-menu-min-width: 20rem;
-}
-
-/* The menu row's leading rail — an avatar-sized box that holds a portrait or
-   the "anyone" disc. Collapsed entirely for the variant menu, whose options
-   have no face to show and would otherwise all start one rail in. */
-/* The rail's WIDTH is the menu's (see menu.css — a picker run holds its
-   leading column open for every row). All this class still says is that a
-   select with no faces in it has no rail at all. */
-.bag-option__lead[data-empty] {
-  display: none;
 }
 
 /* ── The bar ─────────────────────────────────────────────────────────── */

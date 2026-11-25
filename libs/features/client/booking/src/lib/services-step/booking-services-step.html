@@ -353,11 +353,13 @@
         </ui-stack>
       </ui-stack>
       } } @if (details.variants.length > 0) {
-      <ui-menu
-        [uiPresented]="variantMenuOpen()"
+      <ui-choice-menu
         uiAlignment="trailing"
+        [uiOptions]="variantChoices()"
+        [uiSelectedId]="draftVariantId()"
         [uiLabel]="t('booking.configure.variant')"
-        (uiDismissed)="variantMenuOpen.set(false)"
+        [(uiPresented)]="variantMenuOpen"
+        (uiPicked)="pickVariantChoice($event)"
       >
         <button
           uiMenuTrigger
@@ -373,41 +375,16 @@
           <span class="booking-pick__value">{{ variantLabel() }}</span>
           <ui-icon uiName="field.popUp" uiScale="small" />
         </button>
-
-        <!-- The SAME segmented run the location step uses: one row
-                 grammar for "pick one of these", whether it is a screen or a
-                 popover. `uiMenuItem` only supplies the semantics and the
-                 keyboard model; `uiListRow` owns the look. -->
-        <ui-list-group>
-          @for (variant of details.variants; track variant.id) {
-          <button
-            uiMenuItem
-            uiListRow
-            type="button"
-            [uiInteractive]="true"
-            [uiSelected]="draftVariantId() === variant.id"
-            [attr.data-testid]="'booking-variant-' + variant.id"
-            (click)="pickVariant(variant.id)"
-          >
-            <span uiText uiFont="body">{{ content.text(variant.name) }}</span>
-            @if (draftVariantId() === variant.id) {
-            <ui-icon
-              uiTrailing
-              uiName="checklist.done"
-              uiForegroundStyle="accent"
-            />
-            }
-          </button>
-          }
-        </ui-list-group>
-      </ui-menu>
+      </ui-choice-menu>
       }
 
-      <ui-menu
-        [uiPresented]="barberMenuOpen()"
+      <ui-choice-menu
         uiAlignment="trailing"
+        [uiOptions]="barberChoices()"
+        [uiSelectedId]="barberChoiceId()"
         [uiLabel]="t('booking.configure.barber')"
-        (uiDismissed)="barberMenuOpen.set(false)"
+        [(uiPresented)]="barberMenuOpen"
+        (uiPicked)="pickBarberChoice($event)"
       >
         <button
           uiMenuTrigger
@@ -437,84 +414,7 @@
           <span class="booking-pick__value">{{ barberLabel() }}</span>
           <ui-icon uiName="field.popUp" uiScale="small" />
         </button>
-
-        <ui-list-group>
-          <!-- "Anyone" leads — the widest answer, and the one that finds the
-                 soonest chair. It is still an answer you have to give. -->
-          <button
-            uiMenuItem
-            uiListRow
-            type="button"
-            [uiInteractive]="true"
-            [uiSelected]="barberAnswered() && draftBarberId() === null"
-            data-testid="booking-barber-any"
-            (click)="pickBarber(null)"
-          >
-            <!-- "Anyone" is a face-shaped answer like any other, so it takes
-                   the same control the faces do — `ui-avatar` with a glyph in
-                   place of the monogram. The disc, the capsule and the size
-                   ladder come from the DS rather than from a hand-rolled span
-                   here (and the leading rail is held open by the menu). -->
-            <span uiLeading>
-              <ui-avatar uiIcon="booking.anyBarber" uiControlSize="regular" />
-            </span>
-            <ui-stack uiSpacing="none">
-              <span uiText uiFont="body">
-                {{ t('booking.configure.anyBarber') }}
-              </span>
-              <span uiText uiFont="footnote" uiForegroundStyle="secondary">
-                {{ t('landing.services.anyPerformerDetail') }}
-              </span>
-            </ui-stack>
-            @if (barberAnswered() && draftBarberId() === null) {
-            <ui-icon
-              uiTrailing
-              uiName="checklist.done"
-              uiForegroundStyle="accent"
-            />
-            }
-          </button>
-
-          @for (option of performerOptions(); track option.id) {
-          <button
-            uiMenuItem
-            uiListRow
-            type="button"
-            [uiInteractive]="true"
-            [uiSelected]="draftBarberId() === option.id"
-            [attr.data-testid]="'booking-barber-' + option.id"
-            (click)="pickBarber(option.id)"
-          >
-            <ui-avatar
-              uiLeading
-              [uiSrc]="option.avatarSrc"
-              [uiName]="content.text(option.name)"
-              uiControlSize="regular"
-            />
-            <ui-stack uiSpacing="none">
-              <span uiText uiFont="body">{{ content.text(option.name) }}</span>
-              <!-- What this barber charges for THIS variant, so the choice
-                       is priced before it is made. -->
-              <span
-                uiText
-                uiFont="footnote"
-                uiForegroundStyle="secondary"
-                class="booking-option__terms"
-              >
-                {{ optionTerms(option) }}
-              </span>
-            </ui-stack>
-            @if (draftBarberId() === option.id) {
-            <ui-icon
-              uiTrailing
-              uiName="checklist.done"
-              uiForegroundStyle="accent"
-            />
-            }
-          </button>
-          }
-        </ui-list-group>
-      </ui-menu>
+      </ui-choice-menu>
 
       <ui-stack
         uiAxis="horizontal"

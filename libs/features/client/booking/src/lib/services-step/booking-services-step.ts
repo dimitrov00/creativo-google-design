@@ -47,6 +47,8 @@ import {
   UiBadge,
   UiButton,
   UiChip,
+  UiChoiceMenu,
+  type UiChoiceOption,
   UiIcon,
   UiTextField,
 } from '@creativo/ui/controls';
@@ -84,6 +86,12 @@ import { BookingStepLayout } from '../step-layout/booking-step-layout';
  * px constant here agree only at a 16px root: raise the browser's text size
  * and the clamp starts protecting a box narrower than the one on screen.
  */
+/**
+ * The performer menu's row for "anyone" — an answer with no barber id of
+ * its own, so the row needs one. The bag's menu spells it the same way.
+ */
+const ANY_BARBER_CHOICE = 'any';
+
 const SEAT_MENU_WIDTH = 192;
 const SEAT_MENU_GUTTER = 16;
 
@@ -128,6 +136,7 @@ const SEAT_MENU_GUTTER = 16;
     UiBadge,
     UiButton,
     UiChip,
+    UiChoiceMenu,
     UiForegroundStyleDirective,
     UiGrid,
     UiIcon,
@@ -775,6 +784,69 @@ export class BookingServicesStep {
     price: Money;
   }): string {
     return `${this.content.durationRange(option.minutes, option.minutes)} · ${this.content.price(option.price)}`;
+  }
+
+  /**
+   * The variant select's rows for `ui-choice-menu`: a bare name each — a
+   * variant's terms depend on who performs it, which the next select asks.
+   */
+  protected readonly variantChoices = computed((): readonly UiChoiceOption[] =>
+    (this.detailsVm()?.variants ?? []).map((variant) => ({
+      id: variant.id,
+      label: this.content.text(variant.name),
+      testId: `booking-variant-${variant.id}`,
+    })),
+  );
+
+  /**
+   * The performer select's rows: "anyone" leads — the widest answer, and the
+   * one that finds the soonest chair — then each barber with THEIR terms for
+   * the chosen variant, so the choice is priced before it is made. Every row
+   * is a face: "anyone" is an answer like any other and takes a face-shaped
+   * mark too.
+   */
+  protected readonly barberChoices = computed((): readonly UiChoiceOption[] => {
+    // The words below follow the loaded language.
+    this.loadedLang();
+    return [
+      {
+        id: ANY_BARBER_CHOICE,
+        label: this.transloco.translate('booking.configure.anyBarber'),
+        description: this.transloco.translate(
+          'landing.services.anyPerformerDetail',
+        ),
+        avatarSrc: null,
+        icon: 'booking.anyBarber',
+        testId: 'booking-barber-any',
+      },
+      ...this.performerOptions().map((option) => ({
+        id: option.id,
+        label: this.content.text(option.name),
+        description: this.optionTerms(option),
+        avatarSrc: option.avatarSrc || null,
+        testId: `booking-barber-${option.id}`,
+      })),
+    ];
+  });
+
+  /** The chosen performer row: none until the question is answered. */
+  protected readonly barberChoiceId = computed(() =>
+    this.barberAnswered() ? (this.draftBarberId() ?? ANY_BARBER_CHOICE) : null,
+  );
+
+  /** The menu answers with a row's id; the catalogue's own id is picked. */
+  protected pickVariantChoice(id: string): void {
+    const variant = this.detailsVm()?.variants.find((entry) => entry.id === id);
+    if (variant !== undefined) this.pickVariant(variant.id);
+  }
+
+  protected pickBarberChoice(id: string): void {
+    if (id === ANY_BARBER_CHOICE) {
+      this.pickBarber(null);
+      return;
+    }
+    const option = this.performerOptions().find((entry) => entry.id === id);
+    if (option !== undefined) this.pickBarber(option.id);
   }
 
   protected pickVariant(variantId: ServiceVariantId): void {

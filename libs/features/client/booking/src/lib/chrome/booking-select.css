@@ -10,8 +10,10 @@
    Class vocabulary (the markup is the consumer's, the look is this file's):
    - `.booking-pick`        the trigger — a glass pill at the LARGE tier
    - `.booking-pick__value` its current value, ellipsizing
-   - `.booking-option`      a menu row's name-over-terms column
-   - `.booking-option__terms` what that option costs
+
+   The TRIGGER only. What opens from it is the design system's: the three
+   pull-downs are `ui-choice-menu` (rows, faces, terms, the check), and the
+   time pick opens the time sheet.
    ════════════════════════════════════════════════════════════════ */
 
 /*
@@ -44,29 +46,4 @@
    is theme-aware — it composites against a known surface, not a photograph. */
 .booking-pick[data-unset] .booking-pick__value {
   color: var(--sys-color-secondary-label);
-}
-
-/* An option that carries its own terms: the name leads, what it costs sits
-   under it, so the choice is priced before it is made. */
-.booking-option {
-  display: flex;
-  flex-direction: column;
-  min-inline-size: 0;
-}
-
-/* TYPE AND INK COME FROM THE TEMPLATE, which both consumers already state:
-   `uiText uiFont="footnote" uiForegroundStyle="secondary"`. This rule was
-   forcing 11px caption over the 12px footnote they asked for — feature CSS
-   is unlayered, so it out-cascaded the directives silently and the templates
-   have been wrong-looking rather than wrong. `font-variant-numeric` stays:
-   no directive covers it, and a price column needs it. */
-.booking-option__terms {
-  font-variant-numeric: tabular-nums;
-}
-
-/* The current value's checkmark, pinned to the menu item's trailing edge —
-   HIG's state marker for a menu that expresses a selection. */
-.booking-pick__check {
-  margin-inline-start: auto;
-  color: var(--sys-color-accent);
 }
