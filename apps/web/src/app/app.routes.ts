@@ -1,11 +1,11 @@
 import { CanDeactivateFn, Route } from '@angular/router';
 import { firstValueFrom, isObservable } from 'rxjs';
-import { Role, RouteCapabilities, Roles } from '@core/components';
+import { RouteCapabilities, Roles } from '@core/components';
 import type { AdminRhythmLeaving } from '@creativo/features/admin/loyalty';
 import { activeGuard } from './guards/active.guard';
 import { anonGuard } from './guards/anon.guard';
 import { capabilityGuard } from './guards/capability.guard';
-import { homeGuard } from './guards/home.guard';
+import { homeGuard, landingGuard } from './guards/home.guard';
 import { rolesGuard } from './guards/roles.guard';
 
 /**
@@ -124,9 +124,11 @@ export const appRoutes: Route[] = [
     // role named 'staff' exists and nothing ever minted one, so this guard
     // used to bounce every principal to /forbidden; the identity brand's
     // unvalidated Role string is what let it compile. The list is
-    // `Roles.STAFF` from `@core/components`, the same grouping
-    // firestore.rules' `isStaff()` enforces — the guard and the rules must
-    // never disagree about who counts.
+    // `Roles.BOOK` from `@core/components`, the same grouping
+    // firestore.rules' `worksTheBook()` enforces — the guard and the rules
+    // must never disagree about who counts. Not `Roles.STAFF`: the rules
+    // refuse `content_manager` every appointment read, so the wider group
+    // opened the day to a person it could only show empty.
     //
     // NAMED `staff/schedule`, not bare `staff`, ahead of the staff area
     // growing siblings (clients, money, insights — see
@@ -135,7 +137,7 @@ export const appRoutes: Route[] = [
     // claiming it now costs two lines, and claiming it after the URL has
     // been bookmarked and pasted around costs a broken link.
     path: 'staff/schedule',
-    canActivate: [activeGuard, rolesGuard(...Roles.STAFF)],
+    canActivate: [activeGuard, rolesGuard(...Roles.BOOK)],
     loadComponent: () =>
       import('@creativo/features/staff/dashboard').then(
         (m) => m.StaffDashboard,
@@ -191,20 +193,21 @@ export const appRoutes: Route[] = [
     redirectTo: 'staff/schedule',
   },
   {
-    // The admin area's door: its one page with a body today is the
-    // rhythm's (OR-24 — the impersonation placeholder that answered here is
-    // deleted). Deliberately UNGUARDED, like `staff` and `admin/loyalty`:
-    // the redirect is not an authorization decision, and the target's own
-    // guards — the admin pair `isAdmin()` names — still run afterwards.
+    // The admin area's door, with no page of its own: the person's home
+    // (owner rulings 2026-11-25 — the rhythm page it opened before is one
+    // admin page among several, and a content manager or a barber who typed
+    // it landed on /forbidden). `activeGuard` first: nobody signed in has
+    // a home to go to.
     path: 'admin',
     pathMatch: 'full',
-    redirectTo: 'admin/loyalty/rhythm',
+    canActivate: [activeGuard, landingGuard],
+    children: [],
   },
   {
-    // Matches `isCatalogManager()` in firestore.rules — content_manager's
-    // own tier plus the admin pair the rules fold in.
+    // `Roles.CATALOG`, the twin of `isCatalogManager()` in firestore.rules —
+    // content_manager's own tier plus the admin pair the rules fold in.
     path: 'admin/programs',
-    canActivate: [activeGuard, rolesGuard(Role.ContentManager, ...Roles.ADMIN)],
+    canActivate: [activeGuard, rolesGuard(...Roles.CATALOG)],
     loadComponent: () =>
       import('@creativo/features/admin/programs').then((m) => m.AdminPrograms),
   },
@@ -284,6 +287,18 @@ export const appRoutes: Route[] = [
     canDeactivate: [adminRhythmLeaveGuard],
     loadComponent: () =>
       import('@creativo/features/admin/loyalty').then((m) => m.AdminRhythm),
+  },
+  {
+    // «Поддръжка» — support's read-as page (OR-24, docs/designs/
+    // support-read-as.md): the vendor's sysadmin alone (`Roles.SUPPORT`,
+    // owner ruling 2026-11-24), the same list both impersonation callables
+    // gate on. The callables judge the token again.
+    path: 'support',
+    canActivate: [activeGuard, rolesGuard(...Roles.SUPPORT)],
+    loadComponent: () =>
+      import('@creativo/features/admin/team/support').then(
+        (m) => m.SupportPage,
+      ),
   },
   {
     path: 'forbidden',

@@ -97,6 +97,49 @@ describe('AuthFlowStore', () => {
     expect(store.canResend()).toBe(false);
   });
 
+  it('is on the otp step while the first code is still being sent — sending, never verifying, and no resend offered yet', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    requestChallenge.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+
+    const submitted = store.submitIdentifier(requiredIdentifier());
+
+    // The machine moves on at once; the code step words the wait.
+    expect(store.state().authFlowStep).toBe(AuthFlowStep.Otp);
+    expect(store.sending()).toBe(true);
+    expect(store.verifying()).toBe(false);
+    expect(store.sendCount()).toBe(0);
+    // The countdown is 0 before the first send lands, yet nothing to resend.
+    expect(store.resendSecondsLeft()).toBe(0);
+    expect(store.canResend()).toBe(false);
+
+    answer(Result.ok(OtpId.of('challenge_1')));
+    await submitted;
+    expect(store.sending()).toBe(false);
+    expect(store.sendCount()).toBe(1);
+  });
+
+  it('flags verifying, never sending, while a typed code is with the server', async () => {
+    await store.submitIdentifier(requiredIdentifier());
+    let answer: (value: unknown) => void = () => undefined;
+    verifyChallenge.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+
+    const verified = store.submitCode('123456');
+
+    expect(store.verifying()).toBe(true);
+    expect(store.sending()).toBe(false);
+    answer(Result.ok(SessionKind.Returning));
+    await verified;
+    expect(store.verifying()).toBe(false);
+  });
+
   it('counts the cooldown down to zero, one second at a time', async () => {
     await store.submitIdentifier(requiredIdentifier());
 

@@ -283,6 +283,30 @@ describe('authSessionPorts', () => {
       expect(payload['iss']).toBe('firebase-auth-emulator@example.com');
     });
 
+    it('never remembers a support read-as — a revived one would come back as a plain session of its target (OR-24)', async () => {
+      localStorage.setItem(
+        'creativo.emulator-session',
+        JSON.stringify({ uid: 'dev-staff-ivan', claims: STAFF_CLAIMS }),
+      );
+      onIdTokenChangedMock.mockImplementation(
+        (_auth: Auth, listener: (u: User | null) => void) => {
+          listener(
+            fakeUser('u-owner', {
+              ...STAFF_CLAIMS,
+              imp: 'imp-1',
+              impBy: 'u-support',
+              impScope: 'READ',
+              impExp: Date.UTC(2026, 10, 24, 10, 15),
+            }),
+          );
+          return () => undefined;
+        },
+      );
+      const seen = watch(authSessionPorts(auth));
+      await vi.waitFor(() => expect(seen.length).toBe(1));
+      expect(localStorage.getItem('creativo.emulator-session')).toBeNull();
+    });
+
     it('re-reads the stored claims through the one claims rule before minting', async () => {
       localStorage.setItem(
         'creativo.emulator-session',

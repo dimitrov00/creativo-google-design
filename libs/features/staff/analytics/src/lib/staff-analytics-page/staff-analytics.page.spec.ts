@@ -1,8 +1,13 @@
 import { TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { BarberId, LocationId } from '@core/primitives';
-import { barberFixture, locationFixture } from '@core/testing';
+import { BarberId, LocalDate, LocationId } from '@core/primitives';
+import {
+  FIXTURE_TODAY,
+  barberFixture,
+  localDate,
+  locationFixture,
+} from '@core/testing';
 import { shareOrDownloadFile } from '@creativo/infrastructure/web-storage';
 import {
   byTestId,
@@ -302,6 +307,40 @@ describe('StaffAnalyticsPage — the Revolut home (staff-analytics-v3)', () => {
     expect(byTestId(host, 'analytics-tool-goal')?.textContent).toContain(
       'Задай цел',
     );
+  });
+
+  it('opens with the decisions on top for whoever manages the team — a last day within the week, «Удължи» on it, above the menus (owner ruling 2026-11-25)', async () => {
+    const leaving = barberFixture({
+      id: BarberId.of('ivan'),
+      barberStartsLocalDate: localDate('2026-01-01'),
+      barberLastWorkingLocalDate: LocalDate.addDays(FIXTURE_TODAY, 3),
+    });
+    const admin = await render({
+      admin: true,
+      barbers: [leaving, barberFixture({ id: BarberId.of('niko') })],
+    });
+    const reminders = byTestId(admin.host, 'analytics-reminders');
+    const notices = reminders?.querySelectorAll('ui-notice') ?? [];
+    expect(notices).toHaveLength(1);
+    expect(notices[0]?.getAttribute('data-testid')).toBe(
+      'analytics-reminder-ivan',
+    );
+    expect(notices[0]?.textContent).toContain('Удължи');
+    const menus = admin.host.querySelector('.staff-analytics__menus');
+    expect(
+      menus !== null &&
+        reminders !== null &&
+        (reminders.compareDocumentPosition(menus) &
+          Node.DOCUMENT_POSITION_FOLLOWING) !==
+          0,
+    ).toBe(true);
+    TestBed.resetTestingModule();
+
+    // A barber reading their own figures decides nothing of the team's.
+    const barber = await render({ barbers: [leaving] });
+    expect(
+      barber.host.querySelector('[data-testid^="analytics-reminder-"]'),
+    ).toBeNull();
   });
 
   it('a refused account sees the refusal, no carousel and no tools', async () => {

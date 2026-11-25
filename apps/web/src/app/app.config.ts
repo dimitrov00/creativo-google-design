@@ -62,6 +62,8 @@ import {
   PROFILE_PORTS,
   PROGRAMS_PORTS,
   ReportingErrorHandler,
+  READ_AS_CALL_PORTS,
+  READ_AS_SESSION_PORTS,
   ROLES_ADMIN_PORTS,
   ANALYTICS_CACHE_PORTS,
   ANALYTICS_CALL_PORTS,
@@ -84,6 +86,7 @@ import {
   provideFirebaseFunctions,
   provideFlags,
   provideLazyPort,
+  readAsCallPorts,
   rolesAdminPorts,
   analyticsCallPorts,
   teamAdminPorts,
@@ -109,6 +112,7 @@ import type {
 // Firestore and Storage adapter is picked out of the lazy modules below.
 import {
   authSessionPorts,
+  readAsSessionPorts,
   otpChallengePorts,
 } from '@creativo/infrastructure/firebase-auth';
 import { loadFirestoreAdapters } from '@creativo/infrastructure/firestore';
@@ -393,6 +397,16 @@ export const appConfig: ApplicationConfig = {
     {
       provide: ROLES_ADMIN_PORTS,
       useFactory: () => rolesAdminPorts(inject(GATEWAY_PORTS)),
+    },
+    // The support read-as (OR-24): its two calls over the same callable
+    // client, and its session facts over Firebase Auth.
+    {
+      provide: READ_AS_CALL_PORTS,
+      useFactory: () => readAsCallPorts(inject(GATEWAY_PORTS)),
+    },
+    {
+      provide: READ_AS_SESSION_PORTS,
+      useFactory: () => readAsSessionPorts(inject(FIREBASE_AUTH)),
     },
     // The Team screens' read and the owner's save of «Права», over the same
     // callable client.

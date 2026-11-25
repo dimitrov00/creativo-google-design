@@ -15,6 +15,7 @@ import {
   ParsedIdentifier,
   PhotoOrigin,
   Principal,
+  type ReadAsClaims,
   type RegistrationFields,
   ServiceStatus,
   SessionKind,
@@ -121,6 +122,7 @@ import type {
   PositionWritePorts,
   ProfilePorts,
   ProgramsPorts,
+  ReadAsTokenPorts,
   ScheduleExceptionPorts,
   SchedulingReadPorts,
   StaffPermissionsStreamPorts,
@@ -1097,6 +1099,32 @@ export function fixedTenantPorts(
 ): TenantPorts {
   return {
     loadTenant: async () => Result.ok(tenantId),
+  };
+}
+
+/** A read-as token `mintReadAsToken` answered: the target, both claim bags and the token. */
+export type MintedReadAsToken = {
+  readonly uid: UserId;
+  readonly claims: AuthClaims;
+  readonly readAs: ReadAsClaims;
+  readonly token: string;
+};
+
+/**
+ * The read-as mint (OR-24): records each token's target and claims and
+ * answers `read-as:<uid>:<n>`. `minted` is the spec's to read.
+ */
+export function recordingReadAsTokenPorts(): ReadAsTokenPorts & {
+  readonly minted: readonly MintedReadAsToken[];
+} {
+  const minted: MintedReadAsToken[] = [];
+  return {
+    minted,
+    mintReadAsToken: async (uid, claims, readAs) => {
+      const token = `read-as:${uid}:${minted.length + 1}`;
+      minted.push({ uid, claims, readAs, token });
+      return Result.ok(token);
+    },
   };
 }
 

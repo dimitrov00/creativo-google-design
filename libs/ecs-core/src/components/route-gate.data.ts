@@ -8,8 +8,6 @@ export const RouteGate = {
   Active: 'ACTIVE',
   /** `/onboarding`: anyone signed in. */
   SignedIn: 'SIGNED_IN',
-  /** `/`: an installed-PWA launch by an active principal skips the landing. */
-  Home: 'HOME',
   /** `/staff`, `/admin` beside `ACTIVE`: any of the listed roles. */
   Roles: 'ROLES',
   /**
@@ -85,7 +83,6 @@ export const RouteCapabilities = {
 export type RouteGateRule =
   | { readonly routeGate: typeof RouteGate.Active }
   | { readonly routeGate: typeof RouteGate.SignedIn }
-  | { readonly routeGate: typeof RouteGate.Home; readonly standalone: boolean }
   | {
       readonly routeGate: typeof RouteGate.Roles;
       readonly roles: readonly Role[];

@@ -71,6 +71,11 @@
       }
     </header>
 
+    <!-- THE DECISIONS ON TOP (owner ruling 2026-11-25): the last days to
+         decide on, for whoever manages the team — the schedule's chart
+         button counts them on its badge. Nothing while there are none. -->
+    <lib-analytics-reminders [today]="store.today()" />
+
     <!-- THE ROW: whose figures (the admin's alone), and which period — its
          word is the page on screen, its options the grain. -->
     <div class="staff-analytics__menus">

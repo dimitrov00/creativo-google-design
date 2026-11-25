@@ -34,6 +34,7 @@ import {
   type VisitWords,
   VisitsBrowser,
   sectionVisits,
+  visitLookupOf,
   visitRowOf,
   visitSectionLabel,
   visitWordsOf,
@@ -404,34 +405,18 @@ export class ClientAppointments {
         );
   });
 
-  /** The catalogue, as a row reads it: names in the active language, the barber's face. */
-  private readonly lookup = computed<VisitLookup>(() => {
-    // Every barber this client can name: the public list, and, by id, a
-    // past visit's barber who left or now works staff-only (team
-    // onboarding D3 — see the constructor).
-    const barbers = new Map(
-      this.team.namedBarberVms().map((barber) => [barber.id, barber]),
-    );
-    const locations = this.catalog.locations();
-    return {
-      serviceName: (id) => {
-        const service = this.catalog.findAnyService(id);
-        return service ? this.content.text(service.name) : null;
-      },
-      barberName: (id) => {
-        const barber = barbers.get(id);
-        return barber ? this.content.text(barber.name) : null;
-      },
-      barberAvatarSrc: (id) => barbers.get(id)?.avatarSrc ?? null,
-      locationName: (id) => {
-        const shop = locations.find((location) => location.id === id);
-        return shop ? this.content.text(shop.name) : null;
-      },
-      locationCount: locations.length,
-      locationTimeZone: (id) =>
-        locations.find((location) => location.id === id)?.timeZone ?? null,
-    };
-  });
+  /** The catalogue, as a row reads it: names in the active language, the barber's face (`visitLookupOf`, the client home's too). */
+  private readonly lookup = computed<VisitLookup>(() =>
+    visitLookupOf({
+      findService: (id) => this.catalog.findAnyService(id),
+      // Every barber this client can name: the public list, and, by id, a
+      // past visit's barber who left or now works staff-only (team
+      // onboarding D3 — see the constructor).
+      barbers: this.team.namedBarberVms(),
+      locations: this.catalog.locations(),
+      text: (localized) => this.content.text(localized),
+    }),
+  );
 
   /**
    * Every visit the two lists hold, each ONCE. The store files each visit in

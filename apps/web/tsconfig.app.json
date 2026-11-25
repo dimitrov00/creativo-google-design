@@ -20,13 +20,19 @@
       "path": "../../libs/ui/modifiers/tsconfig.lib.json"
     },
     {
+      "path": "../../libs/ui/controls/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/features/client/account-state/tsconfig.lib.json"
     },
     {
-      "path": "../../libs/features/admin/team/tsconfig.lib.json"
+      "path": "../../libs/features/shared/shell/tsconfig.lib.json"
     },
     {
       "path": "../../libs/features/admin/programs/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/features/admin/team/tsconfig.lib.json"
     },
     {
       "path": "../../libs/features/staff/analytics/tsconfig.lib.json"

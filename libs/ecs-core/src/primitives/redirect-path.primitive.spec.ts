@@ -69,14 +69,18 @@ describe('RedirectPath.parseOrRoot', () => {
   });
 });
 
-describe('RedirectPath.authDestination', () => {
-  it('collapses root to the post-auth default', () => {
-    expect(RedirectPath.authDestination(RedirectPath.root())).toBe('/account');
+describe('RedirectPath.intentOf', () => {
+  it('root carries no intent: the person lands on their own home, never a page named here', () => {
+    expect(RedirectPath.intentOf(RedirectPath.root())).toBeNull();
+    expect(RedirectPath.intentOf(RedirectPath.parseOrRoot(null))).toBeNull();
   });
 
-  it('honours any other path as-is', () => {
-    expect(
-      RedirectPath.authDestination(RedirectPath.parseOrRoot('/book')),
-    ).toBe('/book');
+  it('honours any other path as-is — `/account` too, when a link asks for it', () => {
+    expect(RedirectPath.intentOf(RedirectPath.parseOrRoot('/book'))).toBe(
+      '/book',
+    );
+    expect(RedirectPath.intentOf(RedirectPath.parseOrRoot('/account'))).toBe(
+      '/account',
+    );
   });
 });

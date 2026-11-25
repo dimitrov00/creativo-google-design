@@ -243,3 +243,11 @@
   outline: var(--sys-focus-ring-width) solid var(--sys-color-accent);
   outline-offset: var(--sys-focus-ring-offset);
 }
+
+/* ── support's read-as page (OR-24) ───────────────────────────────────── */
+
+/* A root page under the fixed site header: its clearance on top, as
+   `/account` keeps it. */
+.support-page__main {
+  padding-block: var(--landing-header-offset) var(--sys-space-spacious);
+}

@@ -1,5 +1,16 @@
 {
   "errors": {
+    "GOVERNANCE_IMPERSONATION_FORBIDDEN": "Само поддръжката може да отваря профил за четене.",
+    "GOVERNANCE_IMPERSONATION_UNAUTHENTICATED": "Влез отново и опитай пак.",
+    "GOVERNANCE_IMPERSONATION_TARGET_NOT_FOUND": "Този профил вече не съществува.",
+    "GOVERNANCE_IMPERSONATION_TARGET_ERASED": "Този профил е изтрит.",
+    "GOVERNANCE_IMPERSONATION_TARGET_NOT_REGISTERED": "Този човек още не е завършил регистрацията си.",
+    "GOVERNANCE_IMPERSONATION_SESSION_SELF_IMPERSONATION": "Не можеш да отвориш собствения си профил така.",
+    "GOVERNANCE_IMPERSONATION_SESSION_REASON_REQUIRED": "Напиши причина.",
+    "GOVERNANCE_IMPERSONATION_WINDOW_TOO_LONG": "Четенето може да продължи най-много 15 минути.",
+    "GOVERNANCE_IMPERSONATION_SCOPE_NOT_OFFERED": "Предлага се само четене.",
+    "GOVERNANCE_IMPERSONATION_READ_ONLY": "Само четене — нищо не може да се промени.",
+    "GOVERNANCE_IMPERSONATION_EXPIRED": "Времето за четене изтече.",
     "SCHEDULING_ROSTER_BREAK_OUTSIDE_SHIFT": "Почивката трябва да е в работните часове на деня.",
     "SCHEDULING_ROSTER_BREAK_IN_PAST": "Промяната не може да започва от минал ден.",
     "SCHEDULING_ROSTER_OUTSIDE_SHOPS": "Бръснарят не работи в този салон. Първо го добави към салоните му.",
@@ -240,7 +251,15 @@
   "shell": {
     "forbidden": {
       "title": "Забранено",
-      "body": "Нямаш достъп до тази страница."
+      "body": "Нямаш достъп до тази страница.",
+      "home": "Към началото"
+    },
+    "readAs": {
+      "actingAs": "Действаш като {{name}}",
+      "someone": "този профил",
+      "until": "до {{time}}",
+      "end": "Край",
+      "label": "Само за четене"
     }
   },
   "auth": {
@@ -269,7 +288,14 @@
       "countryNoResults": "Няма съвпадения"
     },
     "code": {
-      "title": "Въведи кода",
+      "title": {
+        "email": "Провери пощата си",
+        "phone": "Провери съобщенията си"
+      },
+      "sendingTitle": "Изпращаме кода…",
+      "sendingTo": "до",
+      "doneTitle": "Готово",
+      "openWebmail": "Отвори {{provider}}",
       "back": "Назад",
       "sentTo": "Изпратихме 6-цифрен код на",
       "edit": "Промени",
@@ -558,7 +584,22 @@
     "upcoming": {
       "title": "Предстоящ час",
       "empty": "Нямаш предстоящи часове.",
+      "none": "Още нямаш записани часове.",
       "bookCta": "Запази час"
+    },
+    "sameAgain": {
+      "title": "Пак същото",
+      "book": "Запази пак същото",
+      "barberAway": {
+        "one": "{{names}} вече не приема онлайн часове — избери час при друг бръснар.",
+        "other": "{{names}} вече не приемат онлайн часове — избери час при друг бръснар."
+      },
+      "barberAwayUnnamed": "Бръснарят ти вече не приема онлайн часове — избери час при друг бръснар.",
+      "serviceGone": {
+        "one": "{{names}} вече не се предлага.",
+        "other": "{{names}} вече не се предлагат."
+      },
+      "serviceGoneUnnamed": "Част от услугите вече не се предлагат."
     },
     "completion": {
       "title": "Завърши профила си",
@@ -667,7 +708,9 @@
       "loyaltyAdmin": "Лоялност",
       "staffAnalytics": "Анализи",
       "ownProfile": "Моят профил",
-      "team": "Екип"
+      "team": "Екип",
+      "programs": "Програми",
+      "support": "Поддръжка"
     },
     "prefs": {
       "language": "Език",
@@ -1181,6 +1224,7 @@
       },
       "searchLabel": "Търсене",
       "analyticsLabel": "Анализи",
+      "analyticsPendingLabel": "Анализи, {{count}} за решаване",
       "searchPlaceholder": "Име, телефон, имейл, услуга…",
       "searchClear": "Изчисти търсенето",
       "searchScope": "Търси в предстоящи и минали посещения.",
@@ -2894,6 +2938,24 @@
       "flagOff": "Ритъмът още не е включен за приложението.",
       "failed": "Правилото не се зареди.",
       "offline": "Без връзка · правилото не може да се запази."
+    },
+    "support": {
+      "documentTitle": "Поддръжка · Creativo",
+      "title": "Поддръжка",
+      "lede": "Виж приложението така, както го вижда един човек — само за четене, до 15 минути. Всяко отваряне се записва.",
+      "find": "Намери профил",
+      "lookupTitle": "Чий профил?",
+      "lookupLede": "Потърси по име, телефон или имейл.",
+      "hint": "Напиши име, телефон или имейл.",
+      "noneTitle": "Няма такъв профил",
+      "none": "Провери написаното и потърси пак.",
+      "failed": "Търсенето не се зареди. Опитай пак.",
+      "sheetTitle": "Виж като {{name}}",
+      "sheetLede": "До 15 минути само за четене: нищо не може да се промени. Причината се записва.",
+      "reason": "Причина",
+      "reasonPlaceholder": "Номер на запитване или кратко описание",
+      "start": "Започни",
+      "close": "Затвори"
     },
     "programs": {
       "documentTitle": "Програми · Creativo Admin",

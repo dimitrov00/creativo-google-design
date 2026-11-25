@@ -56,6 +56,14 @@ export const Roles = {
   BOOK: [Role.Barber, Role.Receptionist, Role.Admin, Role.Sysadmin],
 
   /**
+   * The roles that MANAGE THE PROGRAMS — the open positions, courses and
+   * events of `/admin/programs` — the twin of `isCatalogManager()` in
+   * `firestore.rules`: the content manager and the admin pair. ONE home: the
+   * route's guard and the menu's «Програми» row read it.
+   */
+  CATALOG: [Role.ContentManager, Role.Admin, Role.Sysadmin],
+
+  /**
    * The roles that may SPEND THE SHOP'S MONEY on a booking — reprice a seat,
    * author an ad-hoc discount. The front desk and the owners, never a barber
    * (who may still honour a coupon the client holds: that act is gated on
@@ -105,6 +113,17 @@ export const Roles = {
    * permissions P4).
    */
   ASSIGN: [Role.Admin],
+
+  /**
+   * The roles that may open, end and run a SUPPORT READ-AS (OR-24, owner
+   * ruling 2026-11-24): the vendor's sysadmin alone. The shop's owner sees
+   * the shop through their own roles; stepping into a client's or a
+   * barber's account is support's tool, audited, never the owner's.
+   * CALLABLE-ONLY like `ASSIGN`: `impersonationSessions` takes no client
+   * write, so no rules helper twins it (`role.rules-parity.spec.ts` says
+   * so); the callables gate the token's claims against it.
+   */
+  SUPPORT: [Role.Sysadmin],
 
   /**
    * The roles `setRoles` may grant or take away — every role but the
@@ -190,6 +209,15 @@ export const Roles = {
    */
   handlesClientPrivacy(roles: readonly string[]): boolean {
     return anyIn(Roles.PRIVACY, roles);
+  },
+
+  /**
+   * Whether a role set may open or end a support read-as (`SUPPORT` — the
+   * sysadmin alone): both impersonation callables' gate and the «Виж като …»
+   * row's. Claims-tolerant like `mayBook`.
+   */
+  runsReadAs(roles: readonly string[]): boolean {
+    return anyIn(Roles.SUPPORT, roles);
   },
 
   /**

@@ -28,7 +28,11 @@ import {
   type StartImpersonationCommand,
 } from '@core/pipelines';
 import type { EdgeError } from '../edge';
-import { callerKnownRoles, callerUserId } from '../lib/booking/caller-roles';
+import {
+  callerKnownRoles,
+  callerReadAs,
+  callerUserId,
+} from '../lib/booking/caller-roles';
 import { operationIdOf, payloadOf, type WireRequest } from './wire-read';
 
 /**
@@ -42,13 +46,16 @@ import { operationIdOf, payloadOf, type WireRequest } from './wire-read';
  * failure thrown).
  *
  * Both read the caller off the VERIFIED token FIRST — no session →
- * `GOVERNANCE_IMPERSONATION_UNAUTHENTICATED`, no admin role →
+ * `GOVERNANCE_IMPERSONATION_UNAUTHENTICATED`, no support role →
  * `GOVERNANCE_IMPERSONATION_FORBIDDEN` (`admitImpersonationCaller`, the
  * pipelines' own gate) — before the payload is read: a stranger learns
- * nothing about their asking. A start's structural faults (self, no
- * reason, no window) leave the pipeline as the FIRST of them — one flat
- * refusal per call, as every callable answers. No web caller exists yet
- * (4A-3 (4)).
+ * nothing about their asking. The one exception is the read-as session
+ * ending ITSELF (OR-24): `endImpersonation` under a read-as token passes
+ * the gate, and its pipeline admits it for its own session alone
+ * (`admitEndCaller`). A start's structural faults (self, no reason, no
+ * window) leave the pipeline as the FIRST of them — one flat refusal per
+ * call, as every callable answers. The web's support tool is the caller
+ * (docs/designs/support-read-as.md).
  *
  * `setRoles` (security hardening S-WS-E) rides the same wire: its request is
  * `RolesCall`, its answer `RolesCall.Changed`, and its caller is read off the
@@ -116,7 +123,10 @@ export function decodeStartImpersonation(
 export function decodeEndImpersonation(
   request: WireRequest,
 ): Result<EndImpersonationCommand, EdgeError> {
-  const refused = gate(request);
+  // A read-as session ending itself passes; the pipeline admits it for its
+  // own session alone (`admitEndCaller`).
+  const readAs = callerReadAs(request).claims;
+  const refused = readAs === null ? gate(request) : null;
   if (refused !== null) return Result.err(refused);
   const payload = payloadOf(request);
   const sessionId = ImpersonationSessionId.parse(
@@ -127,6 +137,7 @@ export function decodeEndImpersonation(
     sessionId: sessionId.value,
     adminUserId: callerUserId(request),
     adminRoles: callerKnownRoles(request),
+    readAs,
     // The transport id, OPTIONAL (RU-21): absent or malformed is none.
     operationId: operationIdOf(payload, 'operationId'),
   });

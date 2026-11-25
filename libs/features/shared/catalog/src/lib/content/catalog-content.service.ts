@@ -139,6 +139,16 @@ export class CatalogContentService {
    */
   readonly locationsKnown = computed(() => this.locationsResult()?.ok === true);
 
+  /**
+   * True once the services AND the barbers reads have both answered,
+   * successfully or not — when a consumer that waits on both may stop
+   * waiting, and ask {@link servicesKnown} and {@link barbersKnown} what it
+   * may rely on.
+   */
+  readonly answered = computed(
+    () => this.servicesResult() !== null && this.barbersResult() !== null,
+  );
+
   /** The public services' view models — the client surfaces' list. */
   readonly serviceVms = computed<readonly ServiceVm[]>(() =>
     this.services().map((service) => this.toServiceVm(service)),

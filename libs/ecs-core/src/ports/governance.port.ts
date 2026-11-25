@@ -1,4 +1,9 @@
-import type { PermissionsCall, RolesCall, TeamCall } from '@core/components';
+import type {
+  GovernanceCall,
+  PermissionsCall,
+  RolesCall,
+  TeamCall,
+} from '@core/components';
 import type { Result, AppointmentId, BackfillJobId } from '@core/primitives';
 import type { RepositoryError } from '@core/errors';
 import type { Appointment, AuditEntry, BackfillJob } from '@core/entities';
@@ -81,6 +86,18 @@ export type PageAppointments = (
  */
 export type SetRoles = Callable<RolesCall, RolesCall.Changed>;
 
+// ── The web's support read-as (OR-24) ─────────────────────────────────────
+
+/**
+ * `startImpersonation` — support opens a read-as (docs/designs/
+ * support-read-as.md): whom, why and until when in; the session and the
+ * token that signs in as its target out.
+ */
+export type StartReadAs = Callable<GovernanceCall, GovernanceCall.Started>;
+
+/** `endImpersonation` — the read-as ends, from support's own session or from itself. */
+export type EndReadAs = Callable<GovernanceCall.End, GovernanceCall.Ended>;
+
 // ── The web's Team screens ────────────────────────────────────────────────
 
 /**
@@ -162,6 +179,12 @@ export type BackfillJobPorts = {
 /** The admin's roles change — the staff client card's «Роли» block; ONE token, `ROLES_ADMIN_PORTS` (web). */
 export type RolesAdminPorts = {
   readonly setRoles: SetRoles;
+};
+
+/** The support read-as's two calls — ONE token, `READ_AS_CALL_PORTS` (web). */
+export type ReadAsCallPorts = {
+  readonly startReadAs: StartReadAs;
+  readonly endReadAs: EndReadAs;
 };
 
 /** The Team page's read. */

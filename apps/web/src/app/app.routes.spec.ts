@@ -5,7 +5,7 @@ import { type Principal, Role, StaffPermissions } from '@core/components';
 import type { User } from '@core/entities';
 import { RepositoryError } from '@core/errors';
 import type { StaffPermissionsStreamPorts } from '@core/ports';
-import { AccessScope, Result, UserId } from '@core/primitives';
+import { AccessScope, BarberId, Result, UserId } from '@core/primitives';
 import {
   immediateTimerPorts,
   memoryAuthSessionPorts,
@@ -14,6 +14,7 @@ import {
   principalFixture,
   registeredUserFixture,
 } from '@core/testing';
+import { LANDING_NAVIGATION } from '@creativo/features/client/account-state';
 import {
   AUTH_SESSION_PORTS,
   PROFILE_PORTS,
@@ -79,25 +80,68 @@ async function landingOf(
  * `test` rather than `it`: apps/web lints with eslint-plugin-playwright,
  * whose `no-standalone-expect` only recognises `test()`.
  */
-describe('appRoutes — /admin (OR-24)', () => {
+describe('appRoutes — where a person lands (owner rulings 2026-11-25)', () => {
   afterEach(() => {
     TestBed.resetTestingModule();
   });
 
-  test('an admin who opens /admin lands on the rhythm page', async () => {
-    expect(await landingOf(ADMIN, '/admin')).toBe('/admin/loyalty/rhythm');
-  });
+  const CONTENT = principalFixture.staff(UserId.of('content-1'), [
+    Role.ContentManager,
+  ]);
 
-  test('a signed-in non-admin gets the rhythm guard’s answer: /forbidden', async () => {
-    expect(await landingOf(BARBER, '/admin')).toBe('/forbidden');
+  test('/admin, a door with no page of its own, opens each person’s home', async () => {
+    // The owner with no chair of their own: the schedule, every chair.
+    expect(await landingOf(ADMIN, '/admin')).toBe('/staff/schedule');
+    expect(await landingOf(BARBER, '/admin')).toBe('/staff/schedule');
+    expect(await landingOf(CONTENT, '/admin')).toBe('/admin/programs');
     expect(await landingOf(principalFixture.client(), '/admin')).toBe(
-      '/forbidden',
+      '/account',
     );
   });
 
-  test('a signed-out visitor is sent to sign in, and back to the rhythm page after', async () => {
+  test('the schedule opens on the person’s own chair when their account links one', async () => {
+    expect(
+      await landingOf(ADMIN, '/admin', {
+        accounts: [
+          registeredUserFixture({
+            id: UserId.of('admin-1'),
+            roles: [Role.Admin, Role.Barber],
+            linkedBarberId: BarberId.of('ivan'),
+          }),
+        ],
+      }),
+    ).toBe('/staff/schedule?barber=ivan');
+  });
+
+  test('a signed-out visitor is sent to sign in first, and back to the door after', async () => {
     expect(await landingOf(principalFixture.anonymous(), '/admin')).toBe(
-      '/auth?redirect=%2Fadmin%2Floyalty%2Frhythm',
+      '/auth?redirect=%2Fadmin',
+    );
+  });
+
+  test('a sign-in’s remembered link the person can no longer open lands them home, never /forbidden — any other refusal is still /forbidden', async () => {
+    const remembered = async (
+      principal: Principal,
+      url: string,
+    ): Promise<string> => {
+      const router = routerFor(principal);
+      await router.navigateByUrl(url, {
+        state: { [LANDING_NAVIGATION]: true },
+      });
+      return router.url;
+    };
+    expect(await remembered(principalFixture.client(), '/staff/schedule')).toBe(
+      '/account',
+    );
+    expect(await remembered(CONTENT, '/staff/schedule')).toBe(
+      '/admin/programs',
+    );
+    expect(await remembered(BARBER, '/admin/team/permissions')).toBe(
+      '/staff/schedule',
+    );
+    // Opened any other way, a refused page is still /forbidden.
+    expect(await landingOf(principalFixture.client(), '/staff/schedule')).toBe(
+      '/forbidden',
     );
   });
 });
@@ -125,6 +169,64 @@ describe('appRoutes — /account/notifications (OR-19)', () => {
  * The Team page is behind the capabilities that open it; «Права» is the
  * owner's alone, as its save is.
  */
+describe('appRoutes — the schedule, the programs and /support (2026-11-24)', () => {
+  afterEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  const staff = (role: Role) =>
+    principalFixture.staff(UserId.of(`staff-${role}`), [role]);
+
+  /**
+   * The schedule's guard is `Roles.BOOK`, the rules' `worksTheBook()`: a
+   * content manager is staff, but the rules refuse them every appointment
+   * read, so the day would open empty.
+   */
+  test('whoever works the book opens the schedule; a content manager and a client do not', async () => {
+    for (const role of [
+      Role.Barber,
+      Role.Receptionist,
+      Role.Admin,
+      Role.Sysadmin,
+    ]) {
+      expect(await landingOf(staff(role), '/staff/schedule')).toBe(
+        '/staff/schedule',
+      );
+    }
+    expect(await landingOf(staff(Role.ContentManager), '/staff/schedule')).toBe(
+      '/forbidden',
+    );
+    expect(await landingOf(principalFixture.client(), '/staff/schedule')).toBe(
+      '/forbidden',
+    );
+  });
+
+  /** `Roles.CATALOG`, the rules' `isCatalogManager()`. */
+  test('a content manager and the admin pair open the programs; a barber and the front desk do not', async () => {
+    for (const role of [Role.ContentManager, Role.Admin, Role.Sysadmin]) {
+      expect(await landingOf(staff(role), '/admin/programs')).toBe(
+        '/admin/programs',
+      );
+    }
+    for (const role of [Role.Barber, Role.Receptionist]) {
+      expect(await landingOf(staff(role), '/admin/programs')).toBe(
+        '/forbidden',
+      );
+    }
+  });
+
+  /** `Roles.SUPPORT`: the vendor's sysadmin alone (owner ruling 2026-11-24). */
+  test('the sysadmin opens support’s read-as page; the shop’s admin and everyone else do not', async () => {
+    expect(await landingOf(staff(Role.Sysadmin), '/support')).toBe('/support');
+    for (const role of [Role.Admin, Role.Barber, Role.Receptionist]) {
+      expect(await landingOf(staff(role), '/support')).toBe('/forbidden');
+    }
+    expect(await landingOf(principalFixture.client(), '/support')).toBe(
+      '/forbidden',
+    );
+  });
+});
+
 describe('appRoutes — /admin/team', () => {
   afterEach(() => {
     TestBed.resetTestingModule();

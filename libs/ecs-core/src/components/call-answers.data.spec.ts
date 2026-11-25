@@ -116,10 +116,20 @@ describe('IdentityCall', () => {
 
 describe('GovernanceCall and InvitationCall', () => {
   it('decodes a started and an ended session', () => {
-    expect(GovernanceCall.decodeStarted({ sessionId: 'imp-1' })).toEqual({
+    expect(
+      GovernanceCall.decodeStarted({
+        sessionId: 'imp-1',
+        customToken: 'signed.token',
+      }),
+    ).toEqual({
       ok: true,
-      value: { sessionId: 'imp-1' },
+      value: { sessionId: 'imp-1', customToken: 'signed.token' },
     });
+    // A start answered without its read-as token is no usable answer.
+    expect(GovernanceCall.decodeStarted({ sessionId: 'imp-1' }).ok).toBe(false);
+    expect(
+      GovernanceCall.decodeStarted({ sessionId: 'imp-1', customToken: '' }).ok,
+    ).toBe(false);
     expect(
       GovernanceCall.decodeEnded({
         sessionId: 'imp-1',

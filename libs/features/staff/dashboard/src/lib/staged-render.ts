@@ -1,4 +1,5 @@
 import {
+  DestroyRef,
   InjectionToken,
   type Injector,
   type WritableSignal,
@@ -28,20 +29,27 @@ export const SHEET_STAGED = new InjectionToken<boolean>('SHEET_STAGED', {
  * handed it to the compositor, so the build that follows cannot hold the
  * slide back. The stage only climbs: an editor whose pages rebuild its
  * ladder rebuilds it whole.
+ *
+ * A sheet closed between a step's two frames cancels the frame it waits
+ * on. Angular drops a pending `afterNextRender` with its view, but not a
+ * frame: the step would land on the destroyed sheet, whose view and
+ * injector refuse the next `afterNextRender` (NG0911, NG0205).
  */
 export function climbStages(
   stage: WritableSignal<number>,
   last: number,
   injector: Injector,
 ): void {
+  let frame = 0;
   const step = (): void => {
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
+    frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
         const next = stage() + 1;
         stage.set(next);
         if (next < last) afterNextRender(step, { injector });
-      }),
-    );
+      });
+    });
   };
+  injector.get(DestroyRef).onDestroy(() => cancelAnimationFrame(frame));
   afterNextRender(step, { injector });
 }

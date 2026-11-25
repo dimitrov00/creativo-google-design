@@ -22,8 +22,10 @@ import {
   ErasureCensus,
   ErasureLifecycle,
   ErasureStatus,
+  ImpersonationScope,
   JournalEffect,
   JournalFeed,
+  type ReadAsClaims,
   Role,
   type RolesCall,
   VisitFilter,
@@ -57,8 +59,10 @@ import {
   ClientOperationId,
   CustomerId,
   DraftPersonKey,
+  ImpersonationSessionId,
   Result as CoreResult,
   UserId,
+  UtcEpochMs,
 } from '@core/primitives';
 import {
   GovernanceErrorCode,
@@ -68,6 +72,7 @@ import {
 } from '@core/errors';
 import { MAX_ERASURE_CALLS } from '@core/pipelines';
 import {
+  FIXTURE_NOW_UTC_MS,
   loyaltyCatalogFixture,
   memoryAppointmentReadPorts,
   unwrapOk,
@@ -85,6 +90,7 @@ import {
   LOYALTY_ACCOUNT_READ_PORTS,
   LOYALTY_CATALOG_READ_PORTS,
   PROFILE_PORTS,
+  READ_AS_SESSION_PORTS,
   ROLES_ADMIN_PORTS,
   WAITLIST_READ_PORTS,
   provideFlags,
@@ -299,6 +305,8 @@ interface RigOptions {
   readonly avatars?: AvatarPorts | null;
   readonly vouchers?: PortDouble<CouponVoucherPorts> | null;
   readonly activity?: ClientJournalPorts | null;
+  /** The session's support read-as (OR-24); none unless given. */
+  readonly readAs?: ReadAsClaims | null;
   /** Where the shop's zone is read — the fixture centre shop as the default location unless said. */
   readonly locations?: LocationLoadPorts & DefaultLocationPorts;
 }
@@ -355,6 +363,14 @@ function rig(options: RigOptions = {}) {
       ...bind(AVATAR_PORTS, ports.avatars),
       ...bind(COUPON_VOUCHER_PORTS, ports.vouchers),
       ...bind(CLIENT_JOURNAL_PORTS, ports.activity),
+      ...(options.readAs == null
+        ? []
+        : [
+            {
+              provide: READ_AS_SESSION_PORTS,
+              useValue: { observeReadAs: () => of(options.readAs) },
+            },
+          ]),
     ],
   });
   return { store: TestBed.inject(ClientCardStore), ...ports };
@@ -647,6 +663,28 @@ describe('ClientCardStore — Георги, settled', () => {
     const facts = textOf(admin.store.visits().facts ?? []);
     expect(facts).toContain('462,50');
     expect(facts).toContain('€');
+  });
+
+  /** The owner's walls hold inside a support read-as of the admin (OR-24, ruling 2026-11-24). */
+  it('never asks for the spend under a support read-as — even of the admin', async () => {
+    const readAs = rig({
+      readAs: {
+        readAsSessionId: ImpersonationSessionId.of('imp-1'),
+        readAsByUserId: UserId.of('u-support'),
+        readAsScope: ImpersonationScope.Read,
+        readAsExpiresAtUtcMs: UtcEpochMs.plusMs(FIXTURE_NOW_UTC_MS, 600_000),
+      },
+    });
+    open(
+      readAs.store,
+      subjectOf(GEORGI),
+      georgiContext({
+        viewer: { userId: UserId.of('dev-admin'), roles: ['admin'] },
+      }),
+    );
+    await settle();
+    expect(readAs.stats?.callsTo('loadClientMoney')).toEqual([]);
+    expect(textOf(readAs.store.visits().facts ?? [])).not.toContain('€');
   });
 });
 

@@ -84,6 +84,7 @@ import { type Principal, PrincipalKind } from './principal.data';
 import { ProfileCompletionKey } from './profile-completion-key.data';
 import { RegistrationField, RegistrationState } from './registration.data';
 import { Role } from './role.data';
+import { HomeDestination, type HomeLanding } from './home-landing.data';
 import { RouteGate, type RouteGateRule } from './route-gate.data';
 import {
   SessionReadiness,
@@ -178,6 +179,7 @@ export type IdentityDictionariesHold = [
   Expect<Holds<typeof SessionReadiness, SessionReadiness>>, // session-readiness.data.ts
   Expect<Holds<typeof RouteGate, RouteGate>>, // route-gate.data.ts
   Expect<Holds<typeof AccessTarget, AccessTarget>>, // access-target.data.ts
+  Expect<Holds<typeof HomeDestination, HomeDestination>>, // home-landing.data.ts
   Expect<Holds<typeof AccessVerdict, AccessVerdict>>, // access-verdict.data.ts
 ];
 
@@ -269,6 +271,7 @@ export type IdentityDictionaryFields = [
   >, // profile-completion.system.ts
   Expect<Equals<SessionReadinessState['sessionReadiness'], SessionReadiness>>, // session-readiness.data.ts
   Expect<Equals<RouteGateRule['routeGate'], RouteGate>>, // route-gate.data.ts
+  Expect<Equals<HomeLanding['homeDestination'], HomeDestination>>, // home-landing.data.ts
   Expect<Equals<AccessDecision['accessVerdict'], AccessVerdict>>, // access-decision.data.ts
   Expect<Equals<Redirect['to'], AccessTarget>>, // N15-exempt: the redirect's destination, a typed reference in another role
 ];
@@ -312,6 +315,7 @@ export type IdentityScreamingChecks = [
   Expect<Screaming<SessionReadiness>>,
   Expect<Screaming<RouteGate>>,
   Expect<Screaming<AccessTarget>>,
+  Expect<Screaming<HomeDestination>>,
   Expect<Screaming<AccessVerdict>>,
 ];
 

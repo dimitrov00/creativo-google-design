@@ -322,6 +322,28 @@
   }
 }
 
+/* THE CHART BUTTON'S WORD (owner ruling 2026-11-25, Q2: the shop's view is
+ * this button, labelled). From the same 600px of bar the view segments and
+ * the search join it at, the square glyph box becomes the glyph and
+ * «Анализи» at the bar's own rung — ≙ a toolbar item's title in a regular
+ * width. Below it the glyph stays alone: on a phone's bar the word would cut
+ * the day pill, and the badge already says what waits. */
+.staff-analytics-open__label {
+  display: none;
+}
+
+@container staff-toolbar (width >= 37.5rem) {
+  .staff-analytics-open[data-icon-only] {
+    inline-size: auto;
+    aspect-ratio: auto;
+    padding-inline: var(--sys-space-regular);
+  }
+
+  .staff-analytics-open__label {
+    display: inline;
+  }
+}
+
 .staff-bar {
   container: staff-bar / inline-size;
 }

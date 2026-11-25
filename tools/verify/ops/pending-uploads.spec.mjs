@@ -49,11 +49,14 @@ describe('pending uploads — one folder, one cleanup', () => {
     });
   });
 
-  it('storage.rules guards that folder: its own uid writes, nobody reads', () => {
+  it('storage.rules guards that folder: its own uid writes, never under a read-as (OR-24), nobody reads', () => {
     const block = pendingBlock();
     assert.match(block, /allow read: if false;/);
-    assert.match(block, /allow create, update: if isOwner\(userId\)/);
-    assert.match(block, /allow delete: if isOwner\(userId\);/);
+    assert.match(
+      block,
+      /allow create, update: if isOwner\(userId\) && notReadAs\(\)/,
+    );
+    assert.match(block, /allow delete: if isOwner\(userId\) && notReadAs\(\);/);
   });
 
   it('the one path builder writes under that folder', () => {

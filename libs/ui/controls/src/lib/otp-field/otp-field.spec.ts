@@ -9,12 +9,14 @@ import { UiOtpField } from './otp-field';
     [(value)]="value"
     [uiInvalid]="invalid()"
     [uiDisabled]="disabled()"
+    [uiAccepted]="accepted()"
   />`,
 })
 class HostComponent {
   value = '';
   readonly invalid = signal(false);
   readonly disabled = signal(false);
+  readonly accepted = signal(false);
 }
 
 function pasteEvent(text: string): ClipboardEvent {
@@ -82,6 +84,18 @@ describe('UiOtpField', () => {
     expect(host.getAttribute('data-disabled')).toBe('');
     expect(slot(0).disabled).toBe(true);
     expect(slot(3).disabled).toBe(true);
+  });
+
+  it('uiAccepted stamps data-accepted, and nothing else changes', async () => {
+    fixture.detectChanges();
+    const host: HTMLElement =
+      fixture.nativeElement.querySelector('ui-otp-field');
+    expect(host.hasAttribute('data-accepted')).toBe(false);
+    fixture.componentInstance.accepted.set(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(host.getAttribute('data-accepted')).toBe('');
+    expect(slot(0).disabled).toBe(false);
   });
 
   it('typing a digit fills the slot and advances focus to the next slot', () => {

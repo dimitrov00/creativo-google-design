@@ -830,10 +830,10 @@ gate 'flip 4 · stale pointers'                 -F  "${F4[@]}" -- apps libs tool
 [ ! -e libs/application/programs ] && [ ! -e libs/domain/programs ] \
   && echo 'ok    flip 4 · the legacy libraries are gone' || { echo 'FAIL  flip 4 · the legacy libraries are gone'; FAILED=1; }
 RULES4=$(grep -cE 'match /(positions|courses|events)/\{[A-Za-z]+\} \{' firestore.rules)
-WRITES4=$(grep -A2 -E 'match /(positions|courses|events)/\{' firestore.rules | grep -cE 'allow create, update: if isCatalogManager\(\) && valid(Position|Course|Event)\(request\.resource\.data\);')
+WRITES4=$(grep -A2 -E 'match /(positions|courses|events)/\{' firestore.rules | grep -cE 'allow create, update: if isCatalogManager\(\) && notReadAs\(\) && valid(Position|Course|Event)\(request\.resource\.data\);')
 DELETES4=$(grep -A3 -E 'match /(positions|courses|events)/\{' firestore.rules | grep -c 'allow delete: if false;')
 [ "$RULES4" = 3 ] && [ "$WRITES4" = 3 ] && [ "$DELETES4" = 3 ] \
-  && echo 'ok    flip 4 · rules keep their three blocks, shape-checked (pass E, E-15)' \
+  && echo 'ok    flip 4 · rules keep their three blocks, shape-checked (pass E, E-15), never under a read-as (OR-24)' \
   || { echo "FAIL  flip 4 · rules (blocks $RULES4, shape-checked catalogue-manager writes $WRITES4, refused deletes $DELETES4)"; FAILED=1; }
 gate 'flip 4 · the suite is an intersection'   -F  -e 'export type ProgramsPorts = {' -- libs/ecs-core/src/ports
 node -e '

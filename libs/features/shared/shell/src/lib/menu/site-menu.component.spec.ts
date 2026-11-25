@@ -97,7 +97,7 @@ function user(birthDate?: string): User {
  *  (which itself depends on `shell` for this very component). */
 const bg: Translation = {
   landing: {
-    nav: { primary: 'Навигация' },
+    nav: { primary: 'Навигация', close: 'Затвори' },
     menu: {
       bookings: 'Моите резервации',
       rewards: 'Моите награди',
@@ -107,6 +107,8 @@ const bg: Translation = {
       staffAnalytics: 'Анализи',
       ownProfile: 'Моят профил',
       team: 'Екип',
+      programs: 'Програми',
+      support: 'Поддръжка',
     },
     hero: { cta: 'Запази час' },
     footer: {
@@ -143,14 +145,22 @@ describe('SiteMenuComponent', () => {
   async function render(inputs: {
     open: boolean;
     isAuthed?: boolean;
-    /** A staff-tier session — surfaces the schedule row. */
+    /** A staff-tier session — hands the book CTA the neutral rung. */
     isStaffMember?: boolean;
+    /** Works the book — surfaces the schedule row. */
+    worksTheBook?: boolean;
+    /** Manages the programs — surfaces «Програми». */
+    managesCatalog?: boolean;
+    /** A page with no site header — the menu draws its own ✕. */
+    closeButton?: boolean;
     /** One of the admin pair — surfaces the «Лоялност» entry. */
     isAdmin?: boolean;
     /** A barber or the admin — surfaces the «Анализи» row. */
     readsAnalytics?: boolean;
     /** Whoever the Team page opens for — surfaces the «Екип» row. */
     opensTeam?: boolean;
+    /** The vendor's support account — surfaces «Поддръжка». */
+    runsReadAs?: boolean;
     /** A linked barber whose own page opens — surfaces «Моят профил». */
     opensOwnProfile?: boolean;
     /** The account's live bookings — the bookings row counts those still to come. */
@@ -260,6 +270,15 @@ describe('SiteMenuComponent', () => {
     if (inputs.isStaffMember !== undefined) {
       fixture.componentRef.setInput('isStaffMember', inputs.isStaffMember);
     }
+    if (inputs.worksTheBook !== undefined) {
+      fixture.componentRef.setInput('worksTheBook', inputs.worksTheBook);
+    }
+    if (inputs.managesCatalog !== undefined) {
+      fixture.componentRef.setInput('managesCatalog', inputs.managesCatalog);
+    }
+    if (inputs.closeButton !== undefined) {
+      fixture.componentRef.setInput('closeButton', inputs.closeButton);
+    }
     if (inputs.isAdmin !== undefined) {
       fixture.componentRef.setInput('isAdmin', inputs.isAdmin);
     }
@@ -268,6 +287,9 @@ describe('SiteMenuComponent', () => {
     }
     if (inputs.opensTeam !== undefined) {
       fixture.componentRef.setInput('opensTeam', inputs.opensTeam);
+    }
+    if (inputs.runsReadAs !== undefined) {
+      fixture.componentRef.setInput('runsReadAs', inputs.runsReadAs);
     }
     if (inputs.opensOwnProfile !== undefined) {
       fixture.componentRef.setInput('opensOwnProfile', inputs.opensOwnProfile);
@@ -709,6 +731,28 @@ describe('SiteMenuComponent', () => {
     });
 
     /**
+     * A content manager is staff but does not work the book: the rules
+     * refuse them every appointment read, so the row would open a day it
+     * can only show empty. Staff still, so the book CTA keeps the neutral
+     * rung.
+     */
+    it('is absent for staff who do not work the book (a content manager)', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+        worksTheBook: false,
+      });
+      const host: HTMLElement = fixture.nativeElement;
+      expect(host.querySelector('[data-testid="menu-staff-day"]')).toBeNull();
+      expect(
+        host
+          .querySelector('[data-testid="menu-book"]')!
+          .getAttribute('data-variant'),
+      ).toBe('neutral');
+    });
+
+    /**
      * The row's whole reason for existing: someone behind the counter opens
      * this menu to reach the day. Buried among the client rows it was the
      * app's most frequent staff destination and its least findable one.
@@ -718,6 +762,7 @@ describe('SiteMenuComponent', () => {
         open: true,
         isAuthed: true,
         isStaffMember: true,
+        worksTheBook: true,
       });
       const host: HTMLElement = fixture.nativeElement;
 
@@ -743,6 +788,7 @@ describe('SiteMenuComponent', () => {
         open: true,
         isAuthed: true,
         isStaffMember: true,
+        worksTheBook: true,
       });
       const host: HTMLElement = fixture.nativeElement;
 
@@ -776,6 +822,7 @@ describe('SiteMenuComponent', () => {
         open: true,
         isAuthed: true,
         isStaffMember: true,
+        worksTheBook: true,
       });
       const host: HTMLElement = fixture.nativeElement;
       for (const id of ['menu-staff-day', 'menu-book']) {
@@ -796,6 +843,7 @@ describe('SiteMenuComponent', () => {
         open: true,
         isAuthed: true,
         isStaffMember: true,
+        worksTheBook: true,
       });
       const row = (fixture.nativeElement as HTMLElement).querySelector(
         '[data-testid="menu-staff-day"]',
@@ -820,6 +868,7 @@ describe('SiteMenuComponent', () => {
         open: true,
         isAuthed: true,
         isStaffMember: true,
+        worksTheBook: true,
       });
       const title = (fixture.nativeElement as HTMLElement).querySelector(
         '.cr-menu__staff-text > span:first-child',
@@ -838,6 +887,7 @@ describe('SiteMenuComponent', () => {
         open: true,
         isAuthed: true,
         isStaffMember: true,
+        worksTheBook: true,
         now: utcMs('2026-09-17T07:00:00Z'),
       });
       const date = fixture.nativeElement.querySelector(
@@ -856,6 +906,7 @@ describe('SiteMenuComponent', () => {
         open: true,
         isAuthed: true,
         isStaffMember: true,
+        worksTheBook: true,
         locations: { loadLocation: () => new Promise(() => undefined) },
       });
       const row = (fixture.nativeElement as HTMLElement).querySelector(
@@ -875,6 +926,7 @@ describe('SiteMenuComponent', () => {
         open: true,
         isAuthed: true,
         isStaffMember: true,
+        worksTheBook: true,
         locations: {
           loadLocation: async () =>
             EcsResult.err(
@@ -900,6 +952,7 @@ describe('SiteMenuComponent', () => {
         open: true,
         isAuthed: true,
         isStaffMember: true,
+        worksTheBook: true,
       });
       const dateOf = () =>
         (fixture.nativeElement as HTMLElement)
@@ -942,6 +995,7 @@ describe('SiteMenuComponent', () => {
         open: true,
         isAuthed: true,
         isStaffMember: true,
+        worksTheBook: true,
       });
       expect(teamRow(fixture.nativeElement)).toBeNull();
     });
@@ -951,6 +1005,7 @@ describe('SiteMenuComponent', () => {
         open: true,
         isAuthed: true,
         isStaffMember: true,
+        worksTheBook: true,
         isAdmin: true,
         opensTeam: true,
       });
@@ -979,6 +1034,7 @@ describe('SiteMenuComponent', () => {
         open: true,
         isAuthed: true,
         isStaffMember: true,
+        worksTheBook: true,
         opensTeam: true,
       });
       const host: HTMLElement = fixture.nativeElement;
@@ -989,12 +1045,140 @@ describe('SiteMenuComponent', () => {
     });
   });
 
+  describe('the support row', () => {
+    it('is absent for anyone but the support account — the owner included', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+        isAdmin: true,
+      });
+      expect(
+        fixture.nativeElement.querySelector('[data-testid="menu-support"]'),
+      ).toBeNull();
+    });
+
+    /** Support's one door to the read-as page (OR-24): the sysadmin opens no Team page. */
+    it('leads the support account to /support as «Поддръжка», in the group of what one manages', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+        runsReadAs: true,
+      });
+      const row = fixture.nativeElement.querySelector(
+        '[data-testid="menu-support"]',
+      ) as HTMLAnchorElement | null;
+      expect(row?.tagName).toBe('A');
+      expect(row?.getAttribute('href')).toBe('/support');
+      expect(row?.textContent).toContain('Поддръжка');
+      expect(row?.firstElementChild?.getAttribute('uiname')).toBe(
+        'admin.support',
+      );
+      expect(row?.closest('ui-list-group')).not.toBeNull();
+    });
+  });
+
+  describe('the programs row', () => {
+    it('is absent for a session that does not manage the programs', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+        worksTheBook: true,
+        isAdmin: false,
+      });
+      expect(
+        fixture.nativeElement.querySelector(
+          '[data-testid="menu-admin-programs"]',
+        ),
+      ).toBeNull();
+    });
+
+    /** The content manager's own page, which no menu reached before. */
+    it('leads to /admin/programs as «Програми», in the group of what one manages — on its own for a content manager', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        isStaffMember: true,
+        managesCatalog: true,
+      });
+      const host: HTMLElement = fixture.nativeElement;
+
+      const row = host.querySelector<HTMLAnchorElement>(
+        '[data-testid="menu-admin-programs"]',
+      );
+      expect(row).not.toBeNull();
+      expect(row!.tagName).toBe('A');
+      expect(row!.getAttribute('href')).toBe('/admin/programs');
+      expect(row!.textContent).toContain('Програми');
+      const glyph = row!.firstElementChild;
+      expect(glyph?.getAttribute('uiname')).toBe('admin.programs');
+      expect(glyph?.getAttribute('data-scale')).toBe('medium');
+      expect(row!.closest('ui-list-group')).not.toBeNull();
+      // No other managed row: the group stands for this one alone.
+      expect(
+        host.querySelector('[data-testid="menu-admin-loyalty"]'),
+      ).toBeNull();
+      expect(host.querySelector('[data-testid="menu-admin-team"]')).toBeNull();
+    });
+  });
+
+  describe('the menu on a page with no site header', () => {
+    it('draws no ✕ of its own and stays out of the top layer by default — the header trigger is its ✕', async () => {
+      const fixture = await render({ open: true, isAuthed: true });
+      const host: HTMLElement = fixture.nativeElement;
+      expect(host.querySelector('[data-testid="menu-close"]')).toBeNull();
+      const surface = host.querySelector('[data-testid="site-menu"]')!;
+      expect(surface.hasAttribute('popover')).toBe(false);
+      expect(surface.hasAttribute('data-close-button')).toBe(false);
+    });
+
+    it('draws its own ✕, named «Затвори», which closes it', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        closeButton: true,
+      });
+      const host: HTMLElement = fixture.nativeElement;
+      let closed = 0;
+      fixture.componentInstance.closed.subscribe(() => closed++);
+
+      const close = host.querySelector<HTMLButtonElement>(
+        '[data-testid="menu-close"]',
+      );
+      expect(close).not.toBeNull();
+      expect(close!.tagName).toBe('BUTTON');
+      expect(close!.getAttribute('aria-label')).toBe('Затвори');
+      close!.click();
+      expect(closed).toBe(1);
+    });
+
+    /** Declared inside the schedule's sticky toolbar, whose stacking context would let the page's bars paint over it. */
+    it('rises in the top layer as a manual popover', async () => {
+      const fixture = await render({
+        open: true,
+        isAuthed: true,
+        closeButton: true,
+      });
+      const surface: HTMLElement = fixture.nativeElement.querySelector(
+        '[data-testid="site-menu"]',
+      );
+      expect(surface.getAttribute('popover')).toBe('manual');
+      expect(surface.hasAttribute('data-close-button')).toBe(true);
+      if (typeof surface.showPopover === 'function') {
+        expect(surface.matches(':popover-open')).toBe(true);
+      }
+    });
+  });
+
   describe('the admin loyalty row', () => {
     it('is absent for a staff session without the admin pair', async () => {
       const fixture = await render({
         open: true,
         isAuthed: true,
         isStaffMember: true,
+        worksTheBook: true,
       });
       expect(
         fixture.nativeElement.querySelector(
@@ -1008,6 +1192,7 @@ describe('SiteMenuComponent', () => {
         open: true,
         isAuthed: true,
         isStaffMember: true,
+        worksTheBook: true,
         isAdmin: true,
       });
       const host: HTMLElement = fixture.nativeElement;
@@ -1046,6 +1231,7 @@ describe('SiteMenuComponent', () => {
         open: true,
         isAuthed: true,
         isStaffMember: true,
+        worksTheBook: true,
         isAdmin: true,
       });
       const host: HTMLElement = fixture.nativeElement;
@@ -1095,6 +1281,7 @@ describe('SiteMenuComponent', () => {
         open: true,
         isAuthed: true,
         isStaffMember: true,
+        worksTheBook: true,
       });
       expect(
         fixture.nativeElement.querySelector(
@@ -1108,6 +1295,7 @@ describe('SiteMenuComponent', () => {
         open: true,
         isAuthed: true,
         isStaffMember: true,
+        worksTheBook: true,
         readsAnalytics: true,
       });
       const host: HTMLElement = fixture.nativeElement;
@@ -1153,6 +1341,7 @@ describe('SiteMenuComponent', () => {
         open: true,
         isAuthed: true,
         isStaffMember: true,
+        worksTheBook: true,
         isAdmin: true,
         readsAnalytics: true,
         opensTeam: true,
@@ -1166,6 +1355,7 @@ describe('SiteMenuComponent', () => {
         open: true,
         isAuthed: true,
         isStaffMember: true,
+        worksTheBook: true,
         readsAnalytics: true,
         opensOwnProfile: true,
       });
@@ -1207,6 +1397,7 @@ describe('SiteMenuComponent', () => {
         open: true,
         isAuthed: true,
         isStaffMember: true,
+        worksTheBook: true,
         opensOwnProfile: true,
       });
       const host: HTMLElement = fixture.nativeElement;

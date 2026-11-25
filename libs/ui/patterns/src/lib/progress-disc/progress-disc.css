@@ -1,0 +1,206 @@
+@layer sys-components {
+  /* The host IS the disc: the ring is drawn outside its box and the badge
+     rides its shoulder, so no phase ever moves the layout. */
+  .ui-progress-disc {
+    --ui-progress-disc-size: 4rem;
+    --ui-progress-disc-glyph: 1.75rem;
+    position: relative;
+    display: inline-flex;
+    flex: none;
+    inline-size: var(--ui-progress-disc-size);
+    block-size: var(--ui-progress-disc-size);
+    animation: ui-progress-disc-enter var(--sys-motion-duration-slow)
+      var(--sys-motion-ease-entrance) backwards;
+  }
+
+  .ui-progress-disc[data-control-size='large'] {
+    --ui-progress-disc-size: 5.5rem;
+    --ui-progress-disc-glyph: 2.5rem;
+  }
+
+  /* The disc settles in once, on mount: slight scale + fade on a
+     decelerating entrance ease — no spring (the reward moment's beat). */
+  @keyframes ui-progress-disc-enter {
+    from {
+      opacity: 0;
+      transform: scale(0.9);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* The wash is the bordered button's (12% accent): one tint for "this is
+     the accent's" across the system. It turns into the solid accent on
+     `complete`. */
+  .ui-progress-disc__face {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    border-radius: var(--control-radius-capsule);
+    background: color-mix(in srgb, var(--sys-color-accent) 12%, transparent);
+    transition: background-color var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-standard);
+  }
+
+  .ui-progress-disc__glyph {
+    display: inline-flex;
+    font-size: var(--ui-progress-disc-glyph);
+    color: var(--sys-color-accent);
+    transition:
+      opacity var(--sys-motion-duration-regular) var(--sys-motion-ease-standard),
+      transform var(--sys-motion-duration-deliberate)
+        var(--sys-motion-ease-standard);
+  }
+
+  .ui-progress-disc__mark {
+    position: absolute;
+    inset: 0;
+    inline-size: 100%;
+    block-size: 100%;
+  }
+
+  /* Reversed out in on-accent ink — theme-proof. NEVER
+     --sys-color-background, which is near-black in dark mode. Undrawn
+     until `complete`. */
+  .ui-progress-disc__check {
+    stroke: var(--sys-color-on-accent);
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+  }
+
+  .ui-progress-disc[data-phase='complete'] .ui-progress-disc__face {
+    background: var(--sys-color-accent);
+  }
+
+  .ui-progress-disc[data-phase='complete'] .ui-progress-disc__glyph {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+
+  .ui-progress-disc[data-phase='complete'] .ui-progress-disc__check {
+    animation: ui-progress-disc-draw var(--sys-motion-duration-slow)
+      var(--sys-motion-ease-emphasized) var(--sys-motion-duration-regular)
+      forwards;
+  }
+
+  @keyframes ui-progress-disc-draw {
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  /* The ring: one accent arc (a quarter and a bit) outside the disc,
+     turning at ui-progress-view's pace while `busy`. At rest it is gone,
+     and so is its animation — nothing spins unseen. */
+  .ui-progress-disc__ring {
+    position: absolute;
+    inset: calc(var(--sys-space-compact) * -1);
+    inline-size: calc(100% + var(--sys-space-compact) * 2);
+    block-size: calc(100% + var(--sys-space-compact) * 2);
+    /* The reset caps every svg at its container (max-inline-size: 100%);
+       this one is DRAWN wider than the disc on purpose. */
+    max-inline-size: none;
+    overflow: visible;
+    opacity: 0;
+    transition: opacity var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard);
+  }
+
+  .ui-progress-disc__ring circle {
+    fill: none;
+    stroke: var(--sys-color-accent);
+    stroke-width: 3.5;
+    stroke-linecap: round;
+    stroke-dasharray: 28 72;
+  }
+
+  .ui-progress-disc[data-phase='busy'] .ui-progress-disc__ring {
+    opacity: 1;
+    animation: ui-progress-disc-spin
+      calc(var(--sys-motion-duration-deliberate) * 3) linear infinite;
+  }
+
+  @keyframes ui-progress-disc-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* The badge: the step landed. A small accent disc with an on-accent
+     check, cut out of the ground by a ring of the page's own colour. */
+  .ui-progress-disc__badge {
+    position: absolute;
+    inset-inline-end: calc(var(--sys-space-tight) * -1);
+    inset-block-end: calc(var(--sys-space-tight) * -1);
+    display: grid;
+    place-items: center;
+    inline-size: 1.5rem;
+    block-size: 1.5rem;
+    border-radius: var(--control-radius-capsule);
+    background: var(--sys-color-accent);
+    box-shadow: 0 0 0 3px
+      var(--ui-progress-disc-cutout, var(--sys-color-background));
+    transform: scale(0);
+    transition: transform var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard);
+  }
+
+  .ui-progress-disc__badge svg {
+    inline-size: 100%;
+    block-size: 100%;
+    stroke: var(--sys-color-on-accent);
+  }
+
+  .ui-progress-disc[data-phase='acknowledged'] .ui-progress-disc__badge {
+    transform: scale(1);
+    transition: transform var(--sys-motion-duration-deliberate)
+      var(--sys-motion-ease-emphasized);
+  }
+
+  /* Reduced motion: no scale, no stroke draw, no turning. The disc settles
+     on opacity alone, the check is painted at once, and `busy` — a state
+     the person must still see — is the full ring breathing on opacity
+     (the ring is `data-motion-essential`, so the global kill-switch leaves
+     this cue alone). */
+  @media (prefers-reduced-motion: reduce) {
+    .ui-progress-disc {
+      animation: ui-progress-disc-settle var(--sys-motion-duration-deliberate)
+        var(--sys-motion-ease-standard) backwards;
+    }
+
+    .ui-progress-disc[data-phase='complete'] .ui-progress-disc__check {
+      animation: none;
+      stroke-dashoffset: 0;
+    }
+
+    .ui-progress-disc__ring circle {
+      stroke-dasharray: none;
+    }
+
+    .ui-progress-disc[data-phase='busy'] .ui-progress-disc__ring {
+      animation: ui-progress-disc-breathe 1.6s var(--sys-motion-ease-standard)
+        infinite alternate;
+    }
+  }
+
+  @keyframes ui-progress-disc-settle {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes ui-progress-disc-breathe {
+    from {
+      opacity: 0.25;
+    }
+    to {
+      opacity: 0.85;
+    }
+  }
+}

@@ -1,5 +1,5 @@
 import { StoredFields, UserId } from '@core/primitives';
-import { Actor, type Role, Roles } from '@core/components';
+import { Actor, ReadAsClaims, type Role, Roles } from '@core/components';
 
 /**
  * THE CALLER, off the VERIFIED ID token — the ONE home of every reading a
@@ -96,18 +96,56 @@ export function callerIsAdmin(request: VerifiedRequest): boolean {
   return Roles.isAdmin(callerKnownRoles(request));
 }
 
+/** The verified token's claims bag — `{}` when there is none. */
+function claimsBag(request: VerifiedRequest): {
+  readonly [claim: string]: unknown;
+} {
+  const token = request.auth?.token;
+  return token === undefined ? {} : (token as { [claim: string]: unknown });
+}
+
+/**
+ * The verified token's SUPPORT READ-AS (OR-24): `claimed` when the token
+ * names a read-as session at all, and its claims when they read — a token
+ * that claims one but whose claims do not read is `claimed` with `null`
+ * claims, which the edge treats as an ENDED read-as (a malformed claim
+ * never unlocks a write).
+ */
+export function callerReadAs(request: VerifiedRequest): {
+  readonly claimed: boolean;
+  readonly claims: ReadAsClaims | null;
+} {
+  const bag = claimsBag(request);
+  return {
+    claimed: ReadAsClaims.claimed(bag),
+    claims: ReadAsClaims.fromToken(bag),
+  };
+}
+
 /**
  * Who the audit log says did this — the verified uid, attributed by its
  * String-coerced roles (`Actor.forCaller`): an admin as `ADMIN`, other
  * staff as `STAFF` with a snapshot of their roles, a client as `USER`.
- * Access is not attribution: the vendor's `sysadmin` is `STAFF`.
+ * Access is not attribution: the vendor's `sysadmin` is `STAFF`. Under a
+ * read-as token the uid is the TARGET's, so the act is credited to the
+ * support account the token names, as `Actor.impersonator` — never to the
+ * person support was reading as.
  *
  * `null` when there is no verified caller: nobody to attribute, and
  * inventing one would be the very misattribution this exists to end.
  */
 export function callerActor(request: VerifiedRequest): Actor | null {
   const uid = callerUserId(request);
-  return uid === null ? null : Actor.forCaller(uid, callerRoles(request));
+  if (uid === null) return null;
+  const readAs = callerReadAs(request).claims;
+  return readAs === null
+    ? Actor.forCaller(uid, callerRoles(request))
+    : Actor.impersonator(
+        readAs.readAsByUserId,
+        uid,
+        readAs.readAsSessionId,
+        readAs.readAsScope,
+      );
 }
 
 /** {@link callerActor} over the claim's entries AS THEY ARE — the booking callables' reading. */

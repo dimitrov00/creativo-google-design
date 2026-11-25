@@ -18,7 +18,7 @@ import {
   type Service,
   type User,
 } from '@core/entities';
-import { EmploymentSystem } from './employment.system';
+import { EmploymentReminderSystem } from './employment-reminder.system';
 import { StaffSetupSystem } from './staff-setup.system';
 
 /** Who is looking at a record's page, as their stored account says. */
@@ -255,8 +255,8 @@ export const TeamRosterSystem = {
   /**
    * The members whose last working day is close (team onboarding D10,
    * the reminder cards): a barber who works, whose last day is today or
-   * within `EmploymentSystem.REMINDER_DAYS` of it, on a period longer than
-   * that (`EmploymentSystem.isReminded`) — soonest first, then in the
+   * within `EmploymentReminderSystem.REMINDER_DAYS` of it, on a period longer than
+   * that (`EmploymentReminderSystem.isReminded`) — soonest first, then in the
    * members' order. Someone has to decide before the
    * day: extend the period, or let it end. Derived from the rows and the
    * shop's today; nothing is stored and nothing is sent.
@@ -270,7 +270,7 @@ export const TeamRosterSystem = {
       if (
         (member.teamMemberStatus === TeamMemberStatus.StaffOnly ||
           member.teamMemberStatus === TeamMemberStatus.Public) &&
-        EmploymentSystem.isReminded(
+        EmploymentReminderSystem.isReminded(
           member.barberStartsLocalDate,
           member.barberLastWorkingLocalDate,
           today,

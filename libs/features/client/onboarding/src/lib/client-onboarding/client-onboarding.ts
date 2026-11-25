@@ -84,6 +84,7 @@ import {
   SessionIdentityService,
 } from '@creativo/features/shared/shell';
 import {
+  HomeLandingService,
   ageDayOf,
   nameRefusalsOf,
 } from '@creativo/features/client/account-state';
@@ -179,6 +180,8 @@ export class ClientOnboarding {
   private readonly catalog = inject(CatalogContentService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  /** Where a finished account goes: the link it came for, else its home. */
+  private readonly landing = inject(HomeLandingService);
   private readonly transloco = inject(TranslocoService);
   private readonly injector = inject(Injector);
   /** The profile snapshot the resume computes its remaining steps from. */
@@ -395,17 +398,13 @@ export class ClientOnboarding {
       if (remaining.length === 0) {
         // Nothing left — the profile was finished elsewhere (or between
         // the tap and the arrival). Don't present an empty flow.
-        await this.router.navigateByUrl(
-          RedirectPath.authDestination(this.redirect()),
-        );
+        await this.landing.enter(this.redirect());
         return;
       }
       this.store.beginPersonalization(remaining);
       return;
     }
-    await this.router.navigateByUrl(
-      RedirectPath.authDestination(this.redirect()),
-    );
+    await this.landing.enter(this.redirect());
   }
 
   /**
@@ -442,9 +441,7 @@ export class ClientOnboarding {
     this.enteringFailed.set(false);
     const principal = await this.store.pollActivation();
     if (principal !== null && Principal.isActive(principal)) {
-      await this.router.navigateByUrl(
-        RedirectPath.authDestination(this.redirect()),
-      );
+      await this.landing.enter(this.redirect());
       return;
     }
     // Either a hard gateway failure (`null`) or the backoff exhausted

@@ -171,7 +171,12 @@
                router's own view transition carries it. At every width: the
                cluster runs view · chart · find · who. Only for someone the
                owner lets read analytics (staff permissions P8): the route
-               would turn anyone else away. -->
+               would turn anyone else away.
+               THE SHOP'S VIEW (owner ruling 2026-11-25, Q2): no route of its
+               own — this button, its word «Анализи» from 600px of bar (a
+               phone's bar has no room: the day pill would cut), and a badge
+               counting the decisions the page opens with. A count never
+               moves the day; the notices it replaced did. -->
             @if (analytics.reads()) {
             <button
               type="button"
@@ -180,12 +185,22 @@
               uiTint="neutral"
               uiControlSize="regular"
               [uiIconOnly]="true"
+              [uiBadgeCount]="analytics.pending()"
               class="staff-cluster__item staff-analytics-open"
-              [attr.aria-label]="t('staff.day.analyticsLabel')"
+              [attr.aria-label]="
+                analytics.pending() > 0
+                  ? t('staff.day.analyticsPendingLabel', {
+                      count: analytics.pending(),
+                    })
+                  : t('staff.day.analyticsLabel')
+              "
               data-testid="staff-analytics-open"
               (click)="analytics.open(store.scope(), store.dayKey() ?? store.todayKey())"
             >
               <ui-icon uiName="analytics.chart" />
+              <span class="staff-analytics-open__label"
+                >{{ t('staff.day.analyticsLabel') }}</span
+              >
             </button>
             }
 
@@ -361,11 +376,11 @@
       (visitPicked)="openFoundVisit($event)"
     />
     } }
-    <!-- THE STAFF HOME'S OWN PARTS (team onboarding D10; account first,
-         A4–A5): the last days to decide on for whoever manages the team, the
-         setup card and the first-time welcome for a linked barber — above
-         any view. Its own chunk, fetched once the page is idle: none of it
-         is what the first frame needs. -->
+    <!-- THE STAFF HOME'S OWN PARTS (account first, A4–A5): the setup card
+         and the first-time welcome for a linked barber — above any view.
+         Its own chunk, fetched once the page is idle: none of it is what
+         the first frame needs. The team's last days moved to «Анализи»
+         (2026-11-25); the chart button counts them. -->
     @defer (on idle) {
     <lib-staff-home />
     } @if (isGrid()) { @if (dayHealth().length > 0) {
@@ -955,6 +970,17 @@
            what the schedule draws, in every view, and stays in the accent for
            as long as a state is hidden, so a filtered day says so. What each
            card CARRIES lives under the view menu, with how the day is drawn. -->
+      <!-- WHO YOU ARE (2026-11-24): the SAME menu the site header opens —
+           sign-out, notifications, one's own bookings, the team — on a page
+           with no site header, where the installed app has no browser back.
+           In the thumb bar, not the top bar: the top row has no width left
+           on a phone (the day pill already ellipsises at 375px), the bar's
+           search capsule gives the room, and the bar shows at every width,
+           so ONE menu serves the phone and the iPad. Leading, the far reach
+           for a right thumb: the menu is the rare act, the pen the common
+           one. Never beside the top bar's scope face, which says WHOSE
+           DAY this is. -->
+      <cr-account-menu size="large" />
       <div class="staff-cluster">
         <button
           type="button"

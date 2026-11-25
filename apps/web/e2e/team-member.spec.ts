@@ -1054,7 +1054,7 @@ test.describe('a team member’s page', () => {
       .toEqual([[Role.Client, Role.Barber], added]);
   });
 
-  test('a last day three days off is a reminder on the Team page, and «Удължи» lands in that barber’s working period', async ({
+  test('a last day three days off is a reminder on the Team page and on top of «Анализи», counted on the schedule’s chart button, and «Удължи» lands in that barber’s working period', async ({
     page,
   }) => {
     test.setTimeout(180_000);
@@ -1125,13 +1125,27 @@ test.describe('a team member’s page', () => {
       'Няма',
     );
 
-    // The staff home says it too, above the schedule, with the same way in.
+    // The schedule only COUNTS it (owner ruling 2026-11-25, Q2): a badge on
+    // the chart button, nothing above the day to push it down. Other specs
+    // share the emulator, so the count is at least this one.
     await page.goto('/staff/schedule', { waitUntil: 'commit' });
-    const onSchedule = page.getByTestId(`schedule-reminder-${added}`);
-    await expect(onSchedule).toContainText('Последният ден на Нов е', {
+    const chart = page.getByTestId('staff-analytics-open');
+    await expect(chart.locator('.ui-button__badge')).toHaveText(/^[1-9]\d*$/, {
       timeout: 60_000,
     });
-    await onSchedule.getByTestId('schedule-reminder-extend').click();
+    await expect(chart).toHaveAttribute('aria-label', /за решаване/);
+    await expect(
+      page.locator('ui-notice[data-testid^="schedule-reminder"]'),
+    ).toHaveCount(0);
+
+    // «Анализи» opens with it on top, with the same way in.
+    await chart.click();
+    await expect(page).toHaveURL(/\/staff\/analytics/, { timeout: 30_000 });
+    const onAnalytics = page.getByTestId(`analytics-reminder-${added}`);
+    await expect(onAnalytics).toContainText('Последният ден на Нов е', {
+      timeout: 60_000,
+    });
+    await onAnalytics.getByTestId('analytics-reminder-extend').click();
     await expect(page.getByTestId('member-period-sheet')).toBeVisible({
       timeout: 30_000,
     });

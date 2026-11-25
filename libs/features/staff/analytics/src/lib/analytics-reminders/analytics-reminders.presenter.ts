@@ -3,10 +3,10 @@ import type { Barber } from '@core/entities';
 import type { LocalDate, Locale } from '@core/primitives';
 import { firstNameOf } from '@creativo/features/shared/visits';
 import { formatDayPill } from '@creativo/ui/wall-clock';
-import type { ScheduleReminderVm } from './schedule-reminders.vm';
+import type { AnalyticsReminderVm } from './analytics-reminders.vm';
 
 /** The reminder's words, in the catalogue's language (`admin.team.reminder.*`). */
-export type ScheduleReminderWords = {
+export type AnalyticsReminderWords = {
   /** «Последният ден на Георги е пт, 20.11» */
   readonly title: (name: string, date: string) => string;
   /** «Днес е последният ден на Георги» */
@@ -15,25 +15,25 @@ export type ScheduleReminderWords = {
   readonly extend: string;
 };
 
-/** What the schedule's reminders are worded from. */
-export type ScheduleRemindersInput = {
-  /** `EmploymentSystem.remindersOf` — the last days to decide on, soonest first. */
+/** What the reminders on «Анализи» are worded from. */
+export type AnalyticsRemindersInput = {
+  /** `EmploymentReminderSystem.remindersOf` — the last days to decide on, soonest first. */
   readonly barbers: readonly Barber[];
   /** The shop's today. */
   readonly today: LocalDate;
   readonly locale: Locale;
-  readonly words: ScheduleReminderWords;
+  readonly words: AnalyticsReminderWords;
 };
 
 /**
- * THE SCHEDULE'S REMINDERS, WORDED (Law 10; team onboarding D10, the
- * reminder cards on the staff home): the same words as the Team page's
- * cards, on one line each — the schedule has no room for a body. Which
- * last days are close enough is `EmploymentSystem.remindersOf`'s answer.
+ * THE REMINDERS ON «АНАЛИЗИ», WORDED (Law 10; team onboarding D10, the
+ * reminder cards): the same words as the Team page's cards, on one line
+ * each. Which last days are close enough is `EmploymentReminderSystem.remindersOf`'s
+ * answer.
  */
-export function scheduleRemindersVm(
-  input: ScheduleRemindersInput,
-): readonly ScheduleReminderVm[] {
+export function analyticsRemindersVm(
+  input: AnalyticsRemindersInput,
+): readonly AnalyticsReminderVm[] {
   const { words } = input;
   return input.barbers.map((barber) => {
     const name = firstNameOf(LocalizedText.pick(barber.name, input.locale));
@@ -45,7 +45,7 @@ export function scheduleRemindersVm(
           ? words.today(name)
           : words.title(name, formatDayPill(last, input.locale)),
       action: words.extend,
-      testId: `schedule-reminder-${barber.id}`,
+      testId: `analytics-reminder-${barber.id}`,
     };
   });
 }

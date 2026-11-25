@@ -32,6 +32,7 @@ class HostComponent {
     [uiIconOnly]="true"
     [uiSelected]="selected"
     [uiDotBadge]="dot"
+    [uiBadgeCount]="count"
   >
     close
   </button>`,
@@ -39,6 +40,7 @@ class HostComponent {
 class ToggleHostComponent {
   selected = false;
   dot = false;
+  count: number | null = null;
 }
 
 describe('UiButton', () => {
@@ -147,6 +149,30 @@ describe('UiButton toggles (uiIconOnly / uiSelected)', () => {
     fixture.detectChanges();
     const el: HTMLElement = fixture.nativeElement.querySelector('button');
     expect(el.getAttribute('data-dot-badge')).toBe('');
+  });
+
+  it('draws no count until uiBadgeCount is above 0 — "0" is noise', () => {
+    fixture.detectChanges();
+    const el: HTMLElement = fixture.nativeElement.querySelector('button');
+    expect(el.hasAttribute('data-badge-count')).toBe(false);
+    expect(el.querySelector('.ui-button__badge')).toBeNull();
+    fixture.componentInstance.count = 0;
+    fixture.detectChanges();
+    expect(el.hasAttribute('data-badge-count')).toBe(false);
+    expect(el.querySelector('.ui-button__badge')).toBeNull();
+  });
+
+  it('hangs the DS’s solid badge on the corner while uiBadgeCount is above 0, hidden from assistive tech', () => {
+    fixture.componentInstance.count = 2;
+    fixture.detectChanges();
+    const el: HTMLElement = fixture.nativeElement.querySelector('button');
+    expect(el.getAttribute('data-badge-count')).toBe('2');
+    const badge = el.querySelector<HTMLElement>('.ui-button__badge');
+    expect(badge?.classList.contains('ui-badge')).toBe(true);
+    expect(badge?.getAttribute('data-prominence')).toBe('increased');
+    expect(badge?.getAttribute('data-tone')).toBe('accent');
+    expect(badge?.getAttribute('aria-hidden')).toBe('true');
+    expect(badge?.textContent?.trim()).toBe('2');
   });
 
   it('announces aria-pressed="false" while unselected once uiSelected is bound', () => {

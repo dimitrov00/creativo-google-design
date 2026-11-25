@@ -58,6 +58,7 @@ import {
   type CartRider,
   GuestLabelSystem,
   MoveSystem,
+  type PrefillSeat,
 } from '@core/systems';
 
 /** The wizard's two policy numbers — the booking policy's own defaults. */
@@ -999,6 +1000,12 @@ export class BookingFlowStore {
    * Guests come back under the names the visit gave them — see
    * {@link prefillFrom}.
    *
+   * `seats` are the visit's seats as today's catalogue can book them again
+   * (`SameAgainSystem.rebookSeats`: a barber off the public list left open,
+   * a retired service left out) — the same answer the «Пак същото» card on
+   * `/account` words, so the basket holds what the card promised. The
+   * stored seats themselves when the catalogue could not be read.
+   *
    * The visit is also remembered as the booking's source, so the commit
    * carries the rebooking edge. It is an appointment the repository returned
    * to this caller, never a raw id from the URL.
@@ -1006,11 +1013,17 @@ export class BookingFlowStore {
   repeat(
     appointment: Appointment,
     guestLabel: (ordinal: number) => string,
+    seats: readonly PrefillSeat[] = appointment.seats,
   ): boolean {
     // A NEW booking cannot seat another account, so a companion on the old
     // visit comes back as a guest seat the booker can keep or drop.
     if (
-      !this.prefillFrom(appointment, guestLabel, PrefillCompanions.AsGuests)
+      !this.prefillFrom(
+        appointment,
+        guestLabel,
+        PrefillCompanions.AsGuests,
+        seats,
+      )
     ) {
       return false;
     }
@@ -1102,11 +1115,12 @@ export class BookingFlowStore {
     appointment: Appointment,
     guestLabel: (ordinal: number) => string,
     companions: PrefillCompanions,
+    seats: readonly PrefillSeat[] = appointment.seats,
   ): boolean {
     // The party() accessor, not the raw state: a terminal state keeps its
     // party inside its receipt and has none at the top level.
     const bag = BookingCartSystem.prefill(
-      appointment.seats,
+      seats,
       this.readerOf(appointment),
       this.party()?.ownerUserId ?? null,
       companions,

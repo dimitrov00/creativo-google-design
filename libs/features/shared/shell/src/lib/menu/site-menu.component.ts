@@ -1,6 +1,8 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  ElementRef,
+  afterRenderEffect,
   computed,
   effect,
   inject,
@@ -8,6 +10,7 @@ import {
   output,
   resource,
   signal,
+  viewChild,
 } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
@@ -116,7 +119,31 @@ export class SiteMenuComponent {
    *  `/staff/profile` once the welcome and the setup card have gone.
    *  UI-only: the route's capability gate and the callables are the locks. */
   readonly opensOwnProfile = input(false);
+  /** Works the book (`Roles.BOOK`) — the menu's «График» row. Narrower
+   *  than `isStaffMember`: the rules refuse a content manager the day's
+   *  reads. UI-only: the route's guard and the rules are the locks. */
+  readonly worksTheBook = input(false);
+  /** Manages the programs (`Roles.CATALOG`) — the menu's «Програми» row,
+   *  the one way to `/admin/programs`. UI-only, like the others. */
+  readonly managesCatalog = input(false);
+  /**
+   * The menu on a page with no site header (the schedule): it draws its own
+   * ✕ in the lead row, and it rises in the TOP LAYER as a manual popover —
+   * the way `ui-sheet` stacks itself — because it is declared inside that
+   * page's sticky toolbar, whose stacking context and z-index would
+   * otherwise paint the page's bars over it. Off, the site header's trigger
+   * is the ✕ and the header stays above the menu.
+   */
+  readonly closeButton = input(false);
+  /** The vendor's support account (`Roles.SUPPORT`) — the menu's
+   *  «Поддръжка» row, the one way to the read-as page (OR-24). UI-only:
+   *  the route's guard and the callables are the locks. */
+  readonly runsReadAs = input(false);
   readonly closed = output();
+
+  /** The overlay's own box, present while open — lifted into the top
+   *  layer when {@link closeButton} is on. */
+  private readonly surface = viewChild<ElementRef<HTMLElement>>('surface');
 
   /** The onboarding link's `?phase=` word, for the template (D-8.2). */
   protected readonly OnboardingPhase = OnboardingPhase;
@@ -321,6 +348,15 @@ export class SiteMenuComponent {
       inertExemptSelectors: ['[data-testid="site-header"]'],
     });
     this.behavior.uiSheetDismissed.subscribe(() => this.closed.emit());
+
+    // Into the top layer once the surface is drawn; leaving the DOM when
+    // the menu closes takes it out again, so there is no hide to call.
+    afterRenderEffect(() => {
+      const surface = this.surface()?.nativeElement;
+      if (!this.closeButton() || surface === undefined) return;
+      if (typeof surface.showPopover !== 'function') return;
+      if (!surface.matches(':popover-open')) surface.showPopover();
+    });
 
     // Every open re-checks storage for the portrait — a photo added
     // earlier in this same session (onboarding's avatar step) would

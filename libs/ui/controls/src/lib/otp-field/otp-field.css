@@ -45,6 +45,17 @@
     opacity: var(--sys-opacity-disabled);
   }
 
+  /* Accepted (uiAccepted — the code was right): the accent ring on every
+     slot, at full ink even while locked, so the success beat reads as the
+     field lighting up rather than greying out. */
+  .ui-otp-field[data-accepted] .ui-otp-field__slot {
+    border-color: var(--sys-color-accent);
+  }
+
+  .ui-otp-field[data-accepted] .ui-otp-field__slot:disabled {
+    opacity: 1;
+  }
+
   .ui-otp-field__slot:focus-visible {
     outline: none;
     border-color: var(--sys-color-accent);

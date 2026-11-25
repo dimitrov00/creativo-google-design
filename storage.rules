@@ -10,8 +10,16 @@ rules_version = '2';
 // admin credentials (which bypass rules), never uploaded by a client.
 service firebase.storage {
   match /b/{bucket}/o {
+    // A SUPPORT READ-AS (OR-24) — as in firestore.rules: past its `impExp`
+    // the session is nobody, and it uploads and deletes nothing.
     function isSignedIn() {
-      return request.auth != null;
+      return request.auth != null
+        && (!('imp' in request.auth.token)
+            || request.time.toMillis() < request.auth.token.impExp);
+    }
+
+    function notReadAs() {
+      return request.auth != null && !('imp' in request.auth.token);
     }
 
     function isOwner(uid) {
@@ -70,12 +78,12 @@ service firebase.storage {
     // sense where there IS an incoming object.
     match /avatars/{userId}/{fileName} {
       allow read: if true;
-      allow create, update: if isOwner(userId)
+      allow create, update: if isOwner(userId) && notReadAs()
         && request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/.*')
         && accountMayUpload(userId)
         && !isLinkedBarber(userId);
-      allow delete: if isOwner(userId) && !isLinkedBarber(userId);
+      allow delete: if isOwner(userId) && notReadAs() && !isLinkedBarber(userId);
     }
 
     // Catalog media library (service covers, location photos, a barber's
@@ -118,11 +126,11 @@ service firebase.storage {
     // than a folder of its own, so the one lifecycle rule keeps covering it.
     match /pending/{userId}/{fileName} {
       allow read: if false;
-      allow create, update: if isOwner(userId)
+      allow create, update: if isOwner(userId) && notReadAs()
         && isStaff()
         && request.resource.size < 5 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
-      allow delete: if isOwner(userId);
+      allow delete: if isOwner(userId) && notReadAs();
     }
 
     // The shop's photos of a visit (`appointmentPhotoPorts`, one object
@@ -132,10 +140,10 @@ service firebase.storage {
     // DELETE `request.resource` is null.
     match /appointmentPhotos/{appointmentId}/{photoId} {
       allow read: if worksTheBook();
-      allow create, update: if worksTheBook()
+      allow create, update: if worksTheBook() && notReadAs()
         && request.resource.size < 8 * 1024 * 1024
         && request.resource.contentType.matches('image/.*');
-      allow delete: if worksTheBook();
+      allow delete: if worksTheBook() && notReadAs();
     }
 
     match /{allPaths=**} {

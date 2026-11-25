@@ -1,0 +1,13 @@
+/* THE DECISIONS ON TOP OF «АНАЛИЗИ» — a stack of compact notices in the
+   page's own column (its gutter is the page's), the segment seam apart;
+   nothing at all while there are none (a host holding only Angular's
+   comment anchors is `:empty`). */
+.analytics-reminders {
+  display: flex;
+  flex-direction: column;
+  gap: calc(var(--sys-space-unit) * 3);
+}
+
+.analytics-reminders:empty {
+  display: none;
+}

@@ -1,18 +1,21 @@
 import { Component, computed, inject, resource } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
-import { of, switchMap } from 'rxjs';
+import { of, startWith, switchMap } from 'rxjs';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
   APPOINTMENT_READ_PORTS,
+  CATALOG_PORTS,
   CLOCK_PORTS,
   ShopZoneService,
+  TEAM_BARBER_PORTS,
   distinctLocationIds,
   nowOfZones,
   sameLocationIds,
 } from '@creativo/infrastructure/firebase-app';
-import type { Appointment } from '@core/entities';
+import type { Appointment, Barber } from '@core/entities';
 import {
+  LocalizedText,
   Principal,
   ProfileCompletionKey,
   type ShopNow,
@@ -20,11 +23,18 @@ import {
 } from '@core/components';
 import {
   type AppointmentId,
+  type BarberId,
   type LocationId,
+  Result,
+  type UserId,
   type UtcEpochMs,
 } from '@core/primitives';
 import { AccountsErrorCode } from '@core/errors';
-import { VisitListSystem } from '@core/systems';
+import {
+  CatalogListingSystem,
+  SameAgainSystem,
+  VisitListSystem,
+} from '@core/systems';
 import {
   LoadSlice,
   LoadState,
@@ -32,6 +42,7 @@ import {
 } from '@creativo/shared/view-state';
 import { AccountStateService } from '@creativo/features/client/account-state';
 import {
+  LanguageService,
   OnboardingPhase,
   OnboardingStepHint,
   SessionIdentityService,
@@ -45,6 +56,7 @@ import {
   type VisitLookup,
   type VisitWords,
   visitCardOf,
+  visitLookupOf,
   visitWordsOf,
 } from '@creativo/features/shared/visits';
 import {
@@ -68,7 +80,10 @@ import {
 import {
   translateCodedError,
   loadedLanguage,
+  pluralForm,
 } from '@creativo/infrastructure/i18n';
+import { sameAgainVm } from './same-again.presenter';
+import type { SameAgainVm, SameAgainWords } from './same-again.vm';
 
 /**
  * The checklist item keys as the copy and the DOM spell them — lowercase,
@@ -109,25 +124,18 @@ interface CardWords {
   readonly cardWords: VisitCardWords;
   /** «Предстоящ час» — the card's own heading (`account.upcoming.title`). */
   readonly label: string;
+  /** «Пак същото» — the lead card when nothing is next (`account.sameAgain.*`). */
+  readonly sameAgain: SameAgainWords;
 }
 
 /**
- * The catalogue as the card reads it — and this page reads none. With the
- * services and the barber left off the card (client-card revision 3 §3.10;
- * owner question Q7 may turn them on), nothing it would name is drawn, and
- * the client's home does not open the catalogue's three live reads for the
- * one word a reader would hear in the card's sentence. Until Q7, that word
- * is «Посещение» (`appointments.visit.unknownService`) where the service's
- * name would go; with Q7 the catalogue comes in as `/account/appointments`
- * reads it (`CatalogContentService`).
+ * How many of the account's newest visits «Пак същото» reads — only while
+ * nothing is next (a next visit is the lead card then, and the read is not
+ * opened). The newest visit the person had sits among them unless nine
+ * calls-off and no-shows came after it; the history page reads its own,
+ * longer list.
  */
-const NO_CATALOGUE: VisitLookup = {
-  serviceName: () => null,
-  barberName: () => null,
-  barberAvatarSrc: () => null,
-  locationName: () => null,
-  locationCount: 0,
-};
+const SAME_AGAIN_HISTORY_LIMIT = 10;
 
 /**
  * `/account` — the signed-in client's home. Top to bottom:
@@ -198,6 +206,7 @@ const NO_CATALOGUE: VisitLookup = {
     '[attr.data-state]': 'accountDataState()',
     '[attr.data-completion]': 'completionState()',
     '[attr.data-upcoming]': 'upcomingWord()',
+    '[attr.data-lead]': 'leadWord()',
   },
 })
 export class ClientAccount {
@@ -205,6 +214,70 @@ export class ClientAccount {
   private readonly transloco = inject(TranslocoService);
   private readonly router = inject(Router);
   private readonly shopZones = inject(ShopZoneService);
+  private readonly language = inject(LanguageService);
+
+  /**
+   * THE CATALOGUE, AS NAMES (owner ruling Q6, 2026-11-25: the client's home
+   * names the cut and the barber). The three reads are the very queries
+   * the site menu holds open on every page with the header
+   * (`SiteSectionsService`) and the booking flow reads
+   * (`CatalogContentService`): the SDK shares one listen per query, so
+   * naming them opens no new listener. Read here as plain entities, not
+   * through `CatalogContentService`: that one resolves every cover and face
+   * of the catalogue the moment it exists, and brings the shared catalogue
+   * chunk (the service sheet, the gallery, the cards) with it — 45 kB and a
+   * request per image for a card that prints two names. A card's barber is
+   * drawn as his monogram.
+   */
+  private readonly catalogReads = inject(CATALOG_PORTS);
+  private readonly servicesRead = toSignal(
+    this.catalogReads.observeServices(),
+    {
+      initialValue: null,
+    },
+  );
+  private readonly barbersRead = toSignal(this.catalogReads.observeBarbers(), {
+    initialValue: null,
+  });
+  private readonly shopsRead = toSignal(this.catalogReads.observeLocations(), {
+    initialValue: null,
+  });
+
+  /** The services and the barbers have both answered, successfully or not: a card names nothing before. */
+  private readonly catalogueAnswered = computed(
+    () => this.servicesRead() !== null && this.barbersRead() !== null,
+  );
+
+  /** Both answered SUCCESSFULLY — what «Пак същото» may judge a visit against (a list that never arrived is not "nothing offered"). */
+  private readonly catalogueKnown = computed(
+    () => this.servicesRead()?.ok === true && this.barbersRead()?.ok === true,
+  );
+
+  /** The active services as stored — every name a past visit may need. */
+  private readonly storedServices = computed(() => {
+    const read = this.servicesRead();
+    return read?.ok ? read.value : [];
+  });
+
+  /** The public barbers — listed and bookable online (team onboarding D3). */
+  private readonly publicBarbers = computed(() => {
+    const read = this.barbersRead();
+    return read?.ok ? read.value : [];
+  });
+
+  /** The active shops, with their zones. */
+  private readonly shops = computed(() => {
+    const read = this.shopsRead();
+    return read?.ok ? read.value : [];
+  });
+
+  /**
+   * A card's barber on no public list — one who left, or now works
+   * staff-only — read by id (`loadBarbers`, the visit list's own lookup),
+   * so the card names him; a record the client may not read stays
+   * unnamed. Read again only when the set of such barbers changes.
+   */
+  private readonly offListReads = inject(TEAM_BARBER_PORTS, { optional: true });
 
   protected readonly accountState = inject(AccountStateService);
 
@@ -379,20 +452,85 @@ export class ClientAccount {
           translate('visits.card.name', { label, sentence }),
       },
       label: translate('account.upcoming.title'),
+      sameAgain: {
+        title: translate('account.sameAgain.title'),
+        barberAway: (names, count) =>
+          translate(`account.sameAgain.barberAway.${pluralForm(count, lang)}`, {
+            names,
+          }),
+        barberAwayUnnamed: translate('account.sameAgain.barberAwayUnnamed'),
+        serviceGone: (names, count) =>
+          translate(
+            `account.sameAgain.serviceGone.${pluralForm(count, lang)}`,
+            { names },
+          ),
+        serviceGoneUnnamed: translate('account.sameAgain.serviceGoneUnnamed'),
+      },
     };
+  });
+
+  /** The card barbers on no public list, each once, in code-unit order — `undefined` when there are none. */
+  private readonly offListIds = computed<readonly BarberId[] | undefined>(
+    () => {
+      if (!this.catalogueKnown()) return undefined;
+      const listed = new Set(this.publicBarbers().map((barber) => barber.id));
+      const ids = new Set<BarberId>();
+      const visits: Appointment[] = [];
+      const next = this.upcoming();
+      if (next.loadState === LoadState.Ready) visits.push(next.data);
+      const source = this.sameAgainSource();
+      if (source !== null) visits.push(source);
+      for (const visit of visits) {
+        for (const id of visit.barberIds) if (!listed.has(id)) ids.add(id);
+      }
+      return ids.size === 0 ? undefined : [...ids].sort();
+    },
+    { equal: (a, b) => a?.join('\n') === b?.join('\n') },
+  );
+
+  private readonly offListRead = resource({
+    params: () => (this.offListReads === null ? undefined : this.offListIds()),
+    loader: async ({ params }): Promise<readonly Barber[]> => {
+      const read = await this.offListReads?.loadBarbers(params);
+      return read?.ok ? read.value : [];
+    },
+  });
+
+  /**
+   * The catalogue, as a card reads it (`visitLookupOf`, the visit list's
+   * own): the services and the barbers by name in the active language, the
+   * shop and its zone. No faces are resolved — the card draws the
+   * barber's monogram.
+   */
+  private readonly lookup = computed<VisitLookup>(() => {
+    const lang = this.language.activeLang();
+    const offList = this.offListRead.hasValue() ? this.offListRead.value() : [];
+    const services = this.storedServices();
+    return visitLookupOf({
+      findService: (id) => services.find((service) => service.id === id),
+      barbers: [...this.publicBarbers(), ...offList].map((barber) => ({
+        id: barber.id,
+        name: barber.name,
+        avatarSrc: null,
+      })),
+      locations: this.shops(),
+      text: (localized) => LocalizedText.pick(localized, lang),
+    });
   });
 
   /**
    * The next visit as the shared card draws it: «Предстоящ час» as the
-   * heading, no services and no face (§3.10 — `/account`'s form, until Q7),
-   * the day and the hour on the visit's own calendar, the status as the
-   * capsule. Null until there is a visit and the words it is told in; its
-   * zone and "now" are the chosen visit's OWN shop's (Law 7.3).
+   * heading, the services and the barber's face (owner ruling Q6), the day
+   * and the hour on the visit's own calendar, the status as the capsule.
+   * Null until there is a visit, the words it is told in and the
+   * catalogue's answer — a card never names «Посещение» and then the cut.
+   * Its zone and "now" are the chosen visit's OWN shop's (Law 7.3).
    */
   protected readonly upcomingCard = computed<AppointmentCardVm | null>(() => {
     const state = this.upcoming();
     const words = this.cardWords();
     if (state.loadState !== LoadState.Ready || words === null) return null;
+    if (!this.catalogueAnswered()) return null;
     const { locationId } = state.data;
     const answer = this.cardZoneAnswers()?.get(locationId);
     const now = this.nowOf()?.(locationId) ?? null;
@@ -410,13 +548,144 @@ export class ClientAccount {
         words: words.words,
         cardWords: words.cardWords,
         label: words.label,
-        barber: false,
         // The card's own ids: the button is `account-upcoming`, its capsule
         // `account-upcoming-status` — the ids this page has always worn.
         testId: 'account-upcoming',
       },
-      { ...NO_CATALOGUE, locationTimeZone: () => timeZone },
+      { ...this.lookup(), locationTimeZone: () => timeZone },
     );
+  });
+
+  /**
+   * Whose history «Пак същото» reads: the signed-in account, and only
+   * once nothing is next — a next visit leads the slot, and two booking
+   * prompts would be one too many, so the read is not opened then.
+   */
+  private readonly historyOwner = computed<UserId | null>(() => {
+    const principal = this.accountState.principal();
+    if (!Principal.isActive(principal)) return null;
+    return this.upcoming().loadState === LoadState.Empty
+      ? principal.userId
+      : null;
+  });
+
+  /**
+   * The account's newest visits (`observeHistory`, bounded at
+   * {@link SAME_AGAIN_HISTORY_LIMIT}) — `null` while not asked for,
+   * `undefined` while the listener has not answered.
+   */
+  private readonly historyResult = toSignal(
+    toObservable(this.historyOwner).pipe(
+      switchMap((userId) =>
+        userId === null
+          ? of(null)
+          : this.appointments
+              .observeHistory(userId, SAME_AGAIN_HISTORY_LIMIT)
+              .pipe(startWith(undefined)),
+      ),
+    ),
+    { initialValue: null },
+  );
+
+  /**
+   * "Now" on each active shop's wall clock as the page opened — the
+   * catalogue's shops carry their zones, so the history is judged with no
+   * read of its own (`nowOfZones`, the page's one fold). A shop no longer
+   * active has no clock, and a visit there is not booked again.
+   */
+  private readonly catalogueNowOf = computed(() =>
+    nowOfZones(
+      new Map(
+        this.shops().map(
+          (shop) => [shop.id, Result.ok(shop.timeZone)] as const,
+        ),
+      ),
+      this.openedAtUtcMs,
+    ),
+  );
+
+  /** The visit «Пак същото» books again from (`SameAgainSystem.sourceOf`) — `null` when none. */
+  private readonly sameAgainSource = computed<Appointment | null>(() => {
+    const history = this.historyResult();
+    if (!history?.ok) return null;
+    return SameAgainSystem.sourceOf(history.value, this.catalogueNowOf());
+  });
+
+  /**
+   * «Пак същото» — the lead card when nothing is next: the last visit
+   * the person had, what today's catalogue can book of it
+   * (`SameAgainSystem.reachOf`, the answer the booking flow's pre-fill
+   * rebuilds the basket from) and the way to book it. Null until the
+   * catalogue has answered successfully, and when nothing of the visit is
+   * offered any more.
+   */
+  protected readonly sameAgain = computed<SameAgainVm | null>(() => {
+    const source = this.sameAgainSource();
+    const words = this.cardWords();
+    if (source === null || words === null) return null;
+    if (!this.catalogueKnown()) return null;
+    const now = this.catalogueNowOf()(source.locationId);
+    const timeZone = this.lookup().locationTimeZone?.(source.locationId);
+    if (now === null || timeZone === undefined || timeZone === null) {
+      return null;
+    }
+    return sameAgainVm({
+      source,
+      // The public catalogue (team onboarding D3): offerings of listed
+      // barbers only — the rule the booking flow books by.
+      reach: SameAgainSystem.reachOf(
+        source.seats,
+        this.publicBarbers(),
+        CatalogListingSystem.listedServices(
+          this.storedServices(),
+          this.publicBarbers(),
+        ),
+      ),
+      now,
+      timeZone,
+      locale: words.lang,
+      words: words.words,
+      cardWords: words.cardWords,
+      sameAgainWords: words.sameAgain,
+      lookup: this.lookup(),
+    });
+  });
+
+  /**
+   * Where the lead slot stands — the next visit, else «Пак същото», else
+   * the honest empty state. Loading until each has answered what it needs
+   * (the history and the catalogue too, when nothing is next), so the slot
+   * fills once and never swaps one card for another.
+   */
+  protected readonly leadState = computed<LoadState>(() => {
+    const next = this.upcomingState();
+    if (next !== LoadState.Empty) return next;
+    if (!this.catalogueAnswered() || this.cardWords() === null) {
+      return LoadState.Loading;
+    }
+    const history = this.historyResult();
+    if (history === null || history === undefined) return LoadState.Loading;
+    return this.sameAgain() === null ? LoadState.Empty : LoadState.Ready;
+  });
+
+  /**
+   * The empty state's line: «Още нямаш записани часове.» for an account
+   * that has booked nothing yet, else «Нямаш предстоящи часове.».
+   */
+  protected readonly emptyKey = computed(() => {
+    const history = this.historyResult();
+    return history?.ok === true && history.value.length === 0
+      ? 'account.upcoming.none'
+      : 'account.upcoming.empty';
+  });
+
+  /** The lead slot as the host prints it (`data-lead`): `loading` · `next` · `same-again` · `empty` · `error`. */
+  protected readonly leadWord = computed(() => {
+    const state = this.leadState();
+    if (state === LoadState.Ready) {
+      return this.upcomingCard() === null ? 'same-again' : 'next';
+    }
+    return upcomingStateWords[state];
   });
 
   /**

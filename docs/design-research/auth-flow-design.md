@@ -62,7 +62,7 @@ Landing "Book" CTA ──► /auth (identify)
    │
    ├─ invalid identifier ──► inline error, stay on identify
    ├─ request_failed(blocked) ──► blocked (terminal, calm cool-down copy)
-   ├─ latched active principal ──► redirect().authDestination()   (already signed in)
+   ├─ latched active principal ──► HomeLandingService.enter(redirect())   (already signed in: the link, else their home — 2026-11-25)
    ├─ latched onboarding principal ──► /onboarding?redirect=…
    │
    └─ code sent ──► /auth/code (otp)
@@ -332,3 +332,38 @@ Applied to `/auth` + `/onboarding` after the Apple HIG / SwiftUI conventions res
 - **Quiet secondary text.** Hints/helpers (email hint, phone priming hint, signed-in-as, resend countdown, escalation) drop to the caption tier in secondary ink at regular weight; inline errors stay footnote-sized but regular weight destructive — the color carries the state, never boldness (HIG: hierarchy from size + color, "inform without shouting"). The resend countdown is now informational text, not a disabled button. The `ui-phone-field` hint/error convention was updated in the composite itself.
 - **Clear the code on every failed verify** (supersedes §2.2's keep-digits ruling). Keep-digits assumed an explicit Verify button; with buttonless auto-verify, retyping a fresh code beats editing a wrong one in place — the native iOS loop. The error line stays until typing resumes.
 - **Sheet-chrome pill grammar for toolbar + bottom-bar controls.** Toolbar buttons (back chevron, Sign out) use the same bordered-neutral capsule recipe as sheet close/action buttons; the bottom-bar prominent CTA takes `uiButtonBorderShape="capsule"` — one pill grammar across sheets and page chrome.
+
+---
+
+## 8. Addendum — the code step's waits get a shape (owner, 2026-11-23)
+
+The owner found the code step "super basic and simple text with spinner
+icon". Three directions were prototyped against Mobbin references
+(Substack, Matter, NordVPN, ClickUp, Too Good To Go, IKEA for the one
+chosen); the owner picked **B, "Check your inbox"**. It supersedes the
+§7 "subtle inline progress row" and the `@default` settling spinner:
+
+- **Sending is its own phase.** The flow machine moves to `OTP` on
+  `SUBMIT_IDENTIFIER`, before the send settles, and the store had one
+  `pending` flag — so while the first code was still out the step already
+  said «Изпратихме…», offered «Изпрати нов код» and labelled the wait
+  «Проверяваме…». `AuthFlowStore` now keeps `sending` and `verifying`
+  apart, `canResend` is false while a send is out, and the resend row is
+  hidden until a code has landed.
+- **One mail disc tells the story** (`ui-progress-disc`, lifted out of
+  `ui-reward-moment`, which now composes it): a ring turns while a code is
+  sent or checked, a check badge says it landed, and the disc fills with a
+  drawn check when the code is right. The headline names the phase
+  («Изпращаме кода…» · «Провери пощата си» / «Провери съобщенията си» ·
+  «Проверяваме…» · «Готово»), worded by `code-step.presenter.ts` (Law 10)
+  and announced politely.
+- **The success beat.** `DONE` / `AUTHENTICATED` keep the code step on
+  screen, disc filled and slots lit (`ui-otp-field` `uiAccepted`), for at
+  least 750 ms while the session catches up; then the hand-off. Confetti
+  stays onboarding's.
+- **«Отвори Gmail».** `WebmailSystem.inboxOf` reads the address's domain
+  (Gmail, Outlook, Yahoo, iCloud, Proton, ABV, Mail.bg) and the step docks
+  a bordered shortcut to that web inbox, trailing, in a new tab
+  (`noopener noreferrer`). An unknown domain or a phone gets none.
+- **The countdown drains.** A 1rem `ui-progress-ring` beside «Нов код
+  след N сек».

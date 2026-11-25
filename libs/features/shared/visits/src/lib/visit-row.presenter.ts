@@ -802,6 +802,11 @@ function listFormat(locale: string): Intl.ListFormat {
   return format;
 }
 
+/** Names joined in the locale's conjunction — «Иван и Петър» — through the row's one formatter per locale. */
+export function joinedNames(names: readonly string[], locale: string): string {
+  return listFormat(locale).format(names);
+}
+
 /**
  * A visit's wall-clock start, read against the shop's "now" — ONE clock for
  * the row and the card (a card is a row told at length). The day and the

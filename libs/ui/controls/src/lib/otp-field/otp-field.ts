@@ -59,6 +59,7 @@ type UiOtpSlotState = 'active' | 'filled' | 'idle';
     class: 'ui-otp-field',
     '[attr.data-invalid]': 'uiInvalid() ? "" : null',
     '[attr.data-disabled]': 'uiDisabled() ? "" : null',
+    '[attr.data-accepted]': 'uiAccepted() ? "" : null',
   },
 })
 export class UiOtpField {
@@ -67,6 +68,12 @@ export class UiOtpField {
   readonly uiInvalid = input(false);
   /** Locks every slot (e.g. the auth flow's auto-verify "checking" state). */
   readonly uiDisabled = input(false);
+  /**
+   * The code was right: every slot rings in the accent at full ink, locked
+   * or not — the field's half of a success beat (the auth code step's
+   * `ui-progress-disc` fills beside it), never the dimmed locked look.
+   */
+  readonly uiAccepted = input(false);
 
   protected readonly focusedIndex = signal<number | null>(null);
   protected readonly indices = computed(() =>
