@@ -1,7 +1,13 @@
 <ng-container *transloco="let t">
+  <!-- THE shared site header (one navigation component app-wide, owner
+       ruling 2026-07-27), as on every signed-in content page: this is the
+       content manager's own page, and without it the page had no way out —
+       no menu, no back, no sign-out (2026-11-24). -->
+  <cr-site-header [uiOverHero]="false" />
   <main
     uiFrame
     [uiFrameMaxWidth]="'var(--sys-container-content)'"
+    uiPaddingHorizontal="regular"
     class="lib-admin-programs__main"
   >
     <ui-stack uiSpacing="loose">

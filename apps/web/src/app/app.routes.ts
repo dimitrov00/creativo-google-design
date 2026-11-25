@@ -1,6 +1,6 @@
 import { CanDeactivateFn, Route } from '@angular/router';
 import { firstValueFrom, isObservable } from 'rxjs';
-import { Role, RouteCapabilities, Roles } from '@core/components';
+import { RouteCapabilities, Roles } from '@core/components';
 import type { AdminRhythmLeaving } from '@creativo/features/admin/loyalty';
 import { activeGuard } from './guards/active.guard';
 import { anonGuard } from './guards/anon.guard';
@@ -124,9 +124,11 @@ export const appRoutes: Route[] = [
     // role named 'staff' exists and nothing ever minted one, so this guard
     // used to bounce every principal to /forbidden; the identity brand's
     // unvalidated Role string is what let it compile. The list is
-    // `Roles.STAFF` from `@core/components`, the same grouping
-    // firestore.rules' `isStaff()` enforces — the guard and the rules must
-    // never disagree about who counts.
+    // `Roles.BOOK` from `@core/components`, the same grouping
+    // firestore.rules' `worksTheBook()` enforces — the guard and the rules
+    // must never disagree about who counts. Not `Roles.STAFF`: the rules
+    // refuse `content_manager` every appointment read, so the wider group
+    // opened the day to a person it could only show empty.
     //
     // NAMED `staff/schedule`, not bare `staff`, ahead of the staff area
     // growing siblings (clients, money, insights — see
@@ -135,7 +137,7 @@ export const appRoutes: Route[] = [
     // claiming it now costs two lines, and claiming it after the URL has
     // been bookmarked and pasted around costs a broken link.
     path: 'staff/schedule',
-    canActivate: [activeGuard, rolesGuard(...Roles.STAFF)],
+    canActivate: [activeGuard, rolesGuard(...Roles.BOOK)],
     loadComponent: () =>
       import('@creativo/features/staff/dashboard').then(
         (m) => m.StaffDashboard,
@@ -201,10 +203,10 @@ export const appRoutes: Route[] = [
     redirectTo: 'admin/loyalty/rhythm',
   },
   {
-    // Matches `isCatalogManager()` in firestore.rules — content_manager's
-    // own tier plus the admin pair the rules fold in.
+    // `Roles.CATALOG`, the twin of `isCatalogManager()` in firestore.rules —
+    // content_manager's own tier plus the admin pair the rules fold in.
     path: 'admin/programs',
-    canActivate: [activeGuard, rolesGuard(Role.ContentManager, ...Roles.ADMIN)],
+    canActivate: [activeGuard, rolesGuard(...Roles.CATALOG)],
     loadComponent: () =>
       import('@creativo/features/admin/programs').then((m) => m.AdminPrograms),
   },

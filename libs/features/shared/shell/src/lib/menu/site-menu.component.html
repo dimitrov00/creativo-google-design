@@ -8,10 +8,13 @@
     ></div>
 
     <div
+      #surface
       class="cr-menu"
       role="dialog"
       aria-modal="true"
       tabindex="-1"
+      [attr.popover]="closeButton() ? 'manual' : null"
+      [attr.data-close-button]="closeButton() ? '' : null"
       data-testid="site-menu"
       [attr.aria-label]="t('landing.nav.primary')"
       (keydown)="behavior.onKeydown($event)"
@@ -55,6 +58,24 @@
                 >
                   <ui-icon uiName="account.profile" />
                 </a>
+              }
+              @if (closeButton()) {
+                <!-- The menu's own ✕, on a page with no site header (the
+                     schedule): there the header's trigger, which doubles
+                     as the ✕ everywhere else, does not exist. -->
+                <button
+                  type="button"
+                  uiButton
+                  uiButtonStyle="bordered"
+                  uiControlSize="regular"
+                  [uiIconOnly]="true"
+                  class="cr-menu__close"
+                  data-testid="menu-close"
+                  [attr.aria-label]="t('landing.nav.close')"
+                  (click)="close()"
+                >
+                  <ui-icon uiName="sheet.close" />
+                </button>
               }
             </ui-stack>
           </div>
@@ -185,10 +206,12 @@
                  available — `[data-selected]` already owns that fill (see
                  list-row.css), so a permanently washed row reads as
                  permanently selected. -->
-            @if (isStaffMember()) {
-              <!-- UI-only convenience: `rolesGuard` on /staff and
-                   `isStaff()` in firestore.rules are the actual locks;
-                   this only decides what is worth showing. -->
+            @if (worksTheBook()) {
+              <!-- UI-only convenience: `rolesGuard(...Roles.BOOK)` on the
+                   schedule and `worksTheBook()` in firestore.rules are the
+                   actual locks; this only decides what is worth showing.
+                   Not every staff role: a content manager is refused the
+                   day's reads, so the row would open an empty screen. -->
               <div
                 class="cr-menu__section"
                 [uiReveal]="'fade-up'"
@@ -517,7 +540,7 @@
               </ui-list-group>
             </div>
 
-            @if (isAdmin() || opensTeam() || runsReadAs()) {
+            @if (isAdmin() || opensTeam() || managesCatalog() || runsReadAs()) {
               <!-- The shop's rules — ITS OWN group after the account run
                    (iOS Settings grammar: what is MINE, then what I MANAGE,
                    then the site). One row today: «Лоялност», the ONE way to
@@ -576,6 +599,29 @@
                         uiScale="medium"
                       />
                       {{ t('landing.menu.loyaltyAdmin') }}
+                    </a>
+                  }
+                  @if (managesCatalog()) {
+                    <!-- «Програми» — the open positions, courses and
+                         events (`/admin/programs`), the content manager's
+                         own page and, before this row, a page no menu
+                         reached. `Roles.CATALOG` on the route and
+                         `isCatalogManager()` in firestore.rules are the
+                         locks. -->
+                    <a
+                      routerLink="/admin/programs"
+                      uiListRow
+                      uiSize="large"
+                      [uiInteractive]="true"
+                      data-testid="menu-admin-programs"
+                      (click)="close()"
+                    >
+                      <ui-icon
+                        uiLeading
+                        uiName="admin.programs"
+                        uiScale="medium"
+                      />
+                      {{ t('landing.menu.programs') }}
                     </a>
                   }
                   @if (runsReadAs()) {

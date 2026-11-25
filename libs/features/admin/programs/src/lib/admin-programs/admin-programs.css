@@ -2,8 +2,9 @@
   display: block;
 }
 
+/* The fixed site header's clearance on top, as `/account` keeps it. */
 .lib-admin-programs__main {
-  padding-block: var(--sys-space-loose) var(--sys-space-spacious);
+  padding-block: var(--landing-header-offset) var(--sys-space-spacious);
 }
 
 label,

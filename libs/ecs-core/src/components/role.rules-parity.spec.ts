@@ -91,6 +91,12 @@ describe('role.data.ts and firestore.rules agree', () => {
     );
   });
 
+  it('CATALOG_ROLES is isCatalogManager()', () => {
+    expect(sorted(helperRoles(RULES, 'isCatalogManager'))).toEqual(
+      sorted(Roles.CATALOG),
+    );
+  });
+
   it('ADMIN_ROLES is isAdmin() (Phase 4a §3.2: the impersonation callables’ caller gate)', () => {
     expect(sorted(helperRoles(RULES, 'isAdmin'))).toEqual(sorted(Roles.ADMIN));
   });

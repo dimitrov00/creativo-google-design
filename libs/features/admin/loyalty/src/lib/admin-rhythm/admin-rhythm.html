@@ -1,7 +1,10 @@
 <ng-container *transloco="let t">
   <!-- A ROUTED PAGE, not a sheet (§2.6): one column at the content measure,
        the modules 32 apart, the dock floored by the column. The back chip
-       is icon-only (quiet HIG chrome) and leads to /admin. -->
+       is icon-only (quiet HIG chrome) and leads to the schedule, as the
+       team page's does: `/admin` redirects HERE, so a back to /admin
+       reopened this same page and left the admin nowhere to go
+       (2026-11-24). -->
   <main
     class="admin-rhythm"
     uiPaddingHorizontal="regular"
@@ -11,7 +14,7 @@
     <div class="admin-rhythm__bar">
       <a
         uiButton
-        routerLink="/admin"
+        routerLink="/staff/schedule"
         uiButtonStyle="bordered"
         uiTint="neutral"
         uiControlSize="regular"

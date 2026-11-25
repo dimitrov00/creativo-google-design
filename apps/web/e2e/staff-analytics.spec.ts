@@ -267,8 +267,9 @@ test.describe('«Анализи» — staff analytics', () => {
     await lockBarberLink('ivan', uid);
     await signInAs(page, uid, [Role.Barber]);
 
-    // The menu sits behind the header's monogram (the schedule's own chrome
-    // has none): open it from the account page, as the shell specs do.
+    // The menu sits behind the header's monogram on the account page (the
+    // schedule opens the same menu from its thumb bar's face): open it from
+    // the account page, as the shell specs do.
     await page.goto('/account');
     await expect(page.getByTestId('account-page')).toHaveAttribute(
       'data-state',

@@ -56,6 +56,14 @@ export const Roles = {
   BOOK: [Role.Barber, Role.Receptionist, Role.Admin, Role.Sysadmin],
 
   /**
+   * The roles that MANAGE THE PROGRAMS — the open positions, courses and
+   * events of `/admin/programs` — the twin of `isCatalogManager()` in
+   * `firestore.rules`: the content manager and the admin pair. ONE home: the
+   * route's guard and the menu's «Програми» row read it.
+   */
+  CATALOG: [Role.ContentManager, Role.Admin, Role.Sysadmin],
+
+  /**
    * The roles that may SPEND THE SHOP'S MONEY on a booking — reprice a seat,
    * author an ad-hoc discount. The front desk and the owners, never a barber
    * (who may still honour a coupon the client holds: that act is gated on

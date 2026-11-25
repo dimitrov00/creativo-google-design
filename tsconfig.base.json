@@ -135,6 +135,9 @@
       "@creativo/features/shared/shell": [
         "./libs/features/shared/shell/src/index.ts"
       ],
+      "@creativo/features/shared/shell/account-menu": [
+        "./libs/features/shared/shell/src/account-menu.ts"
+      ],
       "@creativo/features/shared/shell/read-as": [
         "./libs/features/shared/shell/src/read-as.ts"
       ],
