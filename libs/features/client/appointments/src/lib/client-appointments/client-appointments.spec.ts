@@ -1430,6 +1430,42 @@ describe('ClientAppointments', () => {
     ).toBeNull();
   });
 
+  it('switches views with the design system’s segmented control: a named radio group of two glyphs, one tab stop', async () => {
+    const fixture = await configure([
+      appointment('appt_1', '2030-06-01T10:00:00'),
+    ]);
+    const host = await render(fixture);
+    const toggle = host.querySelector('ui-segmented-control');
+    expect(toggle?.getAttribute('role')).toBe('radiogroup');
+    expect(toggle?.getAttribute('aria-label')).toBeTruthy();
+    // Nothing on the page claims to be a tab: a tab owns a panel.
+    expect(host.querySelector('[role="tablist"], [role="tab"]')).toBeNull();
+    const list = host.querySelector<HTMLElement>(
+      '[data-testid="appointments-view-list"]',
+    );
+    const calendar = host.querySelector<HTMLElement>(
+      '[data-testid="appointments-view-calendar"]',
+    );
+    expect(list?.getAttribute('role')).toBe('radio');
+    expect(list?.getAttribute('aria-checked')).toBe('true');
+    // A glyph alone, so each segment is named by its word.
+    expect(list?.getAttribute('aria-label')).toBeTruthy();
+    expect(calendar?.getAttribute('aria-label')).toBeTruthy();
+    expect(list?.getAttribute('tabindex')).toBe('0');
+    expect(calendar?.getAttribute('tabindex')).toBe('-1');
+
+    // The arrow keys move the choice, as in every radio group of the DS.
+    list?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }),
+    );
+    fixture.detectChanges();
+    expect(calendar?.getAttribute('aria-checked')).toBe('true');
+    expect(calendar?.getAttribute('tabindex')).toBe('0');
+    expect(
+      (fixture.nativeElement as HTMLElement).getAttribute('data-view'),
+    ).toBe('calendar');
+  });
+
   it('cancels an own visit through the sheet', async () => {
     const cancelCalls: BookingCall.Cancel[] = [];
     const fixture = await configure(

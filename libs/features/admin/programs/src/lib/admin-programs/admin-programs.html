@@ -16,7 +16,14 @@
         <p uiLede>{{ t('admin.programs.lede') }}</p>
       </ui-section-header>
 
-      <ui-stack uiAxis="horizontal" uiSpacing="compact" role="tablist">
+      <!-- Chips that narrow one list: a group of toggle buttons, each
+           saying pressed or not. Not a tab list — a tab owns a panel. -->
+      <ui-stack
+        uiAxis="horizontal"
+        uiSpacing="compact"
+        role="group"
+        [attr.aria-label]="t('admin.programs.title')"
+      >
         <button
           type="button"
           uiChip
