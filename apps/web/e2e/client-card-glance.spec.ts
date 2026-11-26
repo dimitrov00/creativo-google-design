@@ -16,7 +16,7 @@ import {
 import type { LoyaltyClientJson } from '@core/testing';
 import { DEV_CLASSIC_CUT } from './support/appointment-seed-document';
 import { attemptKey } from './support/attempt-key';
-import { expectNoAxeViolations } from './support/axe';
+import { expectNoAxeViolations } from '@creativo/shared/axe-scan';
 import {
   type ClientStatsSeed,
   seedAppointmentPhoto,

@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { expectNoAxeViolations } from './support/axe';
+import { expectNoAxeViolations } from '@creativo/shared/axe-scan';
 import { seedUserProfile } from './support/seed-firestore';
 import { signInAs } from './support/sign-in';
 import { THEMES, pinTheme } from './support/theme';

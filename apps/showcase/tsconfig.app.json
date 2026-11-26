@@ -14,10 +14,10 @@
       "path": "../../libs/ui/wall-clock/tsconfig.lib.json"
     },
     {
-      "path": "../../libs/ecs-core/tsconfig.lib.json"
+      "path": "../../libs/ui/charts/tsconfig.lib.json"
     },
     {
-      "path": "../../libs/ui/charts/tsconfig.lib.json"
+      "path": "../../libs/ecs-core/tsconfig.lib.json"
     },
     {
       "path": "../../libs/ui/patterns/tsconfig.lib.json"
@@ -36,6 +36,9 @@
     },
     {
       "path": "../../libs/ui/controls/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/shared/axe-scan/tsconfig.lib.json"
     }
   ]
 }

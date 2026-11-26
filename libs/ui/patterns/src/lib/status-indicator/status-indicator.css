@@ -11,10 +11,10 @@
      destructive tone is a WORD first, so it reads the `-label` lift — the
      fill's red is 3.12:1 on the dark card — and the dot takes the same. */
   .ui-status-indicator[data-tone='success'] {
-    color: var(--sys-color-success);
+    color: var(--sys-color-success-label);
   }
   .ui-status-indicator[data-tone='warning'] {
-    color: var(--sys-color-warning);
+    color: var(--sys-color-warning-label);
   }
   .ui-status-indicator[data-tone='destructive'] {
     color: var(--sys-color-destructive-label);

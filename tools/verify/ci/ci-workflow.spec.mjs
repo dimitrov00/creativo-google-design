@@ -73,6 +73,7 @@ const GATE = [
   // security hardening S-DEP-14: the App Check journey, after verify:p0.
   ['verify:appcheck', 'emulators'],
   ['e2e:web', 'e2e'],
+  ['e2e:showcase:a11y', 'e2e'],
   ['verify:csp', 'csp-smoke'],
 ];
 

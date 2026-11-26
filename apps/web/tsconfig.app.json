@@ -23,9 +23,6 @@
       "path": "../../libs/ui/controls/tsconfig.lib.json"
     },
     {
-      "path": "../../libs/features/client/account-state/tsconfig.lib.json"
-    },
-    {
       "path": "../../libs/features/shared/shell/tsconfig.lib.json"
     },
     {
@@ -77,6 +74,9 @@
       "path": "../../libs/features/admin/loyalty/tsconfig.lib.json"
     },
     {
+      "path": "../../libs/features/client/account-state/tsconfig.lib.json"
+    },
+    {
       "path": "../../libs/infrastructure/clock/tsconfig.lib.json"
     },
     {
@@ -99,6 +99,9 @@
     },
     {
       "path": "../../libs/infrastructure/firebase-app/tsconfig.lib.json"
+    },
+    {
+      "path": "../../libs/shared/axe-scan/tsconfig.lib.json"
     },
     {
       "path": "../../libs/ecs-core/tsconfig.lib.json"

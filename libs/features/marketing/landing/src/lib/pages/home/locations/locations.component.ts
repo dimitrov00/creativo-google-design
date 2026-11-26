@@ -251,7 +251,11 @@ export class LocationsComponent implements AfterViewInit {
         map.on('load', () => {
           if (this.destroyed) return;
           shops.forEach((location, index) => {
-            const element = this.createMarkerElement(index);
+            const element = this.createMarkerElement(
+              this.transloco.translate('landing.location.exploreLocation', {
+                location: this.words.text(location.name),
+              }),
+            );
             new maplibregl.Marker({ element, anchor: 'bottom' })
               .setLngLat([location.longitude, location.latitude])
               .addTo(map);
@@ -306,7 +310,7 @@ export class LocationsComponent implements AfterViewInit {
         );
         sheetMap.on('load', () => {
           if (this.destroyed) return;
-          const element = this.createMarkerElement(this.activeIndex());
+          const element = this.createMarkerElement(null);
           element.setAttribute('data-active', '');
           this.sheetMarker = new maplibregl.Marker({
             element,
@@ -351,12 +355,6 @@ export class LocationsComponent implements AfterViewInit {
     // caller) for the case where the style never resolves.
     map.on('styledata', collapse);
     collapse();
-  }
-
-  protected onCardKeydown(index: number, event: KeyboardEvent): void {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    event.preventDefault();
-    this.openLocation(index);
   }
 
   protected openLocation(index: number): void {
@@ -495,9 +493,13 @@ export class LocationsComponent implements AfterViewInit {
    * tree — hover feedback is plain CSS (the legacy custom-cursor wiring
    * was removed: its cursor dot never mounts in apps/web, case study §2.5).
    */
-  private createMarkerElement(_index: number): HTMLElement {
-    const element = document.createElement('button');
-    element.type = 'button';
+  private createMarkerElement(label: string | null): HTMLElement {
+    // A pin that opens its shop is a button and says which shop; the
+    // sheet's own pin opens nothing, so it is a picture inside the map's
+    // `role="img"` and never a control with no name.
+    const element = document.createElement(label === null ? 'span' : 'button');
+    if (element instanceof HTMLButtonElement) element.type = 'button';
+    if (label !== null) element.setAttribute('aria-label', label);
     element.className = 'locations-map__pin';
 
     const head = document.createElement('span');
