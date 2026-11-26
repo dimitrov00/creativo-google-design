@@ -195,6 +195,8 @@ describe('the week strip’s cells', () => {
     );
     expect(todays.map((day) => day.key)).toEqual([MONDAY]);
     expect(todays[0]).toMatchObject({ initial: 'M', number: '28' });
+    // The button's name is the day as a person says it, never the key.
+    expect(todays[0]?.name).toMatch(/^Monday, \p{L}+ 28$/u);
   });
 });
 

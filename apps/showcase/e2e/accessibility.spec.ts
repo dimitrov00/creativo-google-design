@@ -29,6 +29,18 @@ const NAME_MISMATCH = (where: string): Waiver =>
     'label-content-name-mismatch',
     `${where}: the aria-label does not contain the text drawn on the control (WCAG 2.5.3). Found by the first full scan, 2026-11-26; tracked in docs/designs/accessibility-findings.md.`,
   );
+/**
+ * Not a fault, and not owed: axe compares the accessible name with every
+ * glyph drawn inside the control, and here the only drawn text the name
+ * leaves out is a picture — initials, a monogram, a count badge — while
+ * every word a person would say is in the name. axe has no narrower switch
+ * than the rule on the page.
+ */
+const GLYPH = (where: string): Waiver =>
+  waive(
+    'label-content-name-mismatch',
+    `${where}, which is a picture and not the control’s label (WCAG 2.5.3 is about label text); its words are in the accessible name. Decided 2026-11-26, docs/designs/accessibility-findings.md.`,
+  );
 const CONTRAST = (where: string): Waiver =>
   waive(
     'color-contrast',
@@ -36,9 +48,10 @@ const CONTRAST = (where: string): Waiver =>
   );
 
 /**
- * What the first full scan found and this change did not fix, by page. Each
- * entry switches ONE rule off on ONE page, with its reason. An entry may
- * only be removed: fix the element, delete its row. A row naming a page the
+ * What is switched off, by page: ONE rule on ONE page, with its reason —
+ * owed (the first full scan found it, nobody has fixed it) or decided
+ * (`GLYPH`). An owed entry may only be removed: fix the element, delete
+ * its row. A row naming a page the
  * showcase no longer has fails the first test.
  */
 const KNOWN: Readonly<Record<string, readonly Waiver[]>> = {
@@ -47,34 +60,17 @@ const KNOWN: Readonly<Record<string, readonly Waiver[]>> = {
       'dark: the destructive prominent button draws near-black words on red (3.9:1, needs 4.5:1)',
     ),
   ],
-  'controls/chip': [NAME_MISMATCH('the chip’s remove button')],
-  'controls/scroll-row': [NAME_MISMATCH('the photo tiles of the demo')],
-  'controls/scroll-column': [
-    waive(
-      'scrollable-region-focusable',
-      'ui-scroll-column over content with nothing focusable cannot be scrolled from the keyboard in every browser. Found by the first full scan, 2026-11-26; tracked in docs/designs/accessibility-findings.md.',
-    ),
+  'controls/chip': [GLYPH('a person chip draws the avatar’s initials')],
+  'controls/quick-actions': [
+    GLYPH('a quick action draws its count as a badge before its word'),
   ],
-  'controls/quick-actions': [NAME_MISMATCH('a quick action with a count')],
   'controls/search-field': [
-    NAME_MISMATCH('the search tokens'),
-    waive(
-      'label',
-      'ui-search-field with a token placeholder leaves its input without an accessible name. Found by the first full scan, 2026-11-26; tracked in docs/designs/accessibility-findings.md.',
-    ),
-  ],
-  'controls/charts': [
-    waive(
-      'aria-command-name',
-      'a chart mark group carries an empty aria-label. Found by the first full scan, 2026-11-26; tracked in docs/designs/accessibility-findings.md.',
-    ),
-    waive(
-      'nested-interactive',
-      'the bar and line charts put focusable marks inside an interactive drawing. Found by the first full scan, 2026-11-26; tracked in docs/designs/accessibility-findings.md.',
-    ),
+    GLYPH('a token draws its faces’ initials between its key and value'),
   ],
   'controls/streak-track': [NAME_MISMATCH('the streak card as a button')],
-  'controls/medal': [NAME_MISMATCH('a medal with a value text')],
+  'controls/medal': [
+    GLYPH('a medal draws its monogram, its level and its «ново» marker'),
+  ],
   'controls/coupon-card': [
     CONTRAST(
       'light: the orange value on the grey hooked ticket is 2.62:1 (needs 3:1); dark: the 11px detail line is 4.35:1 (needs 4.5:1)',

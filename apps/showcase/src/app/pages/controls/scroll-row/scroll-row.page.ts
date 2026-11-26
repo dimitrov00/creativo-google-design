@@ -54,11 +54,11 @@ export class ScrollRowPage {
   ];
   /** Six tiles, the rail's cap: three and a half show, the rest scroll. */
   protected readonly photos: readonly RailPhoto[] = [
-    { date: '12.08', label: 'Снимка от 12 август' },
-    { date: '15.07', label: 'Снимка от 15 юли' },
-    { date: '20.06', label: 'Снимка от 20 юни' },
-    { date: '3.06', label: 'Снимка от 3 юни' },
-    { date: '8.05', label: 'Снимка от 8 май' },
-    { date: '10.04', label: 'Снимка от 10 април' },
+    { date: '12.08', label: '12.08, снимка от 12 август' },
+    { date: '15.07', label: '15.07, снимка от 15 юли' },
+    { date: '20.06', label: '20.06, снимка от 20 юни' },
+    { date: '3.06', label: '3.06, снимка от 3 юни' },
+    { date: '8.05', label: '8.05, снимка от 8 май' },
+    { date: '10.04', label: '10.04, снимка от 10 април' },
   ];
 }

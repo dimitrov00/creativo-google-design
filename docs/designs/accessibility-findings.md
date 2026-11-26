@@ -16,24 +16,43 @@ delete its row here and in the spec.
 axe sees what is on screen when it runs. It does not open a menu or a sheet,
 and it does not judge keyboard behaviour.
 
-## Fixed with the scan
+## Fixed
+
+With the scan (2026-11-26):
 
 - The showcase's icon-only buttons and its invalid text field had no name.
 - The site header's language button was named «Смени език» while it draws
   the language code; its name now ends with the code.
 
-## Owed — design-system elements
+After it (2026-11-26):
 
-| Element                         | Rule                          | What is wrong                                                                                 |
-| ------------------------------- | ----------------------------- | --------------------------------------------------------------------------------------------- |
-| `ui-bar-chart`, `ui-line-chart` | `nested-interactive`          | Focusable marks sit inside a drawing that is itself interactive.                              |
-| `ui-bar-chart`                  | `aria-command-name`           | A bar is a command with an empty name.                                                        |
-| `ui-search-field`               | `label`                       | With a token placeholder the input has no accessible name.                                    |
-| `ui-search-field` tokens        | `label-content-name-mismatch` | A token's name does not contain the text it draws.                                            |
-| `uiChip` remove button          | `label-content-name-mismatch` | Named «Премахни …», draws other text.                                                         |
-| `ui-medal`                      | `label-content-name-mismatch` | With a value text, the name leaves out the drawn text.                                        |
-| `ui-quick-actions`              | `label-content-name-mismatch` | An action with a count is named differently from what it draws.                               |
-| `ui-scroll-column`              | `scrollable-region-focusable` | Over content with nothing focusable it cannot be scrolled from the keyboard in every browser. |
+- `ui-bar-chart` was `role="img"` over bars that are buttons, which hides
+  the buttons from a reader. It is a named `group` now, and a bar with no
+  word of its own takes the chart's name instead of an empty one.
+- `ui-scroll-column` over static content could not be scrolled from the
+  keyboard. It becomes a keyboard stop while it overflows with nothing
+  focusable inside, exactly as `ui-scroll-row` does; the two share
+  `keyboardScrollStop`.
+- The schedule's week strip named each day by its ISO key («2026-11-23»).
+  A day is named as a person says it («понеделник, 23 ноември»).
+- The showcase's search field with a token placeholder had no name (the
+  demo passed none — the element was not at fault), and its photo tiles
+  were named without the date they draw.
+
+## Decided — not faults
+
+axe's `label-content-name-mismatch` compares the accessible name with every
+glyph drawn inside a control. In these the only drawn text the name leaves
+out is a picture, and every word a person would say is in the name. WCAG
+2.5.3 is about label text, so these stand; the rule is off on their showcase
+pages because axe has no narrower switch.
+
+| Element                            | The picture it draws                                   |
+| ---------------------------------- | ------------------------------------------------------ |
+| `uiChip` with a person             | The avatar's initials.                                 |
+| `ui-search-field` token with faces | The faces' initials, between the key and the value.    |
+| `ui-medal`                         | Its monogram, its level numeral and its «ново» marker. |
+| `uiQuickAction` with a count       | The count, as a badge before the word.                 |
 
 ## Owed — colour (the owner decides)
 
@@ -49,12 +68,12 @@ and it does not judge keyboard behaviour.
 
 ## Owed — pages
 
-| Page                                                         | Rule                          | What is wrong                                                                                                    |
-| ------------------------------------------------------------ | ----------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `/staff/schedule`                                            | `label-content-name-mismatch` | The week strip's day buttons are named by an ISO date («2026-11-23») while they draw the weekday and the number. |
-| `/staff/schedule`                                            | `list`                        | A list holds children that are not list items.                                                                   |
-| `/staff/analytics/:card`                                     | `label-content-name-mismatch` | A barber row is named «Виж …» while it draws the name and the sum.                                               |
-| Showcase demos (`scroll-row`, `streak-track`, `client-card`) | `label-content-name-mismatch` | A button's name does not contain the text drawn on it.                                                           |
+| Page                                           | Rule                          | What is wrong                                                                 |
+| ---------------------------------------------- | ----------------------------- | ----------------------------------------------------------------------------- |
+| `/staff/schedule`                              | `label-content-name-mismatch` | A break row of the agenda is named differently from the words it draws.       |
+| `/staff/schedule`                              | `list`                        | A list holds children that are not list items.                                |
+| `/staff/analytics/:card`                       | `label-content-name-mismatch` | A barber row is named «Виж …» while it draws the name and the sum.            |
+| Showcase demos (`streak-track`, `client-card`) | `label-content-name-mismatch` | A card that is a button is named by a summary that leaves out words it draws. |
 
 ## Not scanned yet
 

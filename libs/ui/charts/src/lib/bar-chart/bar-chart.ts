@@ -169,8 +169,10 @@ type BarMark = {
  * not at all under reduced motion. `[uiChartLegend]` is the slot under the
  * drawing for the rows that explain the parts.
  *
- * Accessibility: the `svg` is `role="img"` named by `uiLabel` (required,
- * one sentence); each bar is a button named by its word and its value text.
+ * Accessibility: the `svg` is `role="group"` named by `uiLabel` (required,
+ * one sentence) — a group, not an image, because an image hides its
+ * children from a reader and the bars are buttons; each bar is named by its
+ * word and its value text, or by the chart's name when it has neither.
  *
  * @uiPurpose A full bar chart: labelled vertical or horizontal bars, stacked
  *   parts, an optional value grid, and bars that can be picked.
@@ -376,7 +378,11 @@ export class UiBarChart {
         index,
         label: horizontal ? fitLabel(bar.label, valueText, width) : bar.label,
         valueText,
-        name: valueText ? `${bar.label}, ${valueText}` : bar.label,
+        // A bar drawn alone has no word of its own: the chart's name is its
+        // name, so the button is never a command with nothing to say.
+        name:
+          [bar.label, valueText].filter((word) => word !== '').join(', ') ||
+          this.uiLabel(),
         highlight: highlight === index,
         tone: toneOf(bar.tone),
         hitX: horizontal ? 0 : px(position * band),

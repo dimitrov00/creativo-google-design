@@ -98,10 +98,12 @@ const offset = (rect: SVGRectElement) =>
   parseFloat(rect.style.getPropertyValue('--ui-bar-offset'));
 
 describe('UiBarChart', () => {
-  it('is a named image of one button per bar, each named by its word and its figure', () => {
+  it('is a named group of one button per bar, each named by its word and its figure', () => {
     const { chart, bars } = render();
     const svg = chart.querySelector('svg');
-    expect(svg?.getAttribute('role')).toBe('img');
+    // A group, not an image: an image hides its children from a reader,
+    // and the bars are buttons.
+    expect(svg?.getAttribute('role')).toBe('group');
     expect(svg?.getAttribute('aria-label')).toBe(
       'Времето по дни: най-зает вторник',
     );

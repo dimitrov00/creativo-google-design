@@ -92,7 +92,7 @@ const ROUTES: Readonly<Record<string, Scan>> = {
     known: [
       owed(
         'label-content-name-mismatch',
-        'the week strip’s day buttons are named by an ISO date («2026-11-23») while they draw the weekday and the number',
+        'a break row of the agenda is named differently from the words it draws',
       ),
       owed(
         'list',
@@ -112,14 +112,6 @@ const ROUTES: Readonly<Record<string, Scan>> = {
     as: As.Owner,
     visit: '/staff/analytics/takings',
     known: [
-      owed(
-        'aria-command-name',
-        'a bar of ui-bar-chart is a command with no accessible name (the showcase scan records the same)',
-      ),
-      owed(
-        'nested-interactive',
-        'ui-bar-chart puts focusable bars inside an interactive drawing (the showcase scan records the same)',
-      ),
       owed(
         'label-content-name-mismatch',
         'a barber row is named «Виж …» while it draws the name and the sum without that word',
