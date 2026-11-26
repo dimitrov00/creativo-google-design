@@ -492,7 +492,9 @@ describe('the ticket’s stylesheet', () => {
     it('paints the accent as `color` on the glyph and on the figure, nowhere else', () => {
       const tinted = rules
         .filter((one) =>
-          /(?<![\w-])color:\s*var\(--sys-color-(?:promo|accent)\)/.test(
+          // Directly, or as the fallback of the figure's hook (ink where a
+          // consumer lifts the paper off white).
+          /(?<![\w-])color:\s*var\((?:--ui-coupon-card-value-ink,\s*var\()?--sys-color-(?:promo|accent)\)/.test(
             one.body,
           ),
         )
@@ -519,7 +521,11 @@ describe('the ticket’s stylesheet', () => {
       const value = rule('.ui-coupon-card__value');
       expect(value).toContain('font: var(--sys-font-title2)');
       expect(value).toContain('font-variant-numeric: tabular-nums');
-      expect(value).toContain('color: var(--sys-color-promo)');
+      // The promo hue on the card's own paper; a consumer that lifts the
+      // paper off white hooks it to ink (2.62:1 otherwise — axe, 2026-11-26).
+      expect(value).toContain(
+        'color: var(--ui-coupon-card-value-ink, var(--sys-color-promo))',
+      );
       expect(value).toContain('order: -1');
       // The shorthand stands alone: no weight is patched onto it.
       expect(value).not.toContain('font-weight');

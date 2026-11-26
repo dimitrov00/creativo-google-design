@@ -119,6 +119,15 @@
   .ui-list-row[data-selected] > [uitrailing] {
     color: var(--sys-color-foreground);
   }
+  /* The wash is a fill: a quiet line in a chosen row takes the secondary
+     ink made for one (the plain ink read 3.47:1 on the wash in dark —
+     axe on /book, 2026-11-26). Consumers keep writing the ordinary
+     `uiForegroundStyle="secondary"`; the chosen row re-points it, as the
+     media card does. The doubled attribute clears the modifier's own. */
+  .ui-list-row[data-selected]
+    [data-foreground-style='secondary'][data-foreground-style] {
+    color: var(--sys-color-secondary-label-on-fill);
+  }
 
   /* ≙ `Button(role: .destructive)` in a List (2026-09-28, promoted from the
      visit sheet's exits so every sheet reaches it). The destructive INK —

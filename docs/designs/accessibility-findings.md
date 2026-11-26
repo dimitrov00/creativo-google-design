@@ -54,17 +54,24 @@ pages because axe has no narrower switch.
 | `ui-medal`                         | Its monogram, its level numeral and its «ново» marker. |
 | `uiQuickAction` with a count       | The count, as a badge before the word.                 |
 
-## Owed — colour (the owner decides)
+## Colour — settled 2026-11-26
 
-| Where                                                 | Theme | Measured    | Needs |
-| ----------------------------------------------------- | ----- | ----------- | ----- |
-| Destructive prominent button: near-black words on red | dark  | 3.9:1       | 4.5:1 |
-| Coupon card, hooked: orange value on the grey ticket  | light | 2.62:1      | 3:1   |
-| Coupon card, hooked: the 11px detail line             | dark  | 4.35:1      | 4.5:1 |
-| Date row: the placeholder value                       | dark  | 3.28:1      | 4.5:1 |
-| Choice tile: the detail line                          | dark  | 4.38:1      | 4.5:1 |
-| `/book`: a footnote line on the first step            | dark  | under 4.5:1 | 4.5:1 |
-| `/staff/schedule`: today's number on the week strip   | dark  | under 4.5:1 | 4.5:1 |
+All through tokens; no literal colour was added.
+
+| Where                                             | Was                                            | Now                                                                                                                                                        |
+| ------------------------------------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Destructive prominent button, dark                | `on-primary` (near-black) on the red, 3.9:1    | `--sys-color-on-destructive` (white), 4.98:1. The button read the wrong token.                                                                             |
+| Date pill with no day, dark                       | plain secondary ink on the value pill, 3.28:1  | `--sys-color-secondary-label-on-fill`, 5.26:1                                                                                                              |
+| Choice tile's detail line, dark                   | plain secondary ink on the tile's fill, 4.38:1 | the same on-fill ink, 7.03:1                                                                                                                               |
+| A quiet line in a chosen list row, dark (`/book`) | plain secondary ink on the accent wash, 3.47:1 | the chosen row re-points `uiForegroundStyle="secondary"` to the on-fill ink, 5.57:1                                                                        |
+| Coupon detail chip on a hooked ticket, dark       | on-fill ink at a third, 4.36:1                 | the on-fill ink is 40% of the way to the foreground (owner, 2026-11-26): 4.72:1 here                                                                       |
+| Coupon figure on a hooked ticket, light           | orange on grey, 2.62:1                         | ink. A consumer that lifts the paper off white sets `--ui-coupon-card-value-ink` (owner, 2026-11-26; the accent law: a display figure is orange on white). |
+
+Not a fault: on `/staff/schedule` in dark, axe reports today's chosen number
+at 1.12:1. The number is near-black on the orange disc (6.16:1, held by
+`accent-label.spec.ts`), but the disc is a separate sliding marker, so axe
+measures the number against the bar behind it. The rule stays off on that
+page for this reason.
 
 ## Owed — pages
 

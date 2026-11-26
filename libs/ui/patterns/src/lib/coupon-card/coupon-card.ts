@@ -83,7 +83,9 @@ import { UiOccasionBand } from './occasion-band';
  * The focus ring and the press layer wear the same mask, inside the box.
  *
  * Custom properties: `--ui-coupon-card-surface` (the paper and the
- * badge's ring; the elevated surface), `--ui-coupon-card-shadow` (ONE
+ * badge's ring; the elevated surface), `--ui-coupon-card-value-ink` (the
+ * figure's colour: the promo hue, or ink where the paper is lifted off
+ * white), `--ui-coupon-card-shadow` (ONE
  * shadow, for `drop-shadow()`), `--ui-coupon-card-foot`,
  * `--ui-coupon-card-notch`, `--ui-coupon-card-tear` (where the tear runs,
  * from the top).

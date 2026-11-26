@@ -50,9 +50,11 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* NO DAY YET — the placeholder in the secondary ink, as a field's prompt. */
+/* NO DAY YET — the placeholder as a field's prompt, in the secondary ink
+   made for a fill: the capsule is a value pill, and the plain ink read
+   3.28:1 on it in dark (axe, 2026-11-26). */
 .ui-date-pill__trigger[data-empty] .ui-date-pill__label {
-  color: var(--sys-color-secondary-label);
+  color: var(--sys-color-secondary-label-on-fill);
 }
 
 /* OPEN — the same accent wash the field pills show, and the chevron carries

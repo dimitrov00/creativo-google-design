@@ -288,6 +288,8 @@
     var(--sys-color-foreground) var(--sys-alpha-fill),
     var(--sys-color-surface-secondary)
   );
+  /* Off white, the figure is ink (the accent law); the glyph stays orange. */
+  --ui-coupon-card-value-ink: var(--sys-color-foreground);
 }
 
 /* A ROW ASLEEP (2026-09-17): «Приложени · Няма» on a clean bill has

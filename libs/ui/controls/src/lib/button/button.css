@@ -110,7 +110,9 @@
   }
   .ui-button[data-button-style='borderedProminent'][data-role='destructive'] {
     background: var(--sys-color-destructive);
-    color: var(--sys-color-on-primary);
+    /* The tone's own ink, never the primary's: in dark `on-primary` is
+       near-black, 3.9:1 on the red (axe, 2026-11-26). */
+    color: var(--sys-color-on-destructive);
   }
   /* On media (video/photography) the prominent pill is white-on-media in
      BOTH themes — the light theme's near-black primary would sink into

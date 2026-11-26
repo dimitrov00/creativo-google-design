@@ -41,11 +41,6 @@ const GLYPH = (where: string): Waiver =>
     'label-content-name-mismatch',
     `${where}, which is a picture and not the control’s label (WCAG 2.5.3 is about label text); its words are in the accessible name. Decided 2026-11-26, docs/designs/accessibility-findings.md.`,
   );
-const CONTRAST = (where: string): Waiver =>
-  waive(
-    'color-contrast',
-    `${where}. A colour decision for the owner; found by the first full scan, 2026-11-26; tracked in docs/designs/accessibility-findings.md.`,
-  );
 
 /**
  * What is switched off, by page: ONE rule on ONE page, with its reason —
@@ -55,11 +50,6 @@ const CONTRAST = (where: string): Waiver =>
  * showcase no longer has fails the first test.
  */
 const KNOWN: Readonly<Record<string, readonly Waiver[]>> = {
-  'controls/button': [
-    CONTRAST(
-      'dark: the destructive prominent button draws near-black words on red (3.9:1, needs 4.5:1)',
-    ),
-  ],
   'controls/chip': [GLYPH('a person chip draws the avatar’s initials')],
   'controls/quick-actions': [
     GLYPH('a quick action draws its count as a badge before its word'),
@@ -71,19 +61,8 @@ const KNOWN: Readonly<Record<string, readonly Waiver[]>> = {
   'controls/medal': [
     GLYPH('a medal draws its monogram, its level and its «ново» marker'),
   ],
-  'controls/coupon-card': [
-    CONTRAST(
-      'light: the orange value on the grey hooked ticket is 2.62:1 (needs 3:1); dark: the 11px detail line is 4.35:1 (needs 4.5:1)',
-    ),
-  ],
-  'controls/month-picker': [
-    CONTRAST('dark: the date row’s placeholder value is 3.28:1 (needs 4.5:1)'),
-  ],
   'compositions/client-card': [
     NAME_MISMATCH('the client card’s points and record tiles'),
-  ],
-  'compositions/team': [
-    CONTRAST('dark: a choice tile’s detail line is 4.38:1 (needs 4.5:1)'),
   ],
 };
 
