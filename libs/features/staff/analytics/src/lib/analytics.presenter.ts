@@ -1346,7 +1346,6 @@ function barberRowOf(
     avatarSrc: input.names.barberAvatarSrc(row.barberId),
     detail,
     value,
-    accessibleName: `${words.drill.openBarber(name)}, ${value}`,
     testId: `analytics-barber-${row.barberId}`,
   };
 }

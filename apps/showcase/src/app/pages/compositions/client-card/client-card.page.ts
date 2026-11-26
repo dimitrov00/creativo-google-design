@@ -100,7 +100,6 @@ interface RecordSample {
   readonly figure: string;
   readonly detail: string;
   readonly isNew: boolean;
-  readonly name: string;
 }
 
 /** One row of the «Рекорди» page. */
@@ -322,7 +321,6 @@ export class ClientCardCompositionPage {
       figure: '9',
       detail: `септември 2026${NBSP}г.`,
       isNew: true,
-      name: 'Най-дълъг ритъм: 9 посещения, септември 2026 г., нов рекорд',
     },
     {
       id: 'mostVisitsInYear',
@@ -332,7 +330,6 @@ export class ClientCardCompositionPage {
       figure: '13',
       detail: `2026${NBSP}г.`,
       isNew: false,
-      name: 'Най-много посещения за година: 13, 2026 г.',
     },
     {
       id: 'favouriteService',
@@ -342,7 +339,6 @@ export class ClientCardCompositionPage {
       figure: 'Фейд',
       detail: '23 пъти',
       isNew: false,
-      name: 'Любима услуга: фейд, 23 пъти',
     },
     {
       id: 'firstVisit',
@@ -352,7 +348,6 @@ export class ClientCardCompositionPage {
       figure: '1 март',
       detail: `2025${NBSP}г.`,
       isNew: false,
-      name: 'Първо посещение: 1 март 2025 г.',
     },
   ];
 

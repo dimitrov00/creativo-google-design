@@ -959,9 +959,6 @@ describe('analyticsDrillVm — a figure’s rows and a footer equal to it', () =
       ['Иван Колев', nbsp('28,00 €')],
       ['Нико Петров', nbsp('17,50 €')],
     ]);
-    expect(drill.barbers[0]?.accessibleName).toBe(
-      `Виж Иван Колев, ${nbsp('28,00 €')}`,
-    );
     expect(drill.footerValue).toBe(nbsp('45,50 €'));
     const time = drillOf('en', {
       report: shopReportFixture(),

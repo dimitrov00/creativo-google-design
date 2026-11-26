@@ -3388,8 +3388,7 @@
       "late": "Късен отказ",
       "dayLine": "{{rostered}} по график · {{unsold}} свободно",
       "barberLine": "{{worked}} работа от {{rostered}}",
-      "barbers": "По бръснари",
-      "openBarber": "Виж {{name}}"
+      "barbers": "По бръснари"
     }
   }
 }
