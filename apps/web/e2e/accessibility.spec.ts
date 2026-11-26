@@ -181,6 +181,18 @@ async function open(page: Page, as: As): Promise<void> {
   await signInAs(page, uid, roles);
 }
 
+/** Scrolls to the end of the page a screen at a time, then back to the top. */
+async function walkThePage(page: Page): Promise<void> {
+  await page.evaluate(async () => {
+    const step = window.innerHeight;
+    for (let y = 0; y < document.documentElement.scrollHeight; y += step) {
+      window.scrollTo(0, y);
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    window.scrollTo(0, 0);
+  });
+}
+
 test.use({ viewport: { width: 375, height: 812 } });
 
 test.describe('page accessibility', () => {
@@ -208,6 +220,12 @@ test.describe('page accessibility', () => {
         await expect(
           page.locator(scan.ready ?? 'h1:visible, h2:visible').first(),
         ).toBeVisible({ timeout: 15_000 });
+        // A section below the fold is drawn only once it nears the viewport
+        // (`@defer (on viewport)`): walk the page to its end and back, so
+        // the scan reads all of it on every run, not what a fast or a slow
+        // machine happened to have drawn (the landing's shops were scanned
+        // on CI and not locally, 2026-11-26).
+        await walkThePage(page);
         await expect(page.locator('ui-skeleton')).toHaveCount(0, {
           timeout: 15_000,
         });

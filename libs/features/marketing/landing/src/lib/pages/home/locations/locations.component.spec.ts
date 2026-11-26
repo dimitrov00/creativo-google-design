@@ -51,7 +51,7 @@ describe('LocationsComponent', () => {
     expect(host.querySelectorAll('.location-card').length).toBe(2);
     expect(
       host.querySelectorAll(
-        '.location-card[role="button"][aria-haspopup="dialog"]',
+        '.location-card h3 > button.location-card__open[aria-haspopup="dialog"]',
       ).length,
     ).toBe(2);
     // Maps place-card register: a trailing circular action cluster — the
@@ -82,7 +82,7 @@ describe('LocationsComponent', () => {
     expect(sheet).not.toBeNull();
     expect(sheet?.hasAttribute('data-presented')).toBe(false);
 
-    const firstCard = host.querySelector<HTMLElement>('.location-card');
+    const firstCard = host.querySelector<HTMLElement>('.location-card__open');
     firstCard?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     fixture.detectChanges();
     await fixture.whenStable();
@@ -180,7 +180,9 @@ describe('LocationsComponent', () => {
 
     // The centre stores two photos: its sheet shows them, and its number
     // as the shop prints it.
-    cards[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    cards[0]
+      ?.querySelector('.location-card__open')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     fixture.detectChanges();
     await fixture.whenStable();
     expect(
@@ -192,7 +194,9 @@ describe('LocationsComponent', () => {
     ).toBe('+359 88 123 4567');
 
     // Mladost stores none: its sheet has no gallery at all.
-    cards[1]?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    cards[1]
+      ?.querySelector('.location-card__open')
+      ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     fixture.detectChanges();
     await fixture.whenStable();
     expect(host.querySelector('.location-sheet__gallery')).toBeNull();
@@ -302,7 +306,7 @@ describe('LocationsComponent', () => {
     ): Promise<readonly string[]> {
       const host: HTMLElement = fixture.nativeElement;
       host
-        .querySelector<HTMLElement>('.location-card')
+        .querySelector<HTMLElement>('.location-card__open')
         ?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       fixture.detectChanges();
       await fixture.whenStable();

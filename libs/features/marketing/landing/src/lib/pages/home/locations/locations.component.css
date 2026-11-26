@@ -55,7 +55,37 @@ cr-locations {
 /* Three stacked lines need more air than the row's compact block padding
    (sized for a single 52px line). */
 .location-card {
+  position: relative;
   padding-block: var(--sys-space-regular);
+}
+
+/* THE NAME IS THE BUTTON, STRETCHED OVER THE ROW. The row holds two real
+   links, so the row itself can be no control; the name's button carries
+   nothing of its own to look at (the heading styles the words) and its
+   `::after` covers the row, so a tap anywhere on it opens the sheet. */
+.location-card__open {
+  appearance: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+.location-card__open::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+/* The focus ring is the ROW's — the thing the button covers. */
+.location-card__open:focus-visible {
+  outline: none;
+}
+.location-card:has(.location-card__open:focus-visible) {
+  outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+  outline-offset: calc(-1 * var(--sys-focus-ring-width));
 }
 
 .location-card__copy {
@@ -68,6 +98,9 @@ cr-locations {
   display: inline-flex;
   align-items: center;
   gap: var(--sys-space-compact);
+  /* ABOVE the stretched button, or it would swallow the two links. */
+  position: relative;
+  z-index: 1;
 }
 
 .location-card__copy h3,
