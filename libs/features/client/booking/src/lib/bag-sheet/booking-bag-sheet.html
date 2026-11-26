@@ -1,21 +1,23 @@
 <ng-container *transloco="let t">
   <!--
     ONE pull-down, rendered twice — and it is the SAME control the service
-    sheet docks on its bar, down to the class names: a glass pill at the
-    LARGE tier, a face-shaped mark, the value, the caret. The look lives in
-    `booking-select.css`, which both components list, so the bag and the
-    sheet cannot drift apart on the next change to either.
+    sheet docks on its bar: the design system's `ui-choice-menu` (the menu,
+    its rows, the faces, each option's terms, the check) behind a glass pill
+    at the LARGE tier. The pill's look lives in `booking-select.css`, which
+    every booking trigger lists, so they cannot drift apart.
 
     Variant and performer differ only in which cart write a pick ends in,
     which `pick()` resolves from the select's own `bagSelect`. A second copy of
     this block to express that would be a copy.
   -->
   <ng-template #pulldown let-select let-line="line" let-seat="seat">
-    <ui-menu
+    <ui-choice-menu
       uiAlignment="leading"
+      [uiOptions]="select.choices"
       [uiPresented]="openMenu() === select.key"
       [uiLabel]="select.ariaLabel"
-      (uiDismissed)="openMenu.set(null)"
+      (uiPresentedChange)="menuPresented(select.key, $event)"
+      (uiPicked)="pickChoice(seat, line, select, $event)"
     >
       <button
         uiMenuTrigger
@@ -46,76 +48,7 @@
         <span class="booking-pick__value">{{ select.label }}</span>
         <ui-icon uiName="field.popUp" uiScale="small" />
       </button>
-
-      <!-- The same segmented run the sheet's menus use: `uiMenuItem` supplies
-           the semantics and the keyboard model, `uiListRow` owns the look. -->
-      <ui-list-group>
-        @for (option of select.options; track option.key) {
-        <button
-          uiMenuItem
-          uiListRow
-          type="button"
-          [uiInteractive]="true"
-          [uiSelected]="option.selected"
-          [attr.data-testid]="
-              'booking-bag-' +
-              selectWord(select) +
-              '-option-' +
-              line.key +
-              '-' +
-              option.key
-            "
-          (click)="pick(seat, line, option)"
-        >
-          <!--
-            The slot wrappers are STATIC on purpose.
-
-            `ng-content select="[uiLeading]"` is resolved against the template's
-            own structure, so an element that only exists inside an `@if` is
-            projected as part of that block into the DEFAULT slot instead —
-            which is exactly how the portraits ended up stacked above the names
-            rather than beside them. The wrapper is always here; what goes in it
-            is what varies.
-          -->
-          <span
-            uiLeading
-            class="bag-option__lead"
-            [attr.data-empty]="select.bagSelect === BagSelect.Barber ? null : ''"
-          >
-            @if (option.id) {
-            <ui-avatar
-              [uiSrc]="option.avatarSrc"
-              [uiName]="option.name"
-              uiControlSize="regular"
-            />
-            } @else {
-            <!-- A face-shaped answer takes the same control the faces do:
-                   `ui-avatar` with a glyph instead of a monogram. -->
-            <ui-avatar uiIcon="booking.anyBarber" uiControlSize="regular" />
-            }
-          </span>
-          <ui-stack uiSpacing="none" class="booking-option">
-            <span uiText uiFont="body">{{ option.name }}</span>
-            <!-- What this option costs, so the choice is priced before it
-                   is made. -->
-            <span
-              uiText
-              uiFont="footnote"
-              uiForegroundStyle="secondary"
-              class="booking-option__terms"
-            >
-              {{ option.terms }}
-            </span>
-          </ui-stack>
-          <span uiTrailing>
-            @if (option.selected) {
-            <ui-icon uiName="checklist.done" uiForegroundStyle="accent" />
-            }
-          </span>
-        </button>
-        }
-      </ui-list-group>
-    </ui-menu>
+    </ui-choice-menu>
   </ng-template>
 
   <!-- The large title COLLAPSES into the bar on scroll (the sheet default) —
