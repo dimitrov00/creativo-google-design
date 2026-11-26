@@ -122,7 +122,7 @@ describe('StaffHoursSheet', () => {
   it('lists the week the roster holds, its breaks under each day', async () => {
     await mount();
     expect(find('staff-hours-day-1')?.getAttribute('aria-label')).toBe(
-      'staff.hours.weekday.monday, 09:00–18:00, staff.hours.breakLine',
+      'staff.hours.weekday.monday, staff.hours.breakLine, 09:00–18:00',
     );
     expect(find('staff-hours-day-7')?.textContent).toContain('staff.hours.off');
     expect((find('staff-hours-save') as HTMLButtonElement).disabled).toBe(true);
@@ -193,7 +193,7 @@ describe('hoursWeekVm', () => {
       hours: '09:00–13:00, 14:00–00:00',
       breaks: 'Почивка 13:00–14:00',
       off: false,
-      accessibleName: 'd1, 09:00–13:00, 14:00–00:00, Почивка 13:00–14:00',
+      accessibleName: 'd1, Почивка 13:00–14:00, 09:00–13:00, 14:00–00:00',
     });
     expect(days[6]?.hours).toBe('Почивен');
     expect(days[6]?.breaks).toBeNull();
