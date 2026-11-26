@@ -79,16 +79,7 @@ const ROUTES: Readonly<Record<string, Scan>> = {
     pending:
       'needs a session in the onboarding stage; its first step is driven by auth-onboarding.spec.ts, which does not scan it yet',
   },
-  book: {
-    as: As.Public,
-    visit: '/book',
-    known: [
-      owed(
-        'color-contrast',
-        'dark: a footnote line on the first booking step is under 4.5:1 — a colour decision for the owner',
-      ),
-    ],
-  },
+  book: { as: As.Public, visit: '/book' },
   careers: { as: As.Public, visit: '/careers' },
   courses: { as: As.Public, visit: '/courses' },
   events: { as: As.Public, visit: '/events' },
@@ -102,16 +93,17 @@ const ROUTES: Readonly<Record<string, Scan>> = {
     known: [
       owed(
         'label-content-name-mismatch',
-        'the week strip’s day buttons are named by an ISO date («2026-11-23») while they draw the weekday and the number',
+        'a break row of the agenda is named differently from the words it draws',
       ),
       owed(
         'list',
         'a list on the schedule holds children that are not list items',
       ),
-      owed(
-        'color-contrast',
-        'dark: today’s number on the week strip is under 4.5:1 — a colour decision for the owner',
-      ),
+      {
+        rule: 'color-contrast',
+        reason:
+          'not a fault: today’s chosen number is near-black on the orange disc (6.16:1, held by accent-label.spec.ts), but the disc is a separate sliding marker, so axe measures the number against the bar behind it. Decided 2026-11-26, docs/designs/accessibility-findings.md.',
+      },
     ],
   },
   'staff/analytics': {
@@ -122,14 +114,6 @@ const ROUTES: Readonly<Record<string, Scan>> = {
     as: As.Owner,
     visit: '/staff/analytics/takings',
     known: [
-      owed(
-        'aria-command-name',
-        'a bar of ui-bar-chart is a command with no accessible name (the showcase scan records the same)',
-      ),
-      owed(
-        'nested-interactive',
-        'ui-bar-chart puts focusable bars inside an interactive drawing (the showcase scan records the same)',
-      ),
       owed(
         'label-content-name-mismatch',
         'a barber row is named «Виж …» while it draws the name and the sum without that word',

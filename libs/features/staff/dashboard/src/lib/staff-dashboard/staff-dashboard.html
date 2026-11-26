@@ -330,13 +330,19 @@
               [attr.data-selected]="day.key === store.dayKey() ? '' : null"
               [attr.data-today]="day.today ? '' : null"
               [attr.aria-current]="day.key === store.dayKey() ? 'date' : null"
-              [attr.aria-label]="day.key"
+              [attr.data-day]="day.key"
               (click)="pickDay(day.key)"
             >
+              <!-- The letter and the number are the picture; the name a
+                   reader hears is the day as a person says it. It used to
+                   be an aria-label holding the ISO key («2026-11-23»). -->
               <span class="staff-weeks__initial" aria-hidden="true"
                 >{{ day.initial }}</span
               >
-              <span class="staff-weeks__number">{{ day.number }}</span>
+              <span class="staff-weeks__number" aria-hidden="true"
+                >{{ day.number }}</span
+              >
+              <span uiVisuallyHidden>{{ day.name }}</span>
             </button>
             }
           </div>

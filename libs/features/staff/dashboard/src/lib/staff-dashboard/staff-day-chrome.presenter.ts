@@ -332,6 +332,8 @@ export interface WeekStripDayVm {
   readonly key: LocalDate;
   readonly initial: string;
   readonly number: string;
+  /** The day as a person says it: «понеделник, 23 ноември» — the button's name. */
+  readonly name: string;
   readonly today: boolean;
 }
 
@@ -372,6 +374,11 @@ export function weekCalendarOf(
           // not a label.
           initial: formatWallClock(key, null, locale, { weekday: 'narrow' }),
           number: formatWallClock(key, null, locale, { day: 'numeric' }),
+          name: formatWallClock(key, null, locale, {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long',
+          }),
           today: key === today,
         };
       }),

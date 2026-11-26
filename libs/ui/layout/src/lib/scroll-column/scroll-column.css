@@ -12,6 +12,14 @@
     scrollbar-width: thin;
   }
 
+  /* A column that became a keyboard stop (`keyboardScrollStop`: it
+     overflows with nothing focusable inside) wears the house ring, inset
+     like the row's: a frame's own edge is where its content is clipped. */
+  .ui-scroll-column[data-keyboard-stop]:focus-visible {
+    outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+    outline-offset: calc(-1 * var(--sys-focus-ring-width));
+  }
+
   /* Children keep their intrinsic height — a frame never squashes a card. */
   .ui-scroll-column > * {
     flex: 0 0 auto;

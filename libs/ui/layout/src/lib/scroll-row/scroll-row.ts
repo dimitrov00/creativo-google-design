@@ -1,15 +1,11 @@
 import {
   ChangeDetectionStrategy,
   Component,
-  DestroyRef,
-  ElementRef,
   ViewEncapsulation,
-  afterNextRender,
   computed,
-  effect,
-  inject,
   input,
 } from '@angular/core';
+import { keyboardScrollStop } from '../scroll-stop/scroll-stop';
 import type { UiSpacing } from '../stack/stack';
 
 /** SwiftUI parity: `.scrollTargetBehavior(.viewAligned)` alignment. */
@@ -22,11 +18,6 @@ export type UiScrollRowSnap = 'none' | 'start' | 'center';
  * sheet's edges and its first item still starts on the column's edge.
  */
 export type UiScrollRowFullBleed = boolean | 'container';
-
-/** What the keyboard can already reach inside a row (a link, a control, a stop). */
-const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), ' +
-  'textarea:not([disabled]), [tabindex]:not([tabindex="-1"]), [contenteditable="true"]';
 
 /**
  * SwiftUI parity: `ScrollView(.horizontal)` + `.scrollIndicators(.hidden)` —
@@ -110,92 +101,8 @@ export class UiScrollRow {
    */
   readonly uiLabel = input<string | null>(null);
 
-  private readonly host =
-    inject<ElementRef<HTMLElement>>(ElementRef).nativeElement;
-  /** Whether the row is a stop now, and which attributes it wrote itself. */
-  private stop = false;
-  private wroteTabindex = false;
-  private wroteRole = false;
-  private wroteLabel = false;
-
   constructor() {
-    const destroyRef = inject(DestroyRef);
-    afterNextRender(() => {
-      if (typeof ResizeObserver === 'undefined') return;
-      const resize = new ResizeObserver(() => this.syncStop());
-      const watch = () => {
-        resize.observe(this.host);
-        for (const child of Array.from(this.host.children)) {
-          resize.observe(child);
-        }
-      };
-      watch();
-      const mutation =
-        typeof MutationObserver === 'undefined'
-          ? null
-          : new MutationObserver(() => {
-              watch();
-              this.syncStop();
-            });
-      mutation?.observe(this.host, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ['tabindex', 'href', 'disabled', 'contenteditable'],
-      });
-      this.syncStop();
-      destroyRef.onDestroy(() => {
-        resize.disconnect();
-        mutation?.disconnect();
-      });
-    });
-    // A label that changes while the row is a stop follows it.
-    effect(() => {
-      const label = this.uiLabel();
-      if (!this.wroteLabel) return;
-      if (label) this.host.setAttribute('aria-label', label);
-      else {
-        this.host.removeAttribute('aria-label');
-        this.wroteLabel = false;
-      }
-    });
-  }
-
-  /** Stamps or lifts the keyboard stop from what the row holds now. */
-  private syncStop(): void {
-    const host = this.host;
-    const stop =
-      host.scrollWidth - host.clientWidth > 1 && !host.querySelector(FOCUSABLE);
-    if (stop === this.stop) return;
-    this.stop = stop;
-    if (stop) {
-      if (!host.hasAttribute('tabindex')) {
-        host.setAttribute('tabindex', '0');
-        this.wroteTabindex = true;
-      }
-      host.setAttribute('data-keyboard-stop', '');
-      if (!host.hasAttribute('role')) {
-        host.setAttribute('role', 'group');
-        this.wroteRole = true;
-      }
-      const label = this.uiLabel();
-      if (
-        label &&
-        !host.hasAttribute('aria-label') &&
-        !host.hasAttribute('aria-labelledby')
-      ) {
-        host.setAttribute('aria-label', label);
-        this.wroteLabel = true;
-      }
-      return;
-    }
-    host.removeAttribute('data-keyboard-stop');
-    if (this.wroteTabindex) host.removeAttribute('tabindex');
-    if (this.wroteRole) host.removeAttribute('role');
-    if (this.wroteLabel) host.removeAttribute('aria-label');
-    this.wroteTabindex = false;
-    this.wroteRole = false;
-    this.wroteLabel = false;
+    keyboardScrollStop('inline', this.uiLabel);
   }
 
   /** `''` for the viewport bleed, `'container'` for the column's, else none. */

@@ -172,7 +172,7 @@
     );
 
     /* ── Secondary ink ON A FILL (2026-09-28; a third of the way since
-       2026-10-06) — the quiet word inside a filled mark or a value pill: a
+       2026-10-06, 40% since 2026-11-26) — the quiet word inside a filled mark or a value pill: a
        past date tile's caption, a step node still ahead, a coupon's detail
        chip, a unit field's «дни» / «мин» / «€». A fill LIFTS its ground,
        and in dark the plain secondary ink (#8c8c8c) fell to 3.70:1 on the
@@ -187,11 +187,15 @@
        segment, 4.72 on the pill over an elevated card, 5.48 on the fill
        over a segment; light: 7.13 at the worst) while it still reads a step
        under the primary ink (7.9:1 against the primary's 15.3:1 on the dark
-       surface). Guarded by accent-label.spec.ts. Never for text on a bare
+       surface). Guarded by accent-label.spec.ts. 40% SINCE 2026-11-26: a
+       chip on a ticket hooked a fill step above a segment (#434343 in
+       dark) read 4.36:1 at a third (axe, the first full scan); 40% is
+       #b3b3b3 in dark — 4.72 there, 5.26 on the pill over a segment — and
+       still a step under the primary ink. Never for text on a bare
        surface: there the plain secondary ink is the rung. */
     --sys-color-secondary-label-on-fill: color-mix(
       in srgb,
-      var(--sys-color-secondary-label) 67%,
+      var(--sys-color-secondary-label) 60%,
       var(--sys-color-foreground)
     );
 

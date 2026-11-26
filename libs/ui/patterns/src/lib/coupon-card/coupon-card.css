@@ -317,7 +317,11 @@
     order: -1;
     font: var(--sys-font-title2);
     font-variant-numeric: tabular-nums;
-    color: var(--sys-color-promo);
+    /* The promo hue on the card's own paper. A consumer that lifts the
+       paper off white (`--ui-coupon-card-surface`) sets this hook to ink:
+       the orange figure is 2.62:1 on a grey ground (the accent law — a
+       display figure is orange on white). */
+    color: var(--ui-coupon-card-value-ink, var(--sys-color-promo));
     white-space: nowrap;
   }
 

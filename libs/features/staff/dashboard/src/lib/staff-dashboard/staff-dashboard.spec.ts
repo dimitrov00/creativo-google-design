@@ -3678,7 +3678,12 @@ describe('StaffDashboard', () => {
     }
     for (const day of strip?.querySelectorAll('.staff-weeks__day') ?? []) {
       expect(day.tagName).toBe('BUTTON');
-      expect(day.getAttribute('aria-label')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      expect(day.getAttribute('data-day')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      // Named by the day as a person says it, never by the key.
+      expect(day.hasAttribute('aria-label')).toBe(false);
+      expect(day.textContent).toMatch(
+        /\p{L}{3,}, \d{1,2} \p{L}{3,}|\p{L}{3,} \d{1,2}/u,
+      );
     }
     // Exactly one day is current, and it says so to a screen reader.
     const current = strip?.querySelectorAll('[aria-current="date"]') ?? [];

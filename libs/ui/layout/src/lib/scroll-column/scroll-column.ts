@@ -4,6 +4,7 @@ import {
   ViewEncapsulation,
   input,
 } from '@angular/core';
+import { keyboardScrollStop } from '../scroll-stop/scroll-stop';
 import type { UiSpacing } from '../stack/stack';
 
 /** SwiftUI parity: `.scrollTargetBehavior(.viewAligned)` alignment, on the vertical axis. */
@@ -21,6 +22,10 @@ export type UiScrollColumnSnap = 'none' | 'start' | 'center';
  * mandatory — a vertical frame that refuses to rest between its items traps
  * the thumb at its end. Scrolling chains to the page when the frame is
  * done, as a nested scroll view should.
+ *
+ * Like the row, a column that overflows and holds nothing focusable becomes
+ * a keyboard stop (`keyboardScrollStop`): `tabindex="0"`, `role="group"`
+ * and `uiLabel` as its name, lifted when it no longer needs them.
  *
  * @uiPurpose A column that stacks its children and scrolls them vertically
  *   inside a frame of capped height.
@@ -47,4 +52,13 @@ export type UiScrollColumnSnap = 'none' | 'start' | 'center';
 export class UiScrollColumn {
   readonly uiSnap = input<UiScrollColumnSnap>('none');
   readonly uiSpacing = input<UiSpacing>('regular');
+  /**
+   * The column's name when it becomes a keyboard stop (static content that
+   * overflows). A consumer's own `aria-label`/`aria-labelledby` wins.
+   */
+  readonly uiLabel = input<string | null>(null);
+
+  constructor() {
+    keyboardScrollStop('block', this.uiLabel);
+  }
 }

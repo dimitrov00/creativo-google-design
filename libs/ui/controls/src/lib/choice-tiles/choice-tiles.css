@@ -80,7 +80,9 @@
   .ui-choice-tile__detail {
     font: var(--sys-font-footnote);
     font-variant-numeric: tabular-nums;
-    color: var(--sys-color-secondary-label);
+    /* A tile is a fill: the quiet word on it takes the ink made for one
+       (the plain secondary read 4.38:1 in dark — axe, 2026-11-26). */
+    color: var(--sys-color-secondary-label-on-fill);
   }
 
   /* THE CHOSEN TILE — the same accent wash the chosen list row wears, plus
