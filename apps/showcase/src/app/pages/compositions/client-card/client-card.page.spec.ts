@@ -333,9 +333,13 @@ describe('ClientCardCompositionPage', () => {
 
   it('surfaces: a card that is pressed is a button with a name; a card to read is a group', async () => {
     const { all } = await render();
+    // A pressed card is named by a label that holds its words, or — with
+    // no label — by the words it draws (WCAG 2.5.3).
     for (const card of all('button.ui-card')) {
       expect(card.hasAttribute('data-interactive')).toBe(true);
-      expect(card.getAttribute('aria-label')?.length).toBeGreaterThan(10);
+      const name =
+        card.getAttribute('aria-label') ?? card.textContent?.trim() ?? '';
+      expect(name.length).toBeGreaterThan(10);
     }
     for (const card of all('ui-card[role="group"]')) {
       expect(card.getAttribute('aria-label')?.length).toBeGreaterThan(5);
@@ -348,12 +352,20 @@ describe('ClientCardCompositionPage', () => {
     const grid = piece('composition-records');
     expect(grid.style.getPropertyValue('--ui-grid-columns')).toBe('2');
     const cards = all('button.client-card__record', grid);
-    expect(cards.map((card) => card.getAttribute('aria-label'))).toEqual([
-      'Най-дълъг ритъм: 9 посещения, септември 2026 г., нов рекорд',
-      'Най-много посещения за година: 13, 2026 г.',
-      'Любима услуга: фейд, 23 пъти',
-      'Първо посещение: 1 март 2025 г.',
-    ]);
+    expect(cards).toHaveLength(4);
+    // Named by the words it draws, with no summary beside them and none of
+    // those words hidden from a reader.
+    for (const card of cards) {
+      expect(card.hasAttribute('aria-label')).toBe(false);
+      expect(
+        card
+          .querySelector('.client-card__record-words')
+          ?.closest('[aria-hidden="true"]'),
+      ).toBeNull();
+    }
+    expect(cards[0]?.textContent?.replace(/\s+/g, ' ').trim()).toContain(
+      'Нов рекорд',
+    );
   });
 
   it('records: lead with the emblem, a mark of 52; a favourite’s is its picture', async () => {

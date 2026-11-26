@@ -32,17 +32,6 @@ type As = (typeof As)[keyof typeof As];
 
 type Waiver = NonNullable<AxeContext['disableRules']>[number];
 
-/**
- * A violation the first full scan found (2026-11-26) and this change did
- * not fix: ONE rule switched off on ONE page, with what is wrong. A row may
- * only be removed — fix the page, delete the row. The list the owner reads
- * is docs/designs/accessibility-findings.md.
- */
-const owed = (rule: string, what: string): Waiver => ({
-  rule,
-  reason: `${what}. Found by the first full scan, 2026-11-26; tracked in docs/designs/accessibility-findings.md.`,
-});
-
 type Scan =
   /** Opened at `visit` by `as`; `lands` when the page under test is where that navigation ends. */
   | {
@@ -91,14 +80,6 @@ const ROUTES: Readonly<Record<string, Scan>> = {
     as: As.Owner,
     visit: '/staff/schedule',
     known: [
-      owed(
-        'label-content-name-mismatch',
-        'a break row of the agenda is named differently from the words it draws',
-      ),
-      owed(
-        'list',
-        'a list on the schedule holds children that are not list items',
-      ),
       {
         rule: 'color-contrast',
         reason:
@@ -113,12 +94,6 @@ const ROUTES: Readonly<Record<string, Scan>> = {
   'staff/analytics/:card': {
     as: As.Owner,
     visit: '/staff/analytics/takings',
-    known: [
-      owed(
-        'label-content-name-mismatch',
-        'a barber row is named «Виж …» while it draws the name and the sum without that word',
-      ),
-    ],
   },
   'staff/profile': {
     pending:

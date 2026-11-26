@@ -674,34 +674,63 @@
                  grid block's mark and word, its rail neutral like the grid's.
                  A press opens it in the block editor, as the grid's does. -->
             <!-- A colleague's block is read (staff permissions P8): the row
-                 keeps its words and loses the press, the focus stop and the
-                 button's name for what it is. -->
+                 keeps its words and is a named group, with no press and no
+                 focus stop. -->
             @let editable = gates.edits(entry.id);
-            <li
-              class="agenda-card agenda-card--gap"
-              [class.agenda-card--idle]="entry.past"
-              uiInteractive
-              [attr.data-interactive]="editable ? '' : null"
-              [attr.tabindex]="editable ? 0 : null"
-              [attr.role]="editable ? 'button' : null"
-              [attr.aria-label]="entry.accessibleName"
-              [attr.data-past]="entry.past ? '' : null"
-              [attr.data-row-id]="entry.id"
-              data-testid="staff-block-row"
-              (click)="openBlock(entry.id)"
-              (keydown.enter)="openBlock(entry.id)"
-            >
-              <span class="agenda-card__rail" aria-hidden="true"></span>
-              <lib-staff-event-head
-                class="agenda-card__hole"
-                [title]="entry.label"
-                [lines]="[{ icon: 'booking.blocked', text: entry.spanLabel }]"
-                [start]="entry.startLabel"
-                [end]="entry.endLabel"
-                [quiet]="true"
-                [receded]="entry.past"
-                [timesDecorative]="true"
-              />
+            <!-- The row is a list item and the press is a button INSIDE it:
+                 a `li` given role="button" stops being a list item, and the
+                 list then holds a child that is not one (axe `list`,
+                 2026-11-26). The same shape as the hole above. -->
+            <li class="agenda-card__gap-item">
+              <!-- The press is named by the words it draws — what it is, how
+                   long, from when to when — so no label stands beside them
+                   to drift from them (WCAG 2.5.3). The read row is a group,
+                   which a label names; there the clock is decoration. -->
+              <ng-template #blockHead let-labelled>
+                <span class="agenda-card__rail" aria-hidden="true"></span>
+                <lib-staff-event-head
+                  class="agenda-card__hole"
+                  [title]="entry.label"
+                  [lines]="[{ icon: 'booking.blocked', text: entry.spanLabel }]"
+                  [start]="entry.startLabel"
+                  [end]="entry.endLabel"
+                  [quiet]="true"
+                  [receded]="entry.past"
+                  [timesDecorative]="labelled"
+                />
+              </ng-template>
+              @if (editable) {
+              <button
+                type="button"
+                uiInteractive
+                class="agenda-card agenda-card--gap agenda-card__gap-press"
+                [class.agenda-card--idle]="entry.past"
+                [attr.data-past]="entry.past ? '' : null"
+                [attr.data-row-id]="entry.id"
+                data-testid="staff-block-row"
+                (click)="openBlock(entry.id)"
+              >
+                <ng-container
+                  [ngTemplateOutlet]="blockHead"
+                  [ngTemplateOutletContext]="{ $implicit: false }"
+                />
+              </button>
+              } @else {
+              <div
+                class="agenda-card agenda-card--gap"
+                role="group"
+                [class.agenda-card--idle]="entry.past"
+                [attr.aria-label]="entry.accessibleName"
+                [attr.data-past]="entry.past ? '' : null"
+                [attr.data-row-id]="entry.id"
+                data-testid="staff-block-row"
+              >
+                <ng-container
+                  [ngTemplateOutlet]="blockHead"
+                  [ngTemplateOutletContext]="{ $implicit: true }"
+                />
+              </div>
+              }
             </li>
             } @else {
             <!-- A VISIT — ONE ROW, three columns.

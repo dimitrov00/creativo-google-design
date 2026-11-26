@@ -547,7 +547,6 @@
                 uiPadding="comfortable"
                 [uiInteractive]="true"
                 class="client-card__points"
-                aria-label="Лоялност: 371 точки. Стигат за безплатно оформяне на брада. Ваучер 25,00 €, печати 3 от 10, ритъм 9 посещения."
                 data-testid="composition-loyalty"
                 (click)="act('Лоялност')"
               >
@@ -559,7 +558,9 @@
                   class="client-card__points-disc"
                   aria-hidden="true"
                 ></span>
-                <span class="client-card__points-words" aria-hidden="true">
+                <!-- The ticket is named by the words it draws (WCAG 2.5.3):
+                     no summary beside them to drift from them. -->
+                <span class="client-card__points-words">
                   <span class="client-card__points-figure">
                     <span uiText uiFont="title2" uiForegroundStyle="accent"
                       >371</span
@@ -685,11 +686,10 @@
                     uiPadding="regular"
                     [uiInteractive]="true"
                     class="client-card__record"
-                    [attr.aria-label]="record.name"
                     [attr.data-testid]="'composition-record-' + record.id"
                     (click)="act(record.label)"
                   >
-                    <span class="client-card__record-top" aria-hidden="true">
+                    <span class="client-card__record-top">
                       <ui-avatar
                         class="client-card__emblem"
                         uiControlSize="large"
@@ -705,7 +705,7 @@
                       >
                       }
                     </span>
-                    <span class="client-card__record-words" aria-hidden="true">
+                    <span class="client-card__record-words">
                       <span uiText uiFont="callout" uiWeight="semibold"
                         >{{ record.label }}</span
                       >

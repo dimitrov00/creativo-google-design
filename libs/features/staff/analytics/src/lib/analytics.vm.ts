@@ -607,7 +607,6 @@ export type AnalyticsBarberRowVm = {
   readonly avatarSrc: string | null;
   readonly detail: string | null;
   readonly value: string;
-  readonly accessibleName: string;
   readonly testId: string;
 };
 

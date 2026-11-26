@@ -88,12 +88,24 @@ page for this reason.
 
 ## Owed — pages
 
-| Page                                           | Rule                          | What is wrong                                                                 |
-| ---------------------------------------------- | ----------------------------- | ----------------------------------------------------------------------------- |
-| `/staff/schedule`                              | `label-content-name-mismatch` | A break row of the agenda is named differently from the words it draws.       |
-| `/staff/schedule`                              | `list`                        | A list holds children that are not list items.                                |
-| `/staff/analytics/:card`                       | `label-content-name-mismatch` | A barber row is named «Виж …» while it draws the name and the sum.            |
-| Showcase demos (`streak-track`, `client-card`) | `label-content-name-mismatch` | A card that is a button is named by a summary that leaves out words it draws. |
+Nothing. The four faults the first full scan left were fixed on 2026-11-26,
+and their waivers are deleted:
+
+- **The schedule's blocked-time and break rows** were list items given
+  `role="button"`, which stops them being list items, under a label that
+  left out the length they draw. The list item now holds a real button,
+  named by the words it draws. A row that is only read is a named group.
+- **An analytics barber row** was labelled «Виж …» over a name and a sum
+  drawn without that word. The label is gone; the row is named by its
+  name, its detail line and its sum.
+- **The showcase's streak tile and client-card tiles** were buttons named
+  by a hand-written summary, with the drawn words hidden from a reader.
+  They are named by the words they draw; the streak's full sentence is the
+  track's own.
+
+The rule these four share: **a control is named by the words it draws.** A
+separate label is written only for a control that draws no words (an icon
+button), or draws a picture a reader cannot use.
 
 ## Not scanned yet
 
