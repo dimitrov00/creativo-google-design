@@ -22,3 +22,9 @@ label,
 .lib-admin-programs__field {
   align-items: flex-start;
 }
+
+/* The status toggle fills the row like the fields above it, so each of its
+   equal segments has room for its whole word («Затворена»). */
+.lib-admin-programs__field--fill {
+  align-items: stretch;
+}

@@ -43,35 +43,37 @@
     );
   }
 
-  /* THE THUMB — one slot wide, slid to the chosen slot along the logical
-     axis (so it reads right in either direction); off and invisible while
-     nothing is chosen. UIKit's own selected segment: white in light, a
-     clearly lighter grey in dark (the raised-surface token), lifted by
-     UISegmentedControl's shadow pair — 3px/8px at 12% over 3px/1px at 4%
-     — rather than the card's softer elevation. */
+  /* THE THUMB — one slot wide, moved to the chosen slot by its own width
+     (`translate`, so the glide never lays the control out again); off and
+     invisible while nothing is chosen. UIKit's own selected segment: white
+     in light, a clearly lighter grey in dark (the raised-surface token),
+     on the house's raised elevation — the lift every raised surface here
+     has, quieter than UIKit's older 3px/8px pair. */
   .ui-segmented-control__thumb {
     position: absolute;
     inset-block: var(--ui-segmented-inset);
-    inset-inline-start: calc(
-      var(--ui-segmented-inset) + var(--ui-segmented-index, 0) *
-        (100% - 2 * var(--ui-segmented-inset)) / var(--ui-segmented-count, 1)
-    );
+    inset-inline-start: var(--ui-segmented-inset);
     z-index: 0;
     inline-size: calc(
       (100% - 2 * var(--ui-segmented-inset)) / var(--ui-segmented-count, 1)
     );
     border-radius: var(--control-radius-capsule);
     background: var(--sys-color-surface-raised);
-    box-shadow:
-      0 3px 8px rgb(0 0 0 / 12%),
-      0 3px 1px rgb(0 0 0 / 4%);
-    /* THE GLIDE: a quick, decelerating slide — it leaves at once and
-       settles into the slot (the emphasized curve), so a tap reads as the
-       pill travelling, not jumping, without making the reader wait. */
+    box-shadow: var(--sys-elevation-raised);
+    translate: calc(var(--ui-segmented-index, 0) * 100%) 0;
+    /* THE GLIDE: SwiftUI's `.snappy` spring — it leaves at once, covers
+       most of the way in the first 200 ms and settles with the faintest
+       overshoot. A transition, so a second tap mid-glide carries on from
+       where the pill is. */
     transition:
-      inset-inline-start var(--sys-motion-duration-regular)
-        var(--sys-motion-ease-emphasized),
+      translate var(--sys-motion-spring-snappy),
       opacity var(--sys-motion-duration-regular) var(--sys-motion-ease-standard);
+  }
+
+  /* Right-to-left: the slots count from the right, so the pill travels
+     the other way. */
+  .ui-segmented-control:dir(rtl) .ui-segmented-control__thumb {
+    translate: calc(var(--ui-segmented-index, 0) * -100%) 0;
   }
 
   .ui-segmented-control[data-empty] .ui-segmented-control__thumb {

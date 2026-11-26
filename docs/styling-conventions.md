@@ -123,6 +123,16 @@ tabular-nums` on every element because the `font` shorthand resets it. An
   literal fallback beside them (`reveal.directive.ts`, `alert.ts`). Inline
   `cubic-bezier(...)` or raw `ms` literals are banned outside the token
   files.
+- **Springs (trial, 2026-11-27):** `--sys-motion-spring-smooth` and
+  `--sys-motion-spring-snappy` are SwiftUI's `.smooth` and `.snappy` as a
+  duration and a `linear()` curve in one value
+  (`transition: translate var(--sys-motion-spring-snappy)`). They are for a
+  part that MOVES, and it moves by `translate`/`transform`, never by a
+  layout property; colour and opacity keep the ease curves. Today only the
+  segmented control's thumb uses one, until the owner has judged it on a
+  phone (`docs/designs/ui-library-parity.md`, part 5). The numbers are
+  hand-written in `tokens.css` and recomputed by
+  `libs/ui/tokens/src/lib/spring.spec.ts`.
 - **Reduced motion** is handled globally: `libs/ui/tokens/reduced-motion.css`
   (`@layer cr-base`) cuts every transition and animation to 1 ms. Do not add
   per-component `prefers-reduced-motion` blocks to null durations; a block
