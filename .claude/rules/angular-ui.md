@@ -71,6 +71,12 @@ injectables. That permission ends at the framework boundary.
 - **Never hand-roll one.** A feature does not style a native control, build
   a control out of `div`s, or give a design-system element a look of its own
   in feature CSS. If the element lacks something, extend the element.
+- **Lint holds the narrow cases.** `creativo/ds-controls-only`
+  (`tools/lint-rules/ds-controls-only.mjs`, features and `apps/web`) refuses
+  a native `<select>`, the roles `tablist`/`tab`/`tabpanel`, and an
+  `<input>`/`<textarea>` without `uiTextField` (a file picker and a hidden
+  input pass). It cannot see a control built from `div`s — the index is the
+  guard for that.
 - **A new element is the owner's call.** Add one to `libs/ui` only when the
   owner asks for it, and only for a use the index has no row for.
 - **A new or renamed element carries its index tags** (`@uiPurpose`,

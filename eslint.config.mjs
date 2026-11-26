@@ -678,6 +678,18 @@ export default [
       ],
     },
   },
+  // ── Feature controls are design-system elements ────────────────────
+  // `creativo/ds-controls-only` (templates, inline ones included): no native
+  // <select>, no hand-built tab roles, no <input>/<textarea> without a
+  // design-system field directive. Features and the web app only — libs/ui
+  // is where the native elements are dressed, and the showcase demonstrates
+  // them. Which element to use instead: docs/ui-elements.md.
+  {
+    files: ['libs/features/**/*.html', 'apps/web/**/*.html'],
+    plugins: { creativo },
+    languageOptions: { parser: templateParser },
+    rules: { 'creativo/ds-controls-only': 'error' },
+  },
   {
     files: [
       '**/*.ts',
