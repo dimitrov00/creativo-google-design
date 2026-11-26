@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { AuditAction, Role } from '@core/components';
 import { Collections } from '@core/entities';
 import { attemptKey } from './support/attempt-key';
-import { expectNoAxeViolations } from './support/axe';
+import { expectNoAxeViolations } from '@creativo/shared/axe-scan';
 import {
   readAuditActionsFor,
   readStoredBody,

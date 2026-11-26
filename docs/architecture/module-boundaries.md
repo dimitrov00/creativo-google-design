@@ -255,6 +255,7 @@ verifier).
 | `ui-theme`             | `libs/ui/theme`                      | `scope:shared`, `type:ui`             |
 | `tokens`               | `libs/ui/tokens`                     | `scope:shared`, `type:tokens`         |
 | `view-state`           | `libs/shared/view-state`             | `scope:shared`, `type:util`           |
+| `axe-scan`             | `libs/shared/axe-scan`               | `scope:shared`, `type:util`           |
 | `flag-tools`           | `tools/flags`                        | `scope:tooling`, `type:util`          |
 | `icon-tools`           | `tools/icons`                        | `scope:tooling`, `type:util`          |
 | `lint-rules`           | `tools/lint-rules`                   | `scope:tooling`, `type:util`          |

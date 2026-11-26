@@ -185,6 +185,10 @@ jobs:
       - run: pnpm run e2e:web
         env:
           CREATIVO_E2E_SCREENSHOTS: skip
+      # Every design-system element, scanned by axe on its showcase page in
+      # both themes. The showcase's screenshot spec stays a macOS gate; this
+      # names the one spec that draws no baseline.
+      - run: pnpm run e2e:showcase:a11y
       # Kept on success too: a flaky pass's trace lives only in this report.
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}

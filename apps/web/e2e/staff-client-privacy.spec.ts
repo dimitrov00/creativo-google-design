@@ -4,7 +4,7 @@ import { Collections } from '@core/entities';
 // Types only (erased): the bundle's shape, as the server's system builds it.
 import type { ClientExportBundle } from '@core/systems';
 import { attemptKey } from './support/attempt-key';
-import { expectNoAxeViolations } from './support/axe';
+import { expectNoAxeViolations } from '@creativo/shared/axe-scan';
 import {
   authUserExists,
   customerIdFor,

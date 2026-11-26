@@ -35,7 +35,9 @@ import { ThemeService } from './theme.service';
         uiButtonBorderShape="capsule"
         uiControlSize="regular"
         data-testid="landing-locale-toggle"
-        [attr.aria-label]="t('landing.nav.locale')"
+        [attr.aria-label]="
+          t('landing.nav.locale') + ': ' + t('landing.prefs.localeCode')
+        "
         (click)="toggleLocale()"
       >
         <!-- Locale glyph is a compact accessory beside the code label:

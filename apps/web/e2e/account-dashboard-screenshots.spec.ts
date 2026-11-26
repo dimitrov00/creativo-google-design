@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { expectNoAxeViolations } from './support/axe';
+import { expectNoAxeViolations } from '@creativo/shared/axe-scan';
 import {
   seedUpcomingAppointment,
   seedUserProfile,

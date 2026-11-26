@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "../../../dist/out-tsc/libs/shared/axe-scan/lib",
+    "tsBuildInfoFile": "../../../dist/out-tsc/libs/shared/axe-scan/lib/tsconfig.lib.tsbuildinfo",
+    "declaration": true,
+    "declarationMap": true,
+    "inlineSources": true,
+    "types": ["node"],
+    "composite": true,
+    "rootDir": "../../..",
+    "sourceMap": true
+  },
+  "include": ["src/**/*.ts"]
+}
