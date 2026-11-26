@@ -108,7 +108,7 @@ test.describe('programs — a content manager publishes, the public pages show i
       timeout: 20_000,
     });
 
-    // THE POSITION — open (the form's default status), its chip worded by
+    // THE POSITION — open (the form's default status), its segment worded by
     // the catalogue (OR-53).
     await create(page, 'positions', async (form) => {
       await form.getByTestId('admin-position-title-en').fill(position.en);
@@ -119,7 +119,7 @@ test.describe('programs — a content manager publishes, the public pages show i
       await form
         .getByTestId('admin-position-summary-bg')
         .fill('Пълен работен ден, в Центъра.');
-      await form.getByRole('button', { name: 'Отворена', exact: true }).click();
+      await form.getByRole('radio', { name: 'Отворена', exact: true }).click();
     });
     const positionRow = page
       .getByTestId('admin-positions-list')
@@ -137,7 +137,7 @@ test.describe('programs — a content manager publishes, the public pages show i
       await form
         .getByTestId('admin-course-description-bg')
         .fill('Шест вечери върху фейда.');
-      await form.getByRole('button', { name: 'Отворен', exact: true }).click();
+      await form.getByRole('radio', { name: 'Отворен', exact: true }).click();
       await form.getByTestId('admin-course-starts-label-en').fill('Spring');
       await form.getByTestId('admin-course-starts-label-bg').fill('Пролет');
     });

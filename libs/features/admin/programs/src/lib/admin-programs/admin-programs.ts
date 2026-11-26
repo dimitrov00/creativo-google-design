@@ -36,6 +36,7 @@ import {
   UiChoiceMenu,
   type UiChoiceOption,
   UiIcon,
+  UiSegmentedControl,
   UiTextField,
 } from '@creativo/ui/controls';
 import { UiFlow, UiStack } from '@creativo/ui/layout';
@@ -122,6 +123,7 @@ const NO_SHOP = '';
     UiMenuTrigger,
     UiPaddingDirective,
     UiSectionHeader,
+    UiSegmentedControl,
     UiStack,
     UiTextField,
   ],
@@ -135,17 +137,17 @@ export class AdminPrograms {
   private readonly title = inject(Title);
   private readonly transloco = inject(TranslocoService);
 
-  /** The status dictionaries, for the chips — the template never spells a stored tag. */
+  /** The status dictionaries, for the segments — the template never spells a stored tag. */
   protected readonly PositionStatus = PositionStatus;
   protected readonly EnrollmentStatus = EnrollmentStatus;
   /*
    * A status prints the catalogue's word for its stored tag —
    * `programs.status.position.<tag>`, `programs.status.enrollment.<tag>`
-   * (pass E, E-17; translated by OR-53) — on the rows and on the chips.
+   * (pass E, E-17; translated by OR-53) — on the rows and on the segments.
    */
   /** The edit form's program kinds, for the template. */
   protected readonly ProgramEditing = ProgramEditing;
-  /** The tabs, for the template's chips and `@case`s (never bare literals). */
+  /** The tabs, for the template's segments and `@case`s (never bare literals). */
   protected readonly ProgramsTab = ProgramsTab;
 
   protected readonly tab = signal<ProgramsTab>(ProgramsTab.Positions);
@@ -368,6 +370,25 @@ export class AdminPrograms {
   protected setTab(next: ProgramsTab): void {
     this.tab.set(next);
     this.editing.set(null);
+  }
+
+  /**
+   * A segmented control answers with the id it was handed; each is matched
+   * back to its dictionary, so a stored tag is never a cast string.
+   */
+  protected pickTab(id: string): void {
+    const next = Object.values(ProgramsTab).find((tab) => tab === id);
+    if (next !== undefined) this.setTab(next);
+  }
+
+  protected pickPositionStatus(id: string): void {
+    const next = Object.values(PositionStatus).find((tag) => tag === id);
+    if (next !== undefined) this.positionStatus.set(next);
+  }
+
+  protected pickEnrollmentStatus(id: string): void {
+    const next = Object.values(EnrollmentStatus).find((tag) => tag === id);
+    if (next !== undefined) this.courseEnrollmentStatus.set(next);
   }
 
   protected startCreate(): void {

@@ -30,7 +30,6 @@ class HostComponent {
     [uiSegments]="segments"
     uiSelectedId="map"
     uiMaterial="thick"
-    uiShape="capsule"
     uiLabel="View"
   />`,
 })
@@ -150,8 +149,6 @@ describe('UiSegmentedControl', () => {
     const root = icons.nativeElement as HTMLElement;
     const control = root.querySelector('ui-segmented-control');
     expect(control?.getAttribute('data-material')).toBe('thick');
-    expect(control?.getAttribute('data-shape')).toBe('capsule');
-    expect(host()?.getAttribute('data-shape')).toBe('rounded');
     const [map, list] = Array.from(root.querySelectorAll('[role="radio"]'));
     expect(map?.getAttribute('aria-label')).toBe('Map');
     expect(map?.hasAttribute('data-icon-only')).toBe(true);

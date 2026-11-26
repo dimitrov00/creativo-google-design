@@ -151,14 +151,14 @@ function textOf(host: HTMLElement, testId: string): string {
   );
 }
 
-/** The form's chip worded `label`. */
-function chipWorded(host: HTMLElement, label: string): HTMLButtonElement {
+/** The form's status segment worded `label`. */
+function segmentWorded(host: HTMLElement, label: string): HTMLButtonElement {
   const chip = Array.from(
     host.querySelectorAll<HTMLButtonElement>(
-      '[data-testid="admin-form"] button[uichip]',
+      '[data-testid="admin-form"] ui-segmented-control button[role="radio"]',
     ),
   ).find((candidate) => candidate.textContent?.trim() === label);
-  if (!chip) throw new Error(`no chip worded ${label}`);
+  if (!chip) throw new Error(`no status segment worded ${label}`);
   return chip;
 }
 
@@ -406,7 +406,9 @@ describe('AdminPrograms', () => {
     rowsOf(host, 'admin-positions-list')[0]?.click();
     fixture.detectChanges();
 
-    expect(chipWorded(host, 'Closed').getAttribute('data-selected')).toBe('');
+    expect(segmentWorded(host, 'Closed').getAttribute('data-selected')).toBe(
+      '',
+    );
   });
 
   it('switches tabs and clears any open form', async () => {
@@ -656,7 +658,7 @@ describe('AdminPrograms', () => {
       fillInput(host, 'admin-course-title-bg', 'Фейд');
       fillInput(host, 'admin-course-description-en', 'Six weeks');
       fillInput(host, 'admin-course-description-bg', 'Шест седмици');
-      chipWorded(host, 'Upcoming').click();
+      segmentWorded(host, 'Upcoming').click();
       fixture.detectChanges();
 
       click(host, 'admin-save');

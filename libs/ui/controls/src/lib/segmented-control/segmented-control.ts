@@ -14,8 +14,6 @@ import type { UiIconName } from '@creativo/ui/icons';
 import { radioGroupStep, radioGroupTabStop } from '../radio-group/radio-group';
 
 export type UiSegmentedControlSize = 'small' | 'regular';
-/** `rounded` is UISegmentedControl's own corner; `capsule` the toolbar PILL of iOS 26's bars. */
-export type UiSegmentedControlShape = 'rounded' | 'capsule';
 
 /**
  * One segment. `label` is ALWAYS the accessible name — an icon-only segment
@@ -36,9 +34,11 @@ export interface UiSegment {
 /**
  * ≙ SwiftUI `Picker` with `.pickerStyle(.segmented)` — UISegmentedControl.
  *
- * A filled TRACK holding equal segments; the chosen one is a raised pill
- * that GLIDES between slots, hairlines stand between the others and step
- * aside next to the chosen one. For two to five short, mutually exclusive
+ * A filled capsule TRACK holding equal segments; the chosen one is a raised
+ * pill that GLIDES between slots. ONE shape, the capsule iOS 26 gives the
+ * control everywhere (owner, 2026-11-26: fully rounded, like the buttons
+ * beside it) — there is no squarer variant to pick by mistake, and no
+ * hairlines: the pill is the only mark. For two to five short, mutually exclusive
  * answers that are all worth seeing at once — a map's shops, a list's
  * scope. More than that, or anything with a second line, is
  * `ui-choice-tiles`; a long list is `ui-choice-menu`.
@@ -101,7 +101,6 @@ export interface UiSegment {
     role: 'radiogroup',
     '[attr.aria-label]': 'uiLabel() || null',
     '[attr.data-control-size]': 'uiControlSize()',
-    '[attr.data-shape]': 'uiShape()',
     '[attr.data-empty]': "selectedIndex() < 0 ? '' : null",
     '[style.--ui-segmented-count]': 'uiSegments().length',
     '[style.--ui-segmented-index]': 'thumbIndex()',
@@ -116,8 +115,6 @@ export class UiSegmentedControl {
   readonly uiLabel = input('');
   /** `small` is the 36px control, `regular` the 44px one. */
   readonly uiControlSize = input<UiSegmentedControlSize>('small');
-  /** The pill (`capsule`) for a view toggle in a toolbar; `rounded` otherwise. */
-  readonly uiShape = input<UiSegmentedControlShape>('rounded');
   readonly uiPicked = output<string>();
 
   /** The chosen slot, `-1` for none — the thumb hides off the first slot. */

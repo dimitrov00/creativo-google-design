@@ -3066,7 +3066,6 @@ describe('StaffVisitEditor', () => {
       // default — and stays put when the view beneath it changes.
       const pill = find(host, 'staff-visit-shop-view');
       expect(pill?.tagName).toBe('UI-SEGMENTED-CONTROL');
-      expect(pill?.getAttribute('data-shape')).toBe('capsule');
       expect(pill?.getAttribute('data-material')).toBe('thick');
       expect(pill?.getAttribute('aria-label')).toBe('Изглед');
       expect(pill?.classList.contains('staff-visit__view-pill')).toBe(true);

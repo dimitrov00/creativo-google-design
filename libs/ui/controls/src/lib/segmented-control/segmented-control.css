@@ -1,8 +1,9 @@
 @layer sys-components {
-  /* ≙ UISegmentedControl (iOS 13 on): a filled track, the chosen segment a
-     raised pill that GLIDES between slots, hairlines between the rest that
-     step aside beside the chosen one. Equal widths — the control is sized
-     by its surroundings and never asserts its own. */
+  /* ≙ UISegmentedControl as iOS 26 draws it: a filled CAPSULE track, the
+     chosen segment a raised pill that GLIDES between slots, and nothing
+     else — no hairlines, the pill is the only mark. One shape for every
+     use, the buttons' own capsule. Equal widths — the control is sized by
+     its surroundings and never asserts its own. */
   .ui-segmented-control {
     /* The gap between the track's edge and the thumb — 2px at the small
        rung (UIKit's), roomier at the regular one. */
@@ -10,7 +11,7 @@
     display: inline-flex;
     box-sizing: border-box;
     max-inline-size: 100%;
-    border-radius: var(--control-radius-regular);
+    border-radius: var(--control-radius-capsule);
   }
 
   .ui-segmented-control[data-control-size='regular'] {
@@ -59,9 +60,7 @@
     inline-size: calc(
       (100% - 2 * var(--ui-segmented-inset)) / var(--ui-segmented-count, 1)
     );
-    border-radius: calc(
-      var(--control-radius-regular) - var(--ui-segmented-inset)
-    );
+    border-radius: var(--control-radius-capsule);
     background: var(--sys-color-surface-raised);
     box-shadow:
       0 3px 8px rgb(0 0 0 / 12%),
@@ -77,18 +76,6 @@
 
   .ui-segmented-control[data-empty] .ui-segmented-control__thumb {
     opacity: 0;
-  }
-
-  /* THE PILL — a toolbar's view toggle (map | list) is a capsule, the
-     shape iOS 26 gives every grouped item in its bars; the thumb and the
-     segments follow the host's corner. */
-  .ui-segmented-control[data-shape='capsule'] {
-    border-radius: var(--control-radius-capsule);
-  }
-
-  .ui-segmented-control[data-shape='capsule'] .ui-segmented-control__thumb,
-  .ui-segmented-control[data-shape='capsule'] .ui-segmented-control__segment {
-    border-radius: var(--control-radius-capsule);
   }
 
   /* An icon-only pill hugs its glyphs: a square-ish segment per glyph. */
@@ -120,9 +107,7 @@
        down to a 340px row. */
     padding-inline: var(--sys-space-tight);
     border: 0;
-    border-radius: calc(
-      var(--control-radius-regular) - var(--ui-segmented-inset)
-    );
+    border-radius: var(--control-radius-capsule);
     background: transparent;
     color: var(--sys-color-foreground);
     font: var(--sys-font-subheadline);
@@ -165,40 +150,13 @@
     white-space: nowrap;
   }
 
-  /* THE HAIRLINE between two unchosen segments — never beside the chosen
-     one, which the raised pill already separates. */
-  .ui-segmented-control__segment + .ui-segmented-control__segment::before {
-    content: '';
-    position: absolute;
-    inset-block: 25%;
-    inset-inline-start: -0.5px;
-    inline-size: 1px;
-    background: var(--sys-color-separator);
-    transition: opacity var(--sys-motion-duration-regular)
-      var(--sys-motion-ease-standard);
-  }
-
-  /* A capsule has no hairlines: its pill is the only mark (Revolut's
-     range pills, a toolbar's view toggle). */
-  .ui-segmented-control[data-shape='capsule']
-    .ui-segmented-control__segment::before {
-    content: none;
-  }
-
-  .ui-segmented-control__segment[data-selected]::before,
-  .ui-segmented-control__segment[data-selected]
-    + .ui-segmented-control__segment::before {
-    opacity: 0;
-  }
-
   .ui-segmented-control__segment:disabled {
     opacity: var(--sys-opacity-disabled);
     cursor: default;
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .ui-segmented-control__thumb,
-    .ui-segmented-control__segment::before {
+    .ui-segmented-control__thumb {
       transition: none;
     }
   }

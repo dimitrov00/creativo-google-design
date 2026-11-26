@@ -2,9 +2,9 @@
   <ng-container scLede>
     <code>ui-segmented-control</code> — SwiftUI's <code>Picker</code> in
     <code>.segmented</code> style, UISegmentedControl. A filled track of equal
-    segments; the chosen one is a raised pill that glides between slots, and the
-    hairlines between the others step aside beside it. For two to five short,
-    mutually exclusive answers worth seeing at once. A
+    segments on a capsule track; the chosen one is a raised pill that glides
+    between slots. One shape everywhere, as iOS 26 draws it. For two to five
+    short, mutually exclusive answers worth seeing at once. A
     <code>role="radiogroup"</code>: one tab stop, the arrows move the choice.
   </ng-container>
 
@@ -73,22 +73,19 @@
 
   <sc-demo scTitle="The view pill">
     <ng-container scAbout>
-      <code>uiShape="capsule"</code> with icon-only segments — the toolbar PILL
-      that toggles a view (map, list, grid), the shape iOS 26 gives every
-      grouped item in its bars. The words stay as each segment's accessible
-      name. For views only — never for things that need naming, like shops:
-      those are rows or tiles.
+      Icon-only segments — the toolbar PILL that toggles a view (map, list,
+      grid). The words stay as each segment's accessible name. For views only —
+      never for things that need naming, like shops: those are rows or tiles.
     </ng-container>
     <ui-stack uiSpacing="comfortable" uiAlignment="center">
       <ui-segmented-control
         [uiSegments]="views"
         [uiSelectedId]="view()"
-        uiShape="capsule"
         uiLabel="View"
         (uiPicked)="view.set($event)"
       />
       <p uiText uiFont="caption" class="segmented__mono">
-        uiShape="capsule" · iconOnly · view="{{ view() }}"
+        iconOnly · view="{{ view() }}"
       </p>
     </ui-stack>
   </sc-demo>

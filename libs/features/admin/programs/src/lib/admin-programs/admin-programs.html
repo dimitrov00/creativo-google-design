@@ -16,42 +16,32 @@
         <p uiLede>{{ t('admin.programs.lede') }}</p>
       </ui-section-header>
 
-      <!-- Chips that narrow one list: a group of toggle buttons, each
-           saying pressed or not. Not a tab list — a tab owns a panel. -->
-      <ui-stack
-        uiAxis="horizontal"
-        uiSpacing="compact"
-        role="group"
-        [attr.aria-label]="t('admin.programs.title')"
-      >
-        <button
-          type="button"
-          uiChip
-          [uiSelected]="tab() === ProgramsTab.Positions"
-          data-testid="admin-tab-positions"
-          (click)="setTab(ProgramsTab.Positions)"
-        >
-          {{ t('admin.programs.tabs.positions') }}
-        </button>
-        <button
-          type="button"
-          uiChip
-          [uiSelected]="tab() === ProgramsTab.Courses"
-          data-testid="admin-tab-courses"
-          (click)="setTab(ProgramsTab.Courses)"
-        >
-          {{ t('admin.programs.tabs.courses') }}
-        </button>
-        <button
-          type="button"
-          uiChip
-          [uiSelected]="tab() === ProgramsTab.Events"
-          data-testid="admin-tab-events"
-          (click)="setTab(ProgramsTab.Events)"
-        >
-          {{ t('admin.programs.tabs.events') }}
-        </button>
-      </ui-stack>
+      <!-- A VIEW TOGGLE (decided 2026-11-26): three views of one screen,
+           one shown at a time — Picker(.segmented), a radiogroup with one
+           tab stop. Chips are for filters that combine, like the shops
+           below. The slim rung, full width: Health's D · W · M · Y bar. -->
+      <ui-segmented-control
+        [uiSegments]="[
+          {
+            id: ProgramsTab.Positions,
+            label: t('admin.programs.tabs.positions'),
+            testId: 'admin-tab-positions',
+          },
+          {
+            id: ProgramsTab.Courses,
+            label: t('admin.programs.tabs.courses'),
+            testId: 'admin-tab-courses',
+          },
+          {
+            id: ProgramsTab.Events,
+            label: t('admin.programs.tabs.events'),
+            testId: 'admin-tab-events',
+          },
+        ]"
+        [uiSelectedId]="tab()"
+        [uiLabel]="t('admin.programs.title')"
+        (uiPicked)="pickTab($event)"
+      />
 
       @if (editing(); as current) {
       <ui-card data-testid="admin-form">
@@ -94,29 +84,22 @@
                 (input)="positionSummaryBg.set(inputValue($event))"
               ></textarea>
             </label>
-            <ui-stack
-              uiAxis="horizontal"
-              uiSpacing="compact"
-              role="group"
-              [attr.aria-label]="t('admin.programs.field.status')"
-            >
-              <button
-                type="button"
-                uiChip
-                [uiSelected]="positionStatus() === PositionStatus.Open"
-                (click)="positionStatus.set(PositionStatus.Open)"
-              >
-                {{ t('programs.status.position.' + PositionStatus.Open) }}
-              </button>
-              <button
-                type="button"
-                uiChip
-                [uiSelected]="positionStatus() === PositionStatus.Closed"
-                (click)="positionStatus.set(PositionStatus.Closed)"
-              >
-                {{ t('programs.status.position.' + PositionStatus.Closed) }}
-              </button>
-            </ui-stack>
+            <ui-segmented-control
+              [uiSegments]="[
+                {
+                  id: PositionStatus.Open,
+                  label: t('programs.status.position.' + PositionStatus.Open),
+                },
+                {
+                  id: PositionStatus.Closed,
+                  label: t('programs.status.position.' + PositionStatus.Closed),
+                },
+              ]"
+              [uiSelectedId]="positionStatus()"
+              [uiLabel]="t('admin.programs.field.status')"
+              data-testid="admin-position-status"
+              (uiPicked)="pickPositionStatus($event)"
+            />
             @if (shopsShown()) {
             <div
               class="lib-admin-programs__field"
@@ -204,38 +187,30 @@
                 (input)="courseDescriptionBg.set(inputValue($event))"
               ></textarea>
             </label>
-            <ui-stack
-              uiAxis="horizontal"
-              uiSpacing="compact"
-              role="group"
-              [attr.aria-label]="t('admin.programs.field.status')"
-            >
-              <button
-                type="button"
-                uiChip
-                [uiSelected]="courseEnrollmentStatus() === EnrollmentStatus.Open"
-                (click)="courseEnrollmentStatus.set(EnrollmentStatus.Open)"
-              >
-                {{ t('programs.status.enrollment.' + EnrollmentStatus.Open) }}
-              </button>
-              <button
-                type="button"
-                uiChip
-                [uiSelected]="courseEnrollmentStatus() === EnrollmentStatus.Upcoming"
-                (click)="courseEnrollmentStatus.set(EnrollmentStatus.Upcoming)"
-              >
-                {{ t('programs.status.enrollment.' + EnrollmentStatus.Upcoming)
-                }}
-              </button>
-              <button
-                type="button"
-                uiChip
-                [uiSelected]="courseEnrollmentStatus() === EnrollmentStatus.Closed"
-                (click)="courseEnrollmentStatus.set(EnrollmentStatus.Closed)"
-              >
-                {{ t('programs.status.enrollment.' + EnrollmentStatus.Closed) }}
-              </button>
-            </ui-stack>
+            <ui-segmented-control
+              [uiSegments]="[
+                {
+                  id: EnrollmentStatus.Open,
+                  label: t('programs.status.enrollment.' + EnrollmentStatus.Open),
+                },
+                {
+                  id: EnrollmentStatus.Upcoming,
+                  label: t(
+                    'programs.status.enrollment.' + EnrollmentStatus.Upcoming
+                  ),
+                },
+                {
+                  id: EnrollmentStatus.Closed,
+                  label: t(
+                    'programs.status.enrollment.' + EnrollmentStatus.Closed
+                  ),
+                },
+              ]"
+              [uiSelectedId]="courseEnrollmentStatus()"
+              [uiLabel]="t('admin.programs.field.status')"
+              data-testid="admin-course-status"
+              (uiPicked)="pickEnrollmentStatus($event)"
+            />
             <label>
               {{ t('admin.programs.course.startsLabelEn') }}
               <input
