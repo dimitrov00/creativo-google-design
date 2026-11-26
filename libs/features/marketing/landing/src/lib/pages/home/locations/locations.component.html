@@ -17,32 +17,18 @@
         <aside class="locations__panel locations__panel--list">
           <!-- The venue rows ARE the DS segmented list — the same run of
                chromeless segments the rest of the app's content reads in,
-               instead of this section's own bespoke card stack. The ROW is
-               the navigation control (role="button"): its trailing slot
-               holds real <a> actions, so a native <button uiListRow> is out
-               (interactive content can never nest inside a button). That
-               role is also why this is the ELEMENT group form rather than
-               ul/li: a li[role="button"] is no longer a listitem, and a
-               <ul> whose children aren't listitems is a list that lies. -->
+               instead of this section's own bespoke card stack. The row is
+               NOT a control: its trailing slot holds real <a> actions, and
+               interactive content can never nest inside a button — a native
+               one or a role="button" (axe `nested-interactive`, the first
+               full scan, 2026-11-26). The venue's NAME is the button, and
+               it is stretched over the row (`.location-card__open::after`),
+               so the whole row still opens the sheet and the two links sit
+               above it as siblings. -->
           <ui-list-group class="locations__list">
             @for (location of shops(); track location.id; let index = $index) {
               @let status = statusFor(location);
-              <ui-list-row
-                [uiInteractive]="true"
-                class="location-card"
-                role="button"
-                tabindex="0"
-                [attr.aria-label]="
-                  t('landing.location.exploreLocation', {
-                    location: words.text(location.name),
-                  })
-                "
-                aria-haspopup="dialog"
-                aria-controls="location-detail-sheet"
-                [attr.aria-expanded]="sheetOpen() && activeIndex() === index"
-                (click)="openLocation(index)"
-                (keydown)="onCardKeydown(index, $event)"
-              >
+              <ui-list-row [uiInteractive]="true" class="location-card">
                 <!-- HIG Maps place-card register: identity leads (name at
                      headline, address secondary, status + closing detail),
                      actions as a trailing circular cluster — call quiet,
@@ -54,7 +40,23 @@
                   class="location-card__copy"
                 >
                   <h3 uiText uiFont="headline">
-                    {{ words.text(location.name) }}
+                    <button
+                      type="button"
+                      class="location-card__open"
+                      [attr.aria-label]="
+                        t('landing.location.exploreLocation', {
+                          location: words.text(location.name),
+                        })
+                      "
+                      aria-haspopup="dialog"
+                      aria-controls="location-detail-sheet"
+                      [attr.aria-expanded]="
+                        sheetOpen() && activeIndex() === index
+                      "
+                      (click)="openLocation(index)"
+                    >
+                      {{ words.text(location.name) }}
+                    </button>
                   </h3>
                   <p uiText uiFont="footnote" uiForegroundStyle="secondary">
                     {{ words.text(location.address) }}
@@ -128,7 +130,6 @@
                         location: words.text(location.name),
                       })
                     "
-                    (click)="$event.stopPropagation()"
                   >
                     <ui-icon uiName="location.call" />
                   </a>
@@ -146,7 +147,6 @@
                         location: words.text(location.name),
                       })
                     "
-                    (click)="$event.stopPropagation()"
                   >
                     <ui-icon uiName="location.directions" />
                   </a>

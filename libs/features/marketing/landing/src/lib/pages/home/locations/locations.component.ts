@@ -353,12 +353,6 @@ export class LocationsComponent implements AfterViewInit {
     collapse();
   }
 
-  protected onCardKeydown(index: number, event: KeyboardEvent): void {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    event.preventDefault();
-    this.openLocation(index);
-  }
-
   protected openLocation(index: number): void {
     this.activeIndex.set(index);
     this.updateActiveMarker();
