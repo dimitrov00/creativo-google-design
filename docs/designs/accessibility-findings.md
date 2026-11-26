@@ -39,6 +39,19 @@ After it (2026-11-26):
   demo passed none — the element was not at fault), and its photo tiles
   were named without the date they draw.
 
+Found on CI once the scan walked the landing page (2026-11-26):
+
+- A landing shop row was a `role="button"` around its call and directions
+  links. The shop's name is the button now, stretched over the row.
+- The landing map's pins were buttons with no name, inside a map marked
+  as a picture. A pin says which shop it opens; the map is a named group.
+- A team card's label left out the title and specialty it draws. The card
+  is named by its own text.
+- A word in the success or the warning tone read 4.32:1 and 4.24:1 on
+  white. Words read `--sys-color-success-label` and
+  `--sys-color-warning-label` (5.7:1 and 6.3:1), as destructive words
+  already read their own; fills, dots and glyphs keep the tone.
+
 ## Decided — not faults
 
 axe's `label-content-name-mismatch` compares the accessible name with every
