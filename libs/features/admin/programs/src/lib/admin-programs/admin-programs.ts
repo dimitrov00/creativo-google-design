@@ -36,18 +36,31 @@ import {
   UiChoiceMenu,
   type UiChoiceOption,
   UiIcon,
+  UiModalSheet,
   UiSegmentedControl,
   UiTextField,
 } from '@creativo/ui/controls';
 import { UiFlow, UiStack } from '@creativo/ui/layout';
 import {
-  UiCard,
   UiListGroup,
   UiListRow,
+  UiMenu,
+  UiMenuItem,
   UiMenuTrigger,
+  UiNotice,
   UiSectionHeader,
+  UiSheetActionBar,
 } from '@creativo/ui/patterns';
-import { UiFrameDirective, UiPaddingDirective } from '@creativo/ui/modifiers';
+import {
+  UiForegroundStyleDirective,
+  UiFrameDirective,
+  UiPaddingDirective,
+  UiReorderHandle,
+  UiReorderList,
+  type UiReorderMove,
+  UiTextDirective,
+  UiVisuallyHiddenDirective,
+} from '@creativo/ui/modifiers';
 import { AdminProgramsStore, ProgramsTab } from '../admin-programs.store';
 
 /** Which program the edit form is open on — the field `programEditing`, the
@@ -76,6 +89,27 @@ type EventEditing = {
 };
 type Editing = PositionEditing | CourseEditing | EventEditing | null;
 
+/** Where the handle's menu puts a row — the field `programPlace` (Law 6). */
+const ProgramPlace = {
+  /** First in the list. */
+  Top: 'TOP',
+  /** One place up. */
+  Up: 'UP',
+  /** One place down. */
+  Down: 'DOWN',
+  /** Last in the list. */
+  Bottom: 'BOTTOM',
+} as const;
+type ProgramPlace = (typeof ProgramPlace)[keyof typeof ProgramPlace];
+
+/** One row of the list in view: what it is called and the status it prints. */
+type ProgramRow = {
+  readonly id: string;
+  readonly title: string;
+  /** The catalogue key of the row's status word; an event prints none. */
+  readonly statusKey: string | null;
+};
+
 /** One shop chip of the role form: the shop's id and the word it prints. */
 type ShopChip = {
   readonly id: LocationId;
@@ -89,11 +123,20 @@ const NO_SHOP = '';
  * `/admin/programs` — the one place staff manage Positions/Courses/Events.
  * One page, one tab switcher (not three routes) since the three entities
  * share so much shape; list body is `ui-list-group`, status pickers are
- * `ui-chip` toggle pairs, and the create/edit surface is an inline panel
- * rather than a modal sheet — `ModalSheetComponent` lives in
- * `marketing-landing` and isn't part of its public API, and pulling in the
- * raw `ui-sheet` behavior wiring is more ceremony than an internal tool
- * needs. Every word is the catalogue's (`admin.programs.*`, OR-37).
+ * segmented controls, and the create/edit surface is the house form sheet
+ * (`ui-modal-sheet`, owner 2026-11-27): a large title, the shop's own
+ * language first with the translation as a section, and the one answer —
+ * «Запази» — in the dock. ✕ leaves without saving. Every word is the
+ * catalogue's (`admin.programs.*`, OR-37).
+ *
+ * ORDER is not a field of the form: it is arranged in the list, as the
+ * public pages show it (≙ `List` in edit mode with `.onMove`). «Подреди»
+ * gives every row a handle — dragged, moved a place with the arrow keys,
+ * or tapped for «Най-горе · Нагоре · Надолу · Най-долу» — and each move is
+ * saved at once (`reorderPositions`, `reorderCourses`); «Готово» leaves.
+ * A new position or course goes to the end of its list
+ * (`ProgramsSystem.nextSortOrder`); an edit keeps the place it has. An
+ * event's place is its date, so the events list is never arranged.
  *
  * The shops (OR-37, OR-42): an event is at one of the ACTIVE shops or at
  * none (`ui-choice-menu`, «Без конкретен салон» first), a role is open at
@@ -112,20 +155,29 @@ const NO_SHOP = '';
     SiteHeaderComponent,
     TranslocoDirective,
     UiButton,
-    UiCard,
     UiChip,
     UiChoiceMenu,
     UiFlow,
+    UiForegroundStyleDirective,
     UiFrameDirective,
     UiIcon,
     UiListGroup,
     UiListRow,
+    UiMenu,
+    UiMenuItem,
     UiMenuTrigger,
+    UiModalSheet,
+    UiNotice,
     UiPaddingDirective,
+    UiReorderHandle,
+    UiReorderList,
     UiSectionHeader,
     UiSegmentedControl,
+    UiSheetActionBar,
     UiStack,
+    UiTextDirective,
     UiTextField,
+    UiVisuallyHiddenDirective,
   ],
   providers: [AdminProgramsStore],
   templateUrl: './admin-programs.html',
@@ -152,6 +204,73 @@ export class AdminPrograms {
 
   protected readonly tab = signal<ProgramsTab>(ProgramsTab.Positions);
   protected readonly editing = signal<Editing>(null);
+  /** The list is being arranged: rows show handles and do not open. */
+  protected readonly arranging = signal(false);
+  /** The row whose handle menu is open, by id. */
+  protected readonly orderMenu = signal<string | null>(null);
+  /** The last move could not be saved. */
+  protected readonly orderFailed = signal(false);
+  /** The last move in words, for a screen reader: «„Бръснар“ — място 2 от 5». */
+  protected readonly orderAnnouncement = signal('');
+  protected readonly ProgramPlace = ProgramPlace;
+
+  /** A move just made and still being saved: the order as arranged, ahead of the stored one. */
+  private readonly positionOrder = signal<readonly Position[] | null>(null);
+  private readonly courseOrder = signal<readonly Course[] | null>(null);
+
+  /** The lists the page draws: the arranged order while a move is saved, the stored one otherwise. */
+  protected readonly positions = computed(
+    () => this.positionOrder() ?? this.store.positions(),
+  );
+  protected readonly courses = computed(
+    () => this.courseOrder() ?? this.store.courses(),
+  );
+
+  /** The list in view, as rows: each thing's title in the shop's language and its status. */
+  protected readonly rows = computed((): readonly ProgramRow[] => {
+    const locale = this.locale();
+    const tab = this.tab();
+    if (tab === ProgramsTab.Positions) {
+      return this.positions().map((position) => ({
+        id: position.id,
+        title: position.title[locale],
+        statusKey: `programs.status.position.${position.positionStatus}`,
+      }));
+    }
+    if (tab === ProgramsTab.Courses) {
+      return this.courses().map((course) => ({
+        id: course.id,
+        title: course.title[locale],
+        statusKey: `programs.status.enrollment.${course.enrollmentStatus}`,
+      }));
+    }
+    return this.store.events().map((event) => ({
+      id: event.id,
+      title: event.title[locale],
+      statusKey: null,
+    }));
+  });
+
+  /** The list's test id, by tab — written out, never built from a stored tag. */
+  protected readonly listTestId = computed(() => {
+    const tab = this.tab();
+    return tab === ProgramsTab.Positions
+      ? 'admin-positions-list'
+      : tab === ProgramsTab.Courses
+        ? 'admin-courses-list'
+        : 'admin-events-list';
+  });
+
+  /** Is there an order to arrange: two or more positions or courses (an event's place is its date). */
+  protected readonly canArrange = computed(() => {
+    const tab = this.tab();
+    if (tab === ProgramsTab.Positions) return this.positions().length > 1;
+    if (tab === ProgramsTab.Courses) return this.courses().length > 1;
+    return false;
+  });
+
+  /** The sheet is on its way out: it leaves the page once its close has finished. */
+  protected readonly closing = signal(false);
   protected readonly saving = signal(false);
   /** The last save's refusals; `null` until a save is refused. */
   protected readonly saveRefusals = signal<readonly ProgramSaveError[] | null>(
@@ -169,7 +288,6 @@ export class AdminPrograms {
   /** The shops the chips name, in the order they were chosen; empty = every shop. */
   protected readonly positionShopIds = signal<readonly LocationId[]>([]);
   protected readonly positionApplyUrl = signal('');
-  protected readonly positionSortOrder = signal(0);
 
   // Course fields
   protected readonly courseTitleEn = signal('');
@@ -182,7 +300,6 @@ export class AdminPrograms {
   protected readonly courseStartsLabelEn = signal('');
   protected readonly courseStartsLabelBg = signal('');
   protected readonly courseApplyUrl = signal('');
-  protected readonly courseSortOrder = signal(0);
 
   // Event fields
   protected readonly eventTitleEn = signal('');
@@ -194,7 +311,6 @@ export class AdminPrograms {
   /** The menu's pick — a shop's id, or {@link NO_SHOP}. */
   protected readonly eventLocationId = signal<string>(NO_SHOP);
   protected readonly eventApplyUrl = signal('');
-  protected readonly eventSortOrder = signal(0);
   /** Whether the «Салон» menu is open. */
   protected readonly eventShopMenu = signal(false);
 
@@ -360,6 +476,24 @@ export class AdminPrograms {
     return worded === only.errorCode ? generic : worded;
   });
 
+  /**
+   * What the sheet is called: the edited thing's own title in the shop's
+   * language, or «Нова позиция» / «Нов курс» / «Ново събитие».
+   */
+  protected readonly sheetTitle = computed((): string => {
+    const editing = this.editing();
+    const lang = this.loadedLang();
+    if (editing === null || lang === null) return '';
+    if (editing.source !== null) return editing.source.title[this.locale()];
+    const key =
+      editing.programEditing === ProgramEditing.Position
+        ? 'admin.programs.editor.newPosition'
+        : editing.programEditing === ProgramEditing.Course
+          ? 'admin.programs.editor.newCourse'
+          : 'admin.programs.editor.newEvent';
+    return this.transloco.translate(key, {}, lang);
+  });
+
   constructor() {
     this.transloco
       .selectTranslate('admin.programs.documentTitle')
@@ -369,7 +503,73 @@ export class AdminPrograms {
 
   protected setTab(next: ProgramsTab): void {
     this.tab.set(next);
-    this.editing.set(null);
+    this.closed();
+    this.stopArranging();
+  }
+
+  protected startArranging(): void {
+    this.arranging.set(true);
+    this.orderFailed.set(false);
+  }
+
+  protected stopArranging(): void {
+    this.arranging.set(false);
+    this.orderMenu.set(null);
+    this.orderAnnouncement.set('');
+  }
+
+  /** The handle's menu: a place by name, turned into the move it means. */
+  protected placeRow(from: number, place: ProgramPlace, count: number): void {
+    const to =
+      place === ProgramPlace.Top
+        ? 0
+        : place === ProgramPlace.Up
+          ? from - 1
+          : place === ProgramPlace.Down
+            ? from + 1
+            : count - 1;
+    void this.moveRow({ from, to });
+  }
+
+  /**
+   * One move, however it was made: the list shows it at once, the changed
+   * places are saved, and a refused save puts the stored order back and
+   * says so.
+   */
+  protected async moveRow(move: UiReorderMove): Promise<void> {
+    this.orderMenu.set(null);
+    this.orderFailed.set(false);
+    if (this.tab() === ProgramsTab.Positions) {
+      const next = ProgramsSystem.moved(this.positions(), move.from, move.to);
+      this.positionOrder.set(next);
+      this.announceMove(next[move.to]?.title[this.locale()], move.to, next);
+      const saved = await this.store.reorderPositions(next);
+      if (this.positionOrder() === next) this.positionOrder.set(null);
+      if (!saved.ok) this.orderFailed.set(true);
+    } else if (this.tab() === ProgramsTab.Courses) {
+      const next = ProgramsSystem.moved(this.courses(), move.from, move.to);
+      this.courseOrder.set(next);
+      this.announceMove(next[move.to]?.title[this.locale()], move.to, next);
+      const saved = await this.store.reorderCourses(next);
+      if (this.courseOrder() === next) this.courseOrder.set(null);
+      if (!saved.ok) this.orderFailed.set(true);
+    }
+  }
+
+  private announceMove(
+    name: string | undefined,
+    to: number,
+    list: readonly unknown[],
+  ): void {
+    const lang = this.loadedLang();
+    if (name === undefined || lang === null) return;
+    this.orderAnnouncement.set(
+      this.transloco.translate(
+        'admin.programs.order.moved',
+        { name, place: to + 1, count: list.length },
+        lang,
+      ),
+    );
   }
 
   /**
@@ -410,6 +610,21 @@ export class AdminPrograms {
     this.saveRefusals.set(null);
   }
 
+  /** A row tapped: its thing opens in the sheet. */
+  protected openRow(id: string): void {
+    const tab = this.tab();
+    if (tab === ProgramsTab.Positions) {
+      const position = this.positions().find((entry) => entry.id === id);
+      if (position !== undefined) this.startEditPosition(position);
+    } else if (tab === ProgramsTab.Courses) {
+      const course = this.courses().find((entry) => entry.id === id);
+      if (course !== undefined) this.startEditCourse(course);
+    } else {
+      const event = this.store.events().find((entry) => entry.id === id);
+      if (event !== undefined) this.startEditEvent(event);
+    }
+  }
+
   protected startEditPosition(position: Position): void {
     this.fillPosition({ ...position, applyUrl: position.applyUrl ?? '' });
     // The stored scope, as stored — an edit never wipes it (OR-42).
@@ -447,8 +662,15 @@ export class AdminPrograms {
     this.saveRefusals.set(null);
   }
 
+  /** ✕, the scrim, a drag down: the sheet leaves and nothing is saved. */
   protected cancelEdit(): void {
+    this.closing.set(true);
+  }
+
+  /** The sheet's close has finished: it leaves the page. */
+  protected closed(): void {
     this.editing.set(null);
+    this.closing.set(false);
     this.saveRefusals.set(null);
   }
 
@@ -500,7 +722,7 @@ export class AdminPrograms {
 
     this.saving.set(false);
     if (refusals === null) {
-      this.editing.set(null);
+      this.closing.set(true);
     } else {
       this.saveRefusals.set(refusals);
     }
@@ -508,10 +730,6 @@ export class AdminPrograms {
 
   protected inputValue(event: Event): string {
     return (event.target as HTMLInputElement | HTMLTextAreaElement).value;
-  }
-
-  protected numberValue(event: Event): number {
-    return Number((event.target as HTMLInputElement).value) || 0;
   }
 
   /** Loads a form — a blank one to create, a stored one (absent optionals blank) to edit. */
@@ -522,7 +740,6 @@ export class AdminPrograms {
     this.positionSummaryBg.set(input.summary.bg);
     this.positionStatus.set(input.positionStatus);
     this.positionApplyUrl.set(input.applyUrl);
-    this.positionSortOrder.set(input.sortOrder);
   }
 
   private fillCourse(input: CourseInput): void {
@@ -534,7 +751,6 @@ export class AdminPrograms {
     this.courseStartsLabelEn.set(input.startsLabel.en);
     this.courseStartsLabelBg.set(input.startsLabel.bg);
     this.courseApplyUrl.set(input.applyUrl);
-    this.courseSortOrder.set(input.sortOrder);
   }
 
   private fillEvent(input: ShopEventInput): void {
@@ -545,8 +761,17 @@ export class AdminPrograms {
     this.eventStartsAt.set(input.startsAt);
     this.eventLocationId.set(input.locationId);
     this.eventApplyUrl.set(input.applyUrl);
-    this.eventSortOrder.set(input.sortOrder);
     this.eventShopMenu.set(false);
+  }
+
+  /**
+   * The place a save keeps: the stored one on an edit, the end of the list
+   * for a new position or course.
+   */
+  private placeOf(list: readonly { readonly sortOrder: number }[]): number {
+    return (
+      this.editing()?.source?.sortOrder ?? ProgramsSystem.nextSortOrder(list)
+    );
   }
 
   /**
@@ -561,7 +786,7 @@ export class AdminPrograms {
       locationIds: this.positionShopIds(),
       positionStatus: this.positionStatus(),
       applyUrl: this.positionApplyUrl(),
-      sortOrder: this.positionSortOrder(),
+      sortOrder: this.placeOf(this.store.positions()),
     };
   }
 
@@ -578,7 +803,7 @@ export class AdminPrograms {
         bg: this.courseStartsLabelBg(),
       },
       applyUrl: this.courseApplyUrl(),
-      sortOrder: this.courseSortOrder(),
+      sortOrder: this.placeOf(this.store.courses()),
     };
   }
 
@@ -592,7 +817,7 @@ export class AdminPrograms {
       startsAt: this.eventStartsAt(),
       locationId: this.eventLocationId(),
       applyUrl: this.eventApplyUrl(),
-      sortOrder: this.eventSortOrder(),
+      sortOrder: this.editing()?.source?.sortOrder ?? 0,
     };
   }
 }

@@ -57,6 +57,8 @@ import {
   LOCATION_LOAD_PORTS,
   PROGRAMS_PORTS,
 } from '@creativo/infrastructure/firebase-app';
+import { By } from '@angular/platform-browser';
+import { UiModalSheet } from '@creativo/ui/controls';
 import { AdminPrograms } from './admin-programs';
 
 /*
@@ -296,6 +298,16 @@ async function inBulgarian(
   fixture.detectChanges();
 }
 
+/**
+ * Is the editor sheet up: drawn, and not on its way out. (jsdom runs no
+ * animation, so a closing sheet stays in the page; the browser removes it
+ * when its fade ends.)
+ */
+function formOpen(fixture: ComponentFixture<AdminPrograms>): boolean {
+  const sheet = fixture.debugElement.query(By.directive(UiModalSheet));
+  return sheet !== null && !(sheet.componentInstance as UiModalSheet).closing();
+}
+
 /** Lets a save's whole read-decide-write chain (or a stored shop's read) run, then renders. */
 async function settle(fixture: ComponentFixture<AdminPrograms>): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve));
@@ -354,7 +366,7 @@ describe('AdminPrograms', () => {
     click(host, 'admin-new');
     fixture.detectChanges();
 
-    expect(host.querySelector('[data-testid="admin-form"]')).not.toBeNull();
+    expect(formOpen(fixture)).toBe(true);
 
     fillInput(host, 'admin-position-title-en', 'Barber');
     fillInput(host, 'admin-position-title-bg', 'Бръснар');
@@ -376,7 +388,7 @@ describe('AdminPrograms', () => {
         sortOrder: 0,
       },
     ]);
-    expect(host.querySelector('[data-testid="admin-form"]')).toBeNull();
+    expect(formOpen(fixture)).toBe(false);
   });
 
   it('shows the generic line and keeps the form open when the save fails validation', async () => {
@@ -390,7 +402,7 @@ describe('AdminPrograms', () => {
     await settle(fixture);
 
     expect(world.positions.size).toBe(0);
-    expect(host.querySelector('[data-testid="admin-form"]')).not.toBeNull();
+    expect(formOpen(fixture)).toBe(true);
     expect(textOf(host, 'admin-save-error')).toBe(
       "Couldn't save. Check the required fields and try again.",
     );
@@ -418,12 +430,12 @@ describe('AdminPrograms', () => {
 
     click(host, 'admin-new');
     fixture.detectChanges();
-    expect(host.querySelector('[data-testid="admin-form"]')).not.toBeNull();
+    expect(formOpen(fixture)).toBe(true);
 
     click(host, 'admin-tab-courses');
     fixture.detectChanges();
 
-    expect(host.querySelector('[data-testid="admin-form"]')).toBeNull();
+    expect(formOpen(fixture)).toBe(false);
     expect(
       host.querySelector('[data-testid="admin-courses-list"]'),
     ).not.toBeNull();
@@ -434,7 +446,11 @@ describe('AdminPrograms', () => {
 
     expect(host.querySelector('h1')?.textContent?.trim()).toBe('Programs');
     expect(textOf(host, 'admin-tab-events')).toBe('Events');
-    expect(textOf(host, 'admin-new')).toBe('+ New');
+    expect(
+      host
+        .querySelector('[data-testid="admin-new"]')
+        ?.getAttribute('aria-label'),
+    ).toBe('Add');
 
     await inBulgarian(fixture);
     expect(host.querySelector('h1')?.textContent?.trim()).toBe('Програми');
@@ -448,18 +464,146 @@ describe('AdminPrograms', () => {
     fixture.detectChanges();
     const labels = Array.from(
       host.querySelectorAll('[data-testid="admin-form"] label'),
-      (label) => label.childNodes[0]?.textContent?.trim(),
+      (label) => label.querySelector('span')?.textContent?.trim(),
     );
     expect(labels).toEqual([
-      'Заглавие (EN)',
-      'Заглавие (BG)',
-      'Описание (EN)',
-      'Описание (BG)',
+      'Заглавие',
+      'Описание',
       'Начало — по часа на салона',
-      'Линк за записване (по избор — иначе Instagram)',
-      'Подредба',
+      'Линк за записване',
+      'Заглавие',
+      'Описание',
     ]);
+    expect(
+      host.querySelector('#admin-programs-sheet-title')?.textContent?.trim(),
+    ).toBe('Ново събитие');
     expect(textOf(host, 'admin-save')).toBe('Запази');
+  });
+
+  describe('the order of a list', () => {
+    const three = () => [
+      positionOf('pos_a', { title: textFixture('A', 'А'), sortOrder: 0 }),
+      positionOf('pos_b', { title: textFixture('B', 'Б'), sortOrder: 1 }),
+      positionOf('pos_c', { title: textFixture('C', 'В'), sortOrder: 2 }),
+    ];
+    const rowNames = (host: HTMLElement) =>
+      Array.from(
+        host.querySelectorAll('[data-testid^="admin-order-row-"]'),
+        (row) => row.querySelector('span')?.textContent?.trim(),
+      );
+
+    it('puts a new position after the last one, with no order field in the form', async () => {
+      const { fixture, host, world } = await configure({ positions: three() });
+
+      click(host, 'admin-new');
+      fixture.detectChanges();
+      expect(host.querySelector('input[type="number"]')).toBeNull();
+      fillInput(host, 'admin-position-title-en', 'New');
+      fillInput(host, 'admin-position-title-bg', 'Нова');
+      fillInput(host, 'admin-position-summary-en', 'Summary');
+      fillInput(host, 'admin-position-summary-bg', 'Описание');
+      fixture.detectChanges();
+      click(host, 'admin-save');
+      await settle(fixture);
+
+      expect(world.positions.get(PositionId.of('generated-1'))?.sortOrder).toBe(
+        3,
+      );
+    });
+
+    it('keeps the place a position has when it is edited', async () => {
+      const { fixture, host, world } = await configure({ positions: three() });
+
+      (
+        host.querySelectorAll<HTMLElement>(
+          '[data-testid="admin-positions-list"] button',
+        )[2] as HTMLElement
+      ).click();
+      fixture.detectChanges();
+      click(host, 'admin-save');
+      await settle(fixture);
+
+      expect(world.positions.get(PositionId.of('pos_c'))?.sortOrder).toBe(2);
+    });
+
+    it('offers «Reorder» only where there is an order to arrange', async () => {
+      const { fixture, host } = await configure({
+        positions: three(),
+        courses: [courseOf('course_only')],
+      });
+
+      expect(
+        host.querySelector('[data-testid="admin-order-start"]'),
+      ).not.toBeNull();
+      click(host, 'admin-tab-courses');
+      fixture.detectChanges();
+      expect(
+        host.querySelector('[data-testid="admin-order-start"]'),
+      ).toBeNull();
+      click(host, 'admin-tab-events');
+      fixture.detectChanges();
+      expect(
+        host.querySelector('[data-testid="admin-order-start"]'),
+      ).toBeNull();
+    });
+
+    it('gives each row a handle, moves one through its menu and saves only the places that changed', async () => {
+      const { fixture, host, world } = await configure({ positions: three() });
+
+      click(host, 'admin-order-start');
+      fixture.detectChanges();
+      expect(rowNames(host)).toEqual(['A', 'B', 'C']);
+      expect(host.querySelector('[data-testid="admin-new"]')).toBeNull();
+      expect(
+        host
+          .querySelector('[data-testid="admin-order-handle-pos_c"]')
+          ?.getAttribute('aria-label'),
+      ).toBe('Move “C”');
+
+      click(host, 'admin-order-handle-pos_c');
+      fixture.detectChanges();
+      const top = host.querySelector<HTMLButtonElement>(
+        '[data-testid="admin-order-row-pos_c"] [data-testid="admin-order-top"]',
+      );
+      top?.click();
+      fixture.detectChanges();
+      // The list shows the move at once, ahead of the save.
+      expect(rowNames(host)).toEqual(['C', 'A', 'B']);
+      await settle(fixture);
+
+      expect(
+        ['pos_a', 'pos_b', 'pos_c'].map(
+          (id) => world.positions.get(PositionId.of(id))?.sortOrder,
+        ),
+      ).toEqual([1, 2, 0]);
+      expect(
+        host.querySelector('[aria-live="polite"]')?.textContent?.trim(),
+      ).toBe('“C” — place 1 of 3');
+
+      click(host, 'admin-order-done');
+      fixture.detectChanges();
+      expect(host.querySelector('[data-testid="admin-order-done"]')).toBeNull();
+      expect(host.querySelector('[data-testid="admin-new"]')).not.toBeNull();
+    });
+
+    it('disables the places a row already holds', async () => {
+      const { fixture, host } = await configure({ positions: three() });
+
+      click(host, 'admin-order-start');
+      fixture.detectChanges();
+      const disabled = (row: string, place: string) =>
+        host.querySelector<HTMLButtonElement>(
+          `[data-testid="admin-order-row-${row}"] [data-testid="admin-order-${place}"]`,
+        )?.disabled;
+      expect([disabled('pos_a', 'top'), disabled('pos_a', 'up')]).toEqual([
+        true,
+        true,
+      ]);
+      expect([disabled('pos_a', 'down'), disabled('pos_c', 'bottom')]).toEqual([
+        false,
+        true,
+      ]);
+    });
   });
 
   describe('positions (flip 4)', () => {
@@ -515,7 +659,7 @@ describe('AdminPrograms', () => {
       expect(world.positions.get(PositionId.of('pos_1'))).toEqual(
         positionOf('pos_1', { locationIds: stored }),
       );
-      expect(host.querySelector('[data-testid="admin-form"]')).toBeNull();
+      expect(formOpen(fixture)).toBe(false);
     });
 
     it('keeps the stored scope at a one-shop tenant, where no chip is drawn', async () => {
@@ -695,7 +839,7 @@ describe('AdminPrograms', () => {
       await settle(fixture);
 
       expect(world.courses.size).toBe(0);
-      expect(host.querySelector('[data-testid="admin-form"]')).not.toBeNull();
+      expect(formOpen(fixture)).toBe(true);
       // One refusal the catalogue has no words for: the generic line.
       expect(textOf(host, 'admin-save-error')).toBe(
         "Couldn't save. Check the required fields and try again.",
@@ -725,7 +869,7 @@ describe('AdminPrograms', () => {
           sortOrder: 0,
         },
       ]);
-      expect(host.querySelector('[data-testid="admin-form"]')).toBeNull();
+      expect(formOpen(fixture)).toBe(false);
     });
 
     it('refuses a start inside the spring-forward gap in its own words and saves nothing (F4-1 (a))', async () => {
@@ -736,7 +880,7 @@ describe('AdminPrograms', () => {
       await settle(fixture);
 
       expect(world.events.size).toBe(0);
-      expect(host.querySelector('[data-testid="admin-form"]')).not.toBeNull();
+      expect(formOpen(fixture)).toBe(true);
       expect(textOf(host, 'admin-save-error')).toBe(
         "2027-03-28T03:30 doesn't exist in Europe/Sofia — the clocks jump past it. Pick another time.",
       );
@@ -796,7 +940,7 @@ describe('AdminPrograms', () => {
       await settle(fixture);
 
       expect(world.events.get(stored.id)).toEqual(stored);
-      expect(host.querySelector('[data-testid="admin-form"]')).not.toBeNull();
+      expect(formOpen(fixture)).toBe(true);
       expect(textOf(host, 'admin-save-error')).toBe(
         'That shop no longer exists. Pick another.',
       );
@@ -810,7 +954,7 @@ describe('AdminPrograms', () => {
       click(host, 'admin-save');
       await settle(fixture);
       expect(world.events.get(stored.id)?.locationId).toBeNull();
-      expect(host.querySelector('[data-testid="admin-form"]')).toBeNull();
+      expect(formOpen(fixture)).toBe(false);
     });
 
     it('keeps a hidden shop under its own name, and saves it on its zone (OR-37)', async () => {
@@ -834,7 +978,7 @@ describe('AdminPrograms', () => {
       click(host, 'admin-save');
       await settle(fixture);
       expect(world.events.get(stored.id)).toEqual(stored);
-      expect(host.querySelector('[data-testid="admin-form"]')).toBeNull();
+      expect(formOpen(fixture)).toBe(false);
     });
 
     it('pre-fills the start as the input reads it, zero-padded, and the shop the event is at (F4-11)', async () => {

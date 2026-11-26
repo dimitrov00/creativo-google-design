@@ -123,7 +123,7 @@ test.describe('programs — a content manager publishes, the public pages show i
     });
     const positionRow = page
       .getByTestId('admin-positions-list')
-      .locator('[uilistrow]', { hasText: position.en });
+      .locator('[uilistrow]', { hasText: position.bg });
     await expect(positionRow).toBeVisible({ timeout: 20_000 });
     await expect(positionRow).toContainText('Отворена');
 
@@ -143,7 +143,7 @@ test.describe('programs — a content manager publishes, the public pages show i
     });
     const courseRow = page
       .getByTestId('admin-courses-list')
-      .locator('[uilistrow]', { hasText: course.en });
+      .locator('[uilistrow]', { hasText: course.bg });
     await expect(courseRow).toBeVisible({ timeout: 20_000 });
     await expect(courseRow).toContainText('Отворен');
 
@@ -169,7 +169,7 @@ test.describe('programs — a content manager publishes, the public pages show i
     await expect(
       page
         .getByTestId('admin-events-list')
-        .locator('[uilistrow]', { hasText: event.en }),
+        .locator('[uilistrow]', { hasText: event.bg }),
     ).toBeVisible({ timeout: 20_000 });
 
     // /careers — the position, in the page's language (bg), with its

@@ -2963,34 +2963,50 @@
         "courses": "Courses",
         "events": "Events"
       },
-      "new": "+ New",
       "save": "Save",
-      "cancel": "Cancel",
+      "close": "Close",
+      "add": "Add",
+      "order": {
+        "start": "Reorder",
+        "done": "Done",
+        "hint": "Drag ☰ or tap it to move. The site shows them in this order.",
+        "handle": "Move “{{name}}”",
+        "top": "To the top",
+        "up": "Up",
+        "down": "Down",
+        "bottom": "To the bottom",
+        "moved": "“{{name}}” — place {{place}} of {{count}}",
+        "failed": "Couldn't save the order. Try again."
+      },
+      "editor": {
+        "newPosition": "New position",
+        "newCourse": "New course",
+        "newEvent": "New event"
+      },
+      "section": {
+        "translation": "English translation"
+      },
       "saveFailed": "Couldn't save. Check the required fields and try again.",
       "field": {
-        "titleEn": "Title (EN)",
-        "titleBg": "Title (BG)",
-        "descriptionEn": "Description (EN)",
-        "descriptionBg": "Description (BG)",
+        "title": "Title",
+        "description": "Description",
         "status": "Status",
-        "applyUrl": "Apply URL (optional — falls back to Instagram)",
-        "sortOrder": "Sort order"
+        "applyUrl": "Apply link",
+        "linkHint": "Optional. Without a link the button opens Instagram."
       },
       "position": {
-        "summaryEn": "Summary (EN)",
-        "summaryBg": "Summary (BG)",
+        "summary": "Summary",
         "shops": "Shops",
         "shopsAll": "Any shop"
       },
       "course": {
-        "startsLabelEn": "Starts label (EN) — e.g. “Spring 2026”",
-        "startsLabelBg": "Starts label (BG)"
+        "startsLabel": "When it starts — e.g. “Spring 2026”"
       },
       "event": {
         "startsAt": "Starts — shop's local time",
         "shop": "Shop",
         "shopNone": "No specific shop",
-        "rsvpUrl": "RSVP URL (optional — falls back to Instagram)"
+        "rsvpUrl": "RSVP link"
       },
       "shopHidden": "{{name}} (hidden)",
       "shopMissing": "Deleted shop"

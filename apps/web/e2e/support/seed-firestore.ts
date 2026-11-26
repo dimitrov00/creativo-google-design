@@ -279,6 +279,29 @@ export async function removeAppointment(id: string): Promise<void> {
 }
 
 /**
+ * Two careers positions of this attempt's own, CLOSED so no public page
+ * lists them — a list with an order to arrange for `/admin/programs`.
+ */
+export async function seedClosedPositions(run: string): Promise<void> {
+  const positions = getFirestore(adminApp()).collection(Collections.Positions);
+  await Promise.all(
+    [0, 1].map((place) =>
+      positions.doc(`e2e-position-${run}-${place}`).set({
+        title: {
+          en: `Role ${place + 1} ${run}`,
+          bg: `Роля ${place + 1} ${run}`,
+        },
+        summary: { en: 'Seeded for a scan.', bg: 'Заредена за проверка.' },
+        locationIds: [],
+        positionStatus: 'CLOSED',
+        applyUrl: null,
+        sortOrder: 900 + place,
+      }),
+    ),
+  );
+}
+
+/**
  * Gives a seeded visit the contact the desk typed for it — the name and the
  * number a search reads (`contactName`, `contactPhone`; the seeded body
  * carries none), and the e-mail and note when given. Root fields, as every

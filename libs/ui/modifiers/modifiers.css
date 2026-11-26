@@ -612,6 +612,33 @@
     --barber-tone: var(--sys-identity-4);
   }
 
+  /* ── Reorder (uiReorderList / uiReorderHandle) ──
+     The handle is dragged, so the browser must not scroll or select under
+     the finger. While one item is dragged the OTHERS step aside on the
+     snappy spring; the dragged one follows the finger with no transition,
+     lifted above its neighbours on the overlay elevation. At rest nothing
+     here applies, so the owner's re-render lands in one frame. */
+  [data-reorder-handle] {
+    touch-action: none;
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  [data-reorder-dragging] [data-reorder-handle] {
+    cursor: grabbing;
+  }
+
+  [data-reorder-dragging] > :not([data-reorder-lifted]) {
+    transition: translate var(--sys-motion-spring-snappy);
+  }
+
+  [data-reorder-lifted] {
+    position: relative;
+    z-index: 1;
+    box-shadow: var(--sys-elevation-overlay);
+  }
+
   /* ── Visually hidden (uiVisuallyHidden → data-visually-hidden) ──
      ≙ .accessibilityLabel on hidden Text: the SR-only clip recipe, kept in
      the accessibility tree while rendering as a 1px clipped box.

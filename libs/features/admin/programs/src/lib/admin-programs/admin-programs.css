@@ -7,24 +7,64 @@
   padding-block: var(--landing-header-offset) var(--sys-space-spacious);
 }
 
-label,
+/* THE SHEET'S FORM — the team sheets' own rhythm: fields a `comfortable`
+   step apart inside the sheet's safe inset, and room under the last one
+   for the docked «Запази». */
+.lib-admin-programs__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-comfortable);
+  min-inline-size: 0;
+  padding-inline: var(--modal-sheet-safe);
+  padding-block: var(--sys-space-comfortable)
+    var(--ui-sheet-action-bar-clearance);
+}
+
+.lib-admin-programs__form > h2 {
+  margin: 0;
+}
+
+/* A caption over its control, the name's `tight` step; a hint under it
+   the same step below. */
 .lib-admin-programs__field {
   display: flex;
   flex-direction: column;
   gap: var(--sys-space-tight);
-  font: var(--sys-font-subheadline);
-  font-variant-numeric: tabular-nums; /* the shorthand resets the app's tabular figures */
-  color: var(--sys-color-secondary-label);
+  min-inline-size: 0;
 }
 
-/* A picker's caption over its control (the shop menu, the shop chips): the
-   control hugs its content rather than stretching like a text field. */
-.lib-admin-programs__field {
+.lib-admin-programs__field > textarea {
+  min-block-size: 6rem;
+  resize: vertical;
+}
+
+/* A menu's trigger hugs its word rather than stretching like a field. */
+.lib-admin-programs__field--hug {
   align-items: flex-start;
 }
 
-/* The status toggle fills the row like the fields above it, so each of its
-   equal segments has room for its whole word («Затворена»). */
-.lib-admin-programs__field--fill {
-  align-items: stretch;
+/* The translation: a section of its own, a `loose` step under the rest
+   (the form's gap plus this), its fields the form's own step apart. */
+.lib-admin-programs__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sys-space-comfortable);
+  min-inline-size: 0;
+  margin-block-start: var(--sys-space-compact);
+}
+
+/* THE LIST'S BAR: «Подреди» leading, ＋ trailing; «Готово» alone on the
+   trailing edge while arranging. */
+.lib-admin-programs__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--sys-space-compact);
+}
+
+.lib-admin-programs__bar > :last-child {
+  margin-inline-start: auto;
+}
+
+.lib-admin-programs__hint {
+  margin: 0;
 }

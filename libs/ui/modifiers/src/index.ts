@@ -5,6 +5,7 @@ export * from './lib/material.directive';
 export * from './lib/multiline-text-alignment.directive';
 export * from './lib/overlay.directive';
 export * from './lib/reveal.directive';
+export * from './lib/reorder.directive';
 export * from './lib/visually-hidden.directive';
 export * from './lib/weight.directive';
 export * from './lib/foreground.directive';

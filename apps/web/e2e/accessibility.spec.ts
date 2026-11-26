@@ -12,6 +12,7 @@ import { DEV_CLASSIC_CUT } from './support/appointment-seed-document';
 import { attemptKey } from './support/attempt-key';
 import { mintCustomToken } from './support/mint-custom-token';
 import {
+  seedClosedPositions,
   seedUserProfile,
   seedWorkedAppointment,
   waitForAnalyticsDay,
@@ -175,7 +176,12 @@ const ROUTES: Readonly<Record<string, Scan>> = {
   },
   staff: { redirect: true },
   admin: { redirect: true },
-  'admin/programs': { as: As.Owner, visit: '/admin/programs' },
+  'admin/programs': {
+    as: As.Owner,
+    visit: '/admin/programs',
+    // An order to arrange needs two positions; the scan seeds its own.
+    prepare: seedClosedPositions,
+  },
   'admin/team': { as: As.Owner, visit: '/admin/team' },
   'admin/team/permissions': { as: As.Owner, visit: '/admin/team/permissions' },
   'admin/team/permissions/:level': {
@@ -464,6 +470,18 @@ const OVERLAYS: readonly Overlay[] = [
     on: 'staff/analytics/:card',
     taps: ['analytics-custom-range'],
     opened: 'analytics-range-sheet',
+  },
+  {
+    name: 'the programs editor sheet',
+    on: 'admin/programs',
+    taps: ['admin-new'],
+    opened: 'admin-form',
+  },
+  {
+    name: 'a program row’s place menu, while the list is arranged',
+    on: 'admin/programs',
+    taps: ['admin-order-start', '[data-testid^="admin-order-handle-"]'],
+    opened: '.ui-menu__surface:popover-open',
   },
   {
     name: 'the team add menu',
