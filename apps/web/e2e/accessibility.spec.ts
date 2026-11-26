@@ -51,6 +51,12 @@ type Scan =
       readonly lands?: RegExp;
       /** What shows the page has drawn; a visible heading otherwise. */
       readonly ready?: string;
+      /**
+       * What the walk must have brought on screen before the scan reads the
+       * page: the parts drawn late (a deferred section, a map's pins), named
+       * so a run that never drew them fails instead of passing unscanned.
+       */
+      readonly drawn?: readonly string[];
       readonly known?: readonly Waiver[];
     }
   /** Never drawn: a redirect has nothing to scan. */
@@ -63,7 +69,11 @@ type Scan =
  * fails the first test, so a new page cannot ship unscanned.
  */
 const ROUTES: Readonly<Record<string, Scan>> = {
-  '': { as: As.Public, visit: '/' },
+  '': {
+    as: As.Public,
+    visit: '/',
+    drawn: ['.team-card', '.location-card', '.locations-map__pin'],
+  },
   auth: { as: As.Public, visit: '/auth' },
   onboarding: {
     pending:
@@ -165,16 +175,26 @@ async function open(page: Page, as: As): Promise<void> {
   await signInAs(page, uid, roles);
 }
 
-/** Scrolls to the end of the page a screen at a time, then back to the top. */
+/**
+ * Scrolls to the end of the page a screen at a time, then back to the top —
+ * again and again until a pass no longer makes the page taller, because a
+ * section drawn by one pass pushes the next one further down.
+ */
 async function walkThePage(page: Page): Promise<void> {
-  await page.evaluate(async () => {
-    const step = window.innerHeight;
-    for (let y = 0; y < document.documentElement.scrollHeight; y += step) {
-      window.scrollTo(0, y);
-      await new Promise((resolve) => setTimeout(resolve, 100));
-    }
-    window.scrollTo(0, 0);
-  });
+  let height = 0;
+  for (let pass = 0; pass < 8; pass += 1) {
+    const walked = await page.evaluate(async () => {
+      const step = window.innerHeight;
+      for (let y = 0; y < document.documentElement.scrollHeight; y += step) {
+        window.scrollTo(0, y);
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      }
+      window.scrollTo(0, 0);
+      return document.documentElement.scrollHeight;
+    });
+    if (walked === height) return;
+    height = walked;
+  }
 }
 
 test.use({ viewport: { width: 375, height: 812 } });
@@ -210,6 +230,11 @@ test.describe('page accessibility', () => {
         // machine happened to have drawn (the landing's shops were scanned
         // on CI and not locally, 2026-11-26).
         await walkThePage(page);
+        for (const part of scan.drawn ?? []) {
+          await expect(page.locator(part).first(), part).toBeAttached({
+            timeout: 15_000,
+          });
+        }
         await expect(page.locator('ui-skeleton')).toHaveCount(0, {
           timeout: 15_000,
         });

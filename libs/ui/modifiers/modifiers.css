@@ -111,13 +111,13 @@
   }
   /* Good news in ink — a tip left, a booking confirmed. Never a fill. */
   [data-foreground-style='success'][data-foreground-style] {
-    color: var(--sys-color-success);
+    color: var(--sys-color-success-label);
   }
   /* A state that needs attention, in ink — a no-show's glyph beside its
      word (the word keeps the primary ink). The same hue the status
      indicator and the warning notice draw with. Ink only; never a fill. */
   [data-foreground-style='warning'][data-foreground-style] {
-    color: var(--sys-color-warning);
+    color: var(--sys-color-warning-label);
   }
   /* Money taken OFF: the promo hue, which is the accent by alias. The same
      law as `accent` above: a glyph or a display figure, never small words.
