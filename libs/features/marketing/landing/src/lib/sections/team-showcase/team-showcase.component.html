@@ -20,24 +20,22 @@
             class="team-card morph-card"
             uiInteractive
             uiRadius="prominent"
-            [attr.aria-label]="
-              t('landing.barbers.exploreBarber', {
-                barber: words.text(barber.name),
-              })
-            "
             aria-haspopup="dialog"
             aria-controls="barber-detail-sheet"
             [attr.aria-expanded]="activeBarber()?.id === barber.id"
             (click)="openBarber(barber)"
           >
-            <!-- The avatar as the catalogue resolved it; until it lands (or
+            <!-- The card is named by what it draws — the title, the name,
+                 the specialty — so what a person reads is what a voice
+                 command says (WCAG 2.5.3); the photo adds no second copy
+                 of the name. The avatar as the catalogue resolved it; until it lands (or
                  for a barber with no photo yet) the disc shows its media
                  canvas. -->
             <div class="team-card__media media-morph">
               @if (barber.avatarSrc) {
                 <img
                   [src]="barber.avatarSrc"
-                  [alt]="words.text(barber.name)"
+                  alt=""
                   [style.object-position]="barber.objectPosition"
                   loading="lazy"
                 />

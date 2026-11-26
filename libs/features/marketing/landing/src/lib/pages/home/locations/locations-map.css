@@ -95,6 +95,11 @@
      locations.component.ts stamps the attribute on the HEAD (not the
      button) so the ::after overlay inherits this 50% radius and the press
      scale never fights MapLibre's inline transform on the button. */
+  /* The sheet's own pin is a picture, not a control (it opens nothing). */
+  span.locations-map__pin {
+    cursor: default;
+  }
+
   .locations-map__pin-head {
     position: relative;
     z-index: 1;

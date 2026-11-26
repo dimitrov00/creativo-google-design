@@ -49,6 +49,11 @@
        error rendered in it is less legible than the fact it is about.
        Fills and icons keep --sys-color-destructive; this is for INK. */
     --sys-color-destructive-label: #f4796f; /* 5.78:1 on #242424 */
+    /* The other two tones need no lift on the dark card (5.0:1 and
+       5.4:1 on #242424); the names exist so a word reads one token in
+       both themes — see theme-light.css. */
+    --sys-color-success-label: var(--sys-color-success);
+    --sys-color-warning-label: var(--sys-color-warning);
     /* ON THE SOLID ACCENT: MARKS AND DISPLAY FIGURES ONLY. White on
        #f26b22 is 3.04:1 in both themes, which carries a glyph, a check or
        a figure of 24px and over (18.66px in bold — a date picker's chosen

@@ -55,6 +55,13 @@
        button's label on its own 12 % wash over a grouped segment. This is
        6.57:1 on white, 6.13:1 on the segment, 5.09:1 on that wash. */
     --sys-color-destructive-label: #b71c1c;
+    /* The same lift for the other two tones, since 2026-11-26: as WORDS
+       the tones read 4.32:1 (success) and 4.24:1 (warning) on white —
+       under AA — on the landing page's «Отворено» line. Fills, dots'
+       rings and glyphs that stand alone keep the tone; a word reads
+       these. 5.7:1 and 6.3:1 on white. */
+    --sys-color-success-label: #1a7550;
+    --sys-color-warning-label: #8a5200;
     /* ON THE SOLID ACCENT: MARKS AND DISPLAY FIGURES ONLY. White on
        #f26b22 is 3.04:1, which carries a glyph, a check or a figure of
        24px and over (18.66px in bold — a date picker's chosen day, 20px

@@ -107,8 +107,8 @@ describe('modifiers.css · foreground styles', () => {
     ['accent', 'var(--sys-color-accent)'],
     ['promo', 'var(--sys-color-promo)'],
     ['destructive', 'var(--sys-color-destructive-label)'],
-    ['success', 'var(--sys-color-success)'],
-    ['warning', 'var(--sys-color-warning)'],
+    ['success', 'var(--sys-color-success-label)'],
+    ['warning', 'var(--sys-color-warning-label)'],
   ] as const)('%s is %s', (style, value) => {
     expect(ink(style)).toBe(value);
   });
