@@ -70,7 +70,7 @@
       part the stamp card beside it mounts. The first is the glance's own form,
       a <code>button[uiCard]</code> that opens the rhythm: the track is all
       spans (its hidden period list is <code>span[role=list]</code>), so it is
-      valid inside a button, whose name then speaks for it.
+      valid inside a button, which takes its name from the track's own sentence.
     </ng-container>
     <ui-stack
       uiSpacing="compact"
@@ -84,7 +84,6 @@
           uiTone="muted"
           uiPadding="regular"
           [uiInteractive]="true"
-          aria-label="Ритъм: 24 посещения в ритъм, следващото до 26 октомври"
           (click)="tileOpened.set(true)"
         >
           <ui-streak-track
@@ -93,7 +92,7 @@
             [uiCount]="24"
             uiCountUnit="посещения"
             uiCountLabel="в ритъм"
-            uiLabel="Ритъм: 24 посещения в ритъм"
+            uiLabel="Ритъм: 24 посещения в ритъм, следващото до 26 октомври"
             uiProtectedIcon="loyalty.freeze"
           />
         </button>

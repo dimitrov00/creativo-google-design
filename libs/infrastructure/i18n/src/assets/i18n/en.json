@@ -3385,8 +3385,7 @@
       "late": "Late cancellation",
       "dayLine": "{{rostered}} rostered · {{unsold}} free",
       "barberLine": "{{worked}} worked of {{rostered}}",
-      "barbers": "By barber",
-      "openBarber": "See {{name}}"
+      "barbers": "By barber"
     }
   }
 }

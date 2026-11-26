@@ -759,6 +759,10 @@ export function blockRowVm(
   const from = wallClockLabel(localDate, interval.startMinutes, context.locale);
   const to = wallClockLabel(localDate, interval.endMinutes, context.locale);
   const label = rosterBreak ? context.words.breakLabel : context.words.blocked;
+  const span = spanWords(
+    MinuteCount.span(interval.startMinutes, interval.endMinutes),
+    context.words.span,
+  );
   return {
     agendaRow: AgendaRow.Block,
     // The grid block's own id, so a press opens it through `openBlock`.
@@ -767,11 +771,10 @@ export function blockRowVm(
     startLabel: from,
     endLabel: to,
     label,
-    spanLabel: spanWords(
-      MinuteCount.span(interval.startMinutes, interval.endMinutes),
-      context.words.span,
-    ),
-    accessibleName: `${label}, ${from}–${to}`,
+    spanLabel: span,
+    // The name of the row that is only read (a group). A row that opens
+    // is a button named by the words it draws, and never reads this.
+    accessibleName: `${label}, ${span}, ${from}–${to}`,
     past:
       shopNow !== null &&
       VisitStorySystem.hasEnded(

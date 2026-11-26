@@ -10019,7 +10019,8 @@ describe('StaffDashboard', () => {
             '[data-testid="staff-block-row"][data-row-id="block:ivan:2026-08-05:720"]',
           );
         // The list's own block row, worded like the grid's block…
-        expect(row()?.getAttribute('aria-label')).toContain('12:00');
+        expect(row()?.hasAttribute('aria-label')).toBe(false);
+        expect(row()?.textContent).toContain('12:00');
         // …with the event's clock, start over end (owner, 2026-11-05: "the
         // same range as the events").
         expect(
@@ -10149,8 +10150,8 @@ describe('StaffDashboard', () => {
           expect(addRow('staff-add-hours')).not.toBeNull();
 
           // The list's row is a button, and a press opens the editor.
-          expect(blockRow()?.getAttribute('role')).toBe('button');
-          expect(blockRow()?.getAttribute('tabindex')).toBe('0');
+          expect(blockRow()?.tagName).toBe('BUTTON');
+          expect(blockRow()?.parentElement?.tagName).toBe('LI');
           blockRow()?.click();
           expect(gatePage().blockEdit()?.barberIds).toEqual(['ivan']);
 
@@ -10174,7 +10175,8 @@ describe('StaffDashboard', () => {
 
           // The list's row keeps its words and loses the press and the stop.
           expect(blockRow()?.getAttribute('aria-label')).toContain('12:00');
-          expect(blockRow()?.hasAttribute('role')).toBe(false);
+          expect(blockRow()?.tagName).toBe('DIV');
+          expect(blockRow()?.getAttribute('role')).toBe('group');
           expect(blockRow()?.hasAttribute('tabindex')).toBe(false);
           expect(blockRow()?.hasAttribute('data-interactive')).toBe(false);
           blockRow()?.click();
@@ -10231,7 +10233,7 @@ describe('StaffDashboard', () => {
           expect(addRow('staff-add-hours')).toBeNull();
           // Blocked time is another row of «Права»: it stays.
           expect(addRow('staff-add-block')).not.toBeNull();
-          expect(blockRow()?.getAttribute('role')).toBe('button');
+          expect(blockRow()?.tagName).toBe('BUTTON');
 
           saved({});
           expect(addRow('staff-add-hours')).not.toBeNull();
@@ -10245,7 +10247,7 @@ describe('StaffDashboard', () => {
           expect(gatePage().blockChairs()).toEqual([]);
           expect(addRow('staff-add-block')).toBeNull();
           expect(addRow('staff-add-hours')).not.toBeNull();
-          expect(blockRow()?.hasAttribute('role')).toBe(false);
+          expect(blockRow()?.tagName).toBe('DIV');
           gatePage().openBlockSheet(BarberId.of('ivan'));
           expect(gatePage().blockEdit()).toBeNull();
         });

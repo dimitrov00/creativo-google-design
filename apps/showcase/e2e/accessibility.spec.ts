@@ -24,13 +24,8 @@ type Waiver = NonNullable<AxeContext['disableRules']>[number];
 
 const waive = (rule: string, reason: string): Waiver => ({ rule, reason });
 
-const NAME_MISMATCH = (where: string): Waiver =>
-  waive(
-    'label-content-name-mismatch',
-    `${where}: the aria-label does not contain the text drawn on the control (WCAG 2.5.3). Found by the first full scan, 2026-11-26; tracked in docs/designs/accessibility-findings.md.`,
-  );
 /**
- * Not a fault, and not owed: axe compares the accessible name with every
+ * Not a fault: axe compares the accessible name with every
  * glyph drawn inside the control, and here the only drawn text the name
  * leaves out is a picture — initials, a monogram, a count badge — while
  * every word a person would say is in the name. axe has no narrower switch
@@ -43,11 +38,11 @@ const GLYPH = (where: string): Waiver =>
   );
 
 /**
- * What is switched off, by page: ONE rule on ONE page, with its reason —
- * owed (the first full scan found it, nobody has fixed it) or decided
- * (`GLYPH`). An owed entry may only be removed: fix the element, delete
- * its row. A row naming a page the
- * showcase no longer has fails the first test.
+ * What is switched off, by page: ONE rule on ONE page, with its reason.
+ * Every row is a decision (`GLYPH`), never a debt: the faults the first
+ * full scan found were all fixed by 2026-11-26, and a new one is fixed,
+ * not listed here. A row naming a page the showcase no longer has fails
+ * the first test.
  */
 const KNOWN: Readonly<Record<string, readonly Waiver[]>> = {
   'controls/chip': [GLYPH('a person chip draws the avatar’s initials')],
@@ -57,12 +52,8 @@ const KNOWN: Readonly<Record<string, readonly Waiver[]>> = {
   'controls/search-field': [
     GLYPH('a token draws its faces’ initials between its key and value'),
   ],
-  'controls/streak-track': [NAME_MISMATCH('the streak card as a button')],
   'controls/medal': [
     GLYPH('a medal draws its monogram, its level and its «ново» marker'),
-  ],
-  'compositions/client-card': [
-    NAME_MISMATCH('the client card’s points and record tiles'),
   ],
 };
 

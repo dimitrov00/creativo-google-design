@@ -388,7 +388,6 @@ export interface AnalyticsWords {
     readonly late: string;
     readonly dayLine: (rostered: string, unsold: string) => string;
     readonly barberLine: (worked: string, rostered: string) => string;
-    readonly openBarber: (name: string) => string;
   };
   /** «45 мин» · «1 ч» · «6 ч 30 мин» — the schedule's own forms. */
   readonly spanWords: SpanWords;
@@ -765,7 +764,6 @@ export function analyticsWordsOf(
       dayLine: (rostered, unsold) => t('drill.dayLine', { rostered, unsold }),
       barberLine: (worked, rostered) =>
         t('drill.barberLine', { worked, rostered }),
-      openBarber: (name) => t('drill.openBarber', { name }),
     },
     spanWords: spanCopyOf(translate),
   };
