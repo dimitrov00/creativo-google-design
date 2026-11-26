@@ -8,6 +8,7 @@
  * legacy TypeScript rule root and tries to load a tsconfig from it.
  */
 import { iconRegistryOnly } from './icon-registry-only.mjs';
+import { dsControlsOnly } from './ds-controls-only.mjs';
 import { noRestrictedImportExpressions } from './restricted-import-expressions.mjs';
 import { noAmbientClock } from './no-ambient-clock.mjs';
 import { noGenericDiscriminator } from './no-generic-discriminator.mjs';
@@ -51,6 +52,7 @@ const plugin = {
   meta: { name: 'creativo', version: '1.0.0' },
   rules: {
     'icon-registry-only': iconRegistryOnly,
+    'ds-controls-only': dsControlsOnly,
     'no-restricted-import-expressions': noRestrictedImportExpressions,
     'no-ambient-clock': noAmbientClock,
     'no-generic-discriminator': noGenericDiscriminator,
