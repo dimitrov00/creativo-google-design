@@ -56,7 +56,8 @@ export async function expectNoAxeViolations(
     builder = builder.disableRules(disabled.map(({ rule }) => rule));
   }
 
-  const { violations } = await builder.analyze();
+  const found = await builder.analyze();
+  const violations = await rejudgeNameMismatches(page, found.violations);
   if (violations.length > 0) {
     // The full nodes and fix hints, for the report; the assertion below
     // keeps the failure message to one line per rule.
@@ -71,6 +72,79 @@ export async function expectNoAxeViolations(
   ).toEqual([]);
 }
 
+const NAME_MISMATCH = 'label-content-name-mismatch';
+
+/**
+ * axe's own measure of WCAG 2.5.3 fails every labelled control that draws
+ * its words as separate blocks: it reads the blocks as one run with no
+ * space between them («Бакшиши0,00 €») and looks for that run in the label.
+ * Measured 2026-11-26 on bare markup — three `div`s under a label of the
+ * same three phrases fail, with or without commas.
+ *
+ * So each node axe reports is judged again with the browser's own reading
+ * of the drawn text (`innerText`, which keeps the breaks between blocks):
+ * the node stands unless the label holds every drawn word, in order and
+ * unbroken. Nothing is forgiven that a person can see and the label leaves
+ * out — text hidden from readers (`aria-hidden`) is still drawn, and still
+ * counts. What survives says both readings, so the difference is in the
+ * failure message.
+ */
+async function rejudgeNameMismatches(
+  page: Page,
+  violations: readonly AxeViolation[],
+): Promise<AxeViolation[]> {
+  const judged: AxeViolation[] = [];
+  for (const violation of violations) {
+    if (violation.id !== NAME_MISMATCH) {
+      judged.push(violation);
+      continue;
+    }
+    const nodes: AxeViolation['nodes'] = [];
+    for (const node of violation.nodes) {
+      const [selector] = node.target;
+      // A target inside a shadow root or a frame is an array: left to axe.
+      const readings =
+        typeof selector === 'string'
+          ? await page.evaluate(readNameAndDrawnText, selector)
+          : null;
+      if (readings === null || !readings.holds) {
+        nodes.push(
+          readings === null
+            ? node
+            : {
+                ...node,
+                failureSummary: `named «${readings.name}», draws «${readings.drawn}»`,
+              },
+        );
+      }
+    }
+    if (nodes.length > 0) judged.push({ ...violation, nodes });
+  }
+  return judged;
+}
+
+/** Runs in the page: the control's label and the words it draws, as words. */
+function readNameAndDrawnText(
+  selector: string,
+): { name: string; drawn: string; holds: boolean } | null {
+  const element = document.querySelector<HTMLElement>(selector);
+  if (element === null) return null;
+  const words = (text: string): string =>
+    text
+      .normalize('NFKC')
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}]+/gu, ' ')
+      .trim();
+  const labelledBy = (element.getAttribute('aria-labelledby') ?? '')
+    .split(/\s+/)
+    .map((id) => document.getElementById(id)?.textContent ?? '')
+    .join(' ');
+  const name = words(element.getAttribute('aria-label') ?? labelledBy);
+  // An SVG part has no `innerText`: its text is its content.
+  const drawn = words(element.innerText ?? element.textContent ?? '');
+  return { name, drawn, holds: ` ${name} `.includes(` ${drawn} `) };
+}
+
 function requireReason(what: string, reason: string): void {
   if (reason.trim() === '') {
     throw new Error(
@@ -81,13 +155,34 @@ function requireReason(what: string, reason: string): void {
 
 const TARGETS_SHOWN = 3;
 
+/** What was measured on the first node, where the rule measures something: the two readings of a name, or the two colours and their ratio. */
+function measured(violation: AxeViolation): string {
+  const [node] = violation.nodes;
+  if (node === undefined) return '';
+  if (violation.id === NAME_MISMATCH) {
+    return node.failureSummary ? ` (${node.failureSummary})` : '';
+  }
+  if (violation.id === 'color-contrast') {
+    const data: unknown = node.any[0]?.data;
+    if (typeof data !== 'object' || data === null) return '';
+    const { fgColor, bgColor, contrastRatio } = data as Record<string, unknown>;
+    return ` (${String(fgColor)} on ${String(bgColor)}, ${String(contrastRatio)}:1)`;
+  }
+  return '';
+}
+
 function describeViolation(violation: AxeViolation): string {
   const targets = violation.nodes.map((node) =>
     node.target
       .map((part) => (Array.isArray(part) ? part.join(' >>> ') : part))
       .join(' '),
   );
-  const shown = targets.slice(0, TARGETS_SHOWN).join(' | ');
+  const shown = targets
+    .slice(0, TARGETS_SHOWN)
+    .map((target, index) =>
+      index === 0 ? `${target}${measured(violation)}` : target,
+    )
+    .join(' | ');
   const more =
     targets.length > TARGETS_SHOWN
       ? ` (+${targets.length - TARGETS_SHOWN} more)`

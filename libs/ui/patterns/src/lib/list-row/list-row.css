@@ -116,7 +116,12 @@
     );
     border-radius: var(--control-radius-regular);
   }
-  .ui-list-row[data-selected] > [uitrailing] {
+  /* The selector repeats the detail rule's own shape further down: without
+     its two `:not()`s that rule outranked this one, and a chosen row's
+     trailing detail stayed secondary grey — 3.47:1 on the wash in dark
+     (axe on the landing's shop sheet, 2026-11-26). */
+  .ui-list-row[data-selected]
+    > [uitrailing]:not(.ui-button):not([data-foreground-style]) {
     color: var(--sys-color-foreground);
   }
   /* The wash is a fill: a quiet line in a chosen row takes the secondary

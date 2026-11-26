@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { expectNoAxeViolations } from '@creativo/shared/axe-scan';
 import {
   readBookingStatus,
   readSeatCancellation,
@@ -189,11 +190,14 @@ test.describe('account appointments', () => {
       'data-open',
       '',
     );
+    // Both sheets need a seeded visit, so they are scanned in this flow.
+    await expectNoAxeViolations(page);
     await page.getByTestId('appointment-cancel-trigger').click();
     await expect(page.getByTestId('appointment-cancel-sheet')).toHaveAttribute(
       'data-open',
       '',
     );
+    await expectNoAxeViolations(page);
     // The reason is optional and starts empty.
     await expect(page.getByTestId('appointment-cancel-reason')).toHaveValue('');
 

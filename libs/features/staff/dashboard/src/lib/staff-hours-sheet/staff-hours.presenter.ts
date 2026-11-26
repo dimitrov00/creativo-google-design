@@ -54,7 +54,9 @@ export function hoursWeekVm(
       hours,
       breaks,
       off,
-      accessibleName: [name, hours, breaks]
+      // In the order the row draws them — the day, its break under it, its
+      // hours trailing — so the name holds the drawn words unbroken.
+      accessibleName: [name, breaks, hours]
         .filter((part): part is string => part !== null)
         .join(', '),
     };

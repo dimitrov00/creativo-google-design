@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { Role } from '@core/components';
+import { expectNoAxeViolations } from '@creativo/shared/axe-scan';
 import { BarberId, LocalDate, UtcEpochMs, Weekday } from '@core/primitives';
 import { DEV_CHAIR } from './support/appointment-seed-document';
 import { attemptKey } from './support/attempt-key';
@@ -85,6 +86,9 @@ test.describe('booking core (flip 1) — live', () => {
     await page.getByTestId('booking-time-pick').click();
     const times = page.getByTestId('booking-time');
     await expect(times.first()).toBeVisible({ timeout: 20_000 });
+    // The time sheet is only on the page inside this flow, so it is
+    // scanned here (the page scan reads `/book` as it first opens).
+    await expectNoAxeViolations(page);
     // Every time is a wall-clock minute inside Ivan's Center roster.
     const labels = await times.allInnerTexts();
     expect(labels.length).toBeGreaterThan(0);

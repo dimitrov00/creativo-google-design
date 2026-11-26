@@ -91,6 +91,22 @@ test.describe('showcase accessibility', () => {
         // Every showcase page renders its title as the one <h1>; a route
         // that draws only the shell must not pass as a clean scan.
         await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+        // The theme is on the page, and its inks have arrived: a scan taken
+        // while the title is still crossing from the other theme's ink read
+        // #121212 on #000000 and failed four pages at random (2026-11-26).
+        await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+        await expect
+          .poll(async () => {
+            const ink = () =>
+              page.evaluate(() => {
+                const title = document.querySelector('h1');
+                return title === null ? '' : getComputedStyle(title).color;
+              });
+            const before = await ink();
+            await page.waitForTimeout(120);
+            return before !== '' && before === (await ink());
+          })
+          .toBe(true);
         await page.evaluate(() => document.fonts.ready.then(() => undefined));
         await expectNoAxeViolations(page, {
           disableRules: KNOWN[route] ?? [],
