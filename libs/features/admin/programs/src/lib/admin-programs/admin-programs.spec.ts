@@ -406,6 +406,7 @@ describe('AdminPrograms', () => {
         id: PositionId.of('generated-1'),
         title: { en: 'Barber', bg: 'Бръснар' },
         summary: { en: 'Full-time chair', bg: 'Пълен работен ден' },
+        workplaceMode: 'ON_SITE',
         locationIds: [],
         positionStatus: PositionStatus.Open,
         applyUrl: null,
@@ -924,6 +925,58 @@ describe('AdminPrograms', () => {
       expect(world.positions.get(PositionId.of('pos_1'))?.locationIds).toEqual([
         MLADOST.id,
       ]);
+    });
+
+    it('makes a role remote: the shops list goes, and the role is saved tied to no shop', async () => {
+      const stored = positionOf('pos_1', { locationIds: [MLADOST.id] });
+      const { fixture, host, world } = await configure({
+        locations: [CENTER, MLADOST],
+        positions: [stored],
+      });
+
+      rowsOf(host, 'admin-positions-list')[0]?.click();
+      fixture.detectChanges();
+      expect(host.querySelector('ui-check-list')).not.toBeNull();
+
+      click(host, 'admin-position-workplace-REMOTE');
+      fixture.detectChanges();
+      expect(host.querySelector('ui-check-list')).toBeNull();
+
+      // Turning back finds the shops as they were picked.
+      click(host, 'admin-position-workplace-HYBRID');
+      fixture.detectChanges();
+      expect(shopChipsOf(host)).toEqual(['All shops –', 'Center', 'Mladost ✓']);
+
+      click(host, 'admin-position-workplace-REMOTE');
+      fixture.detectChanges();
+      click(host, 'admin-save');
+      await settle(fixture);
+
+      expect(world.positions.get(stored.id)).toEqual({
+        ...stored,
+        workplaceMode: 'REMOTE',
+        locationIds: [],
+      });
+    });
+
+    it('saves a remote role whose shops were all unchecked: no shop is owed', async () => {
+      const stored = positionOf('pos_1', { locationIds: [MLADOST.id] });
+      const { fixture, host, world } = await configure({
+        locations: [CENTER, MLADOST],
+        positions: [stored],
+      });
+
+      rowsOf(host, 'admin-positions-list')[0]?.click();
+      fixture.detectChanges();
+      click(host, 'admin-position-shop-loc-mladost');
+      fixture.detectChanges();
+      click(host, 'admin-position-workplace-REMOTE');
+      fixture.detectChanges();
+      click(host, 'admin-save');
+      await settle(fixture);
+
+      expect(world.positions.get(stored.id)?.workplaceMode).toBe('REMOTE');
+      expect(formOpen(fixture)).toBe(false);
     });
 
     it('refuses a role limited to no shop, and says so on the list', async () => {

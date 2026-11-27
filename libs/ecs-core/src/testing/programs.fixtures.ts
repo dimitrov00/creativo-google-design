@@ -1,6 +1,7 @@
 import {
   EnrollmentStatus,
   PositionStatus,
+  WorkplaceMode,
   type CourseInput,
   type PositionInput,
   type ShopEventInput,
@@ -61,6 +62,7 @@ export function positionOf(
     id: PositionId.of(id),
     title: textFixture('Barber', 'Бръснар'),
     summary: textFixture('Full-time chair', 'Пълен работен ден'),
+    workplaceMode: WorkplaceMode.OnSite,
     locationIds: [],
     positionStatus: PositionStatus.Open,
     applyUrl: null,
@@ -118,6 +120,7 @@ export function positionInputOf(
   return {
     title: textFixture('Barber', 'Бръснар'),
     summary: textFixture('Full-time chair', 'Пълен работен ден'),
+    workplaceMode: WorkplaceMode.OnSite,
     locationIds: [],
     positionStatus: PositionStatus.Open,
     applyUrl: '',

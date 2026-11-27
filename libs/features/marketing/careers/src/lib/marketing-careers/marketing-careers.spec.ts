@@ -22,7 +22,7 @@ import {
   POSITION_READ_PORTS,
   PROFILE_PORTS,
 } from '@creativo/infrastructure/firebase-app';
-import { PositionStatus } from '@core/components';
+import { PositionStatus, WorkplaceMode } from '@core/components';
 import type { Position, ShopLocation } from '@core/entities';
 import type { PositionReadPorts } from '@core/ports';
 import { LocationId } from '@core/primitives';
@@ -54,7 +54,7 @@ const MLADOST = locationFixture({
 });
 
 /**
- * The app's own `programs.status` words for `lang` — read, never re-typed, so
+ * The app's own `programs.status` and `programs.workplace` words for `lang` — read, never re-typed, so
  * the badge cases pin the catalogue's words (pass E, E-17; translated by
  * OR-53). Every other key renders as itself.
  */
@@ -65,9 +65,17 @@ function programStatusWords(lang: string): Translation {
   );
   // eslint-disable-next-line security/detect-non-literal-fs-filename -- a fixed path to the app's own catalogue.
   const catalogue = JSON.parse(readFileSync(file, 'utf8')) as {
-    readonly programs: { readonly status: Translation };
+    readonly programs: {
+      readonly status: Translation;
+      readonly workplace: Translation;
+    };
   };
-  return { programs: { status: catalogue.programs.status } };
+  return {
+    programs: {
+      status: catalogue.programs.status,
+      workplace: catalogue.programs.workplace,
+    },
+  };
 }
 
 @Injectable()
@@ -331,6 +339,35 @@ describe('MarketingCareers', () => {
     expect(
       rows[1]?.querySelector('[data-testid="careers-row-shops"]'),
     ).toBeNull();
+  });
+
+  it('words a remote role and a hybrid one before its shops', async () => {
+    const host = await render(
+      await configure(
+        [
+          positionOf('pos_remote', { workplaceMode: WorkplaceMode.Remote }),
+          positionOf('pos_hybrid', {
+            workplaceMode: WorkplaceMode.Hybrid,
+            locationIds: [CENTER.id],
+            sortOrder: 1,
+          }),
+        ],
+        [],
+        [CENTER, MLADOST],
+      ),
+      'bg',
+    );
+
+    const rows = host.querySelectorAll(
+      '[data-testid="careers-list"] a[uilistrow]',
+    );
+    const placeOf = (row: Element | undefined) =>
+      row
+        ?.querySelector('[data-testid="careers-row-workplace"]')
+        ?.parentElement?.textContent?.replace(/\s+/g, ' ')
+        .trim();
+    expect(placeOf(rows[0])).toBe('От вкъщи');
+    expect(placeOf(rows[1])).toBe('Хибридно · Център');
   });
 
   it('names no shop at a one-shop tenant', async () => {

@@ -1,4 +1,4 @@
-import type { PositionStatus } from '@core/components';
+import type { PositionStatus, WorkplaceMode } from '@core/components';
 import type { PositionId } from '@core/primitives';
 
 /*
@@ -20,6 +20,12 @@ export type PositionRowVm = {
    * shop, at a one-shop tenant, or while the shops are unread.
    */
   readonly shopsLine: string | null;
+  /**
+   * The workplace word the row prints before its shops
+   * (`programs.workplace.<tag>`): «От вкъщи», «Хибридно». `null` for an
+   * on-site role — its shops line already says where.
+   */
+  readonly workplaceTag: WorkplaceMode | null;
   /** Where the row leads: the role's apply link, else the shop's Instagram. */
   readonly href: string;
   /** The stored status — the badge's word (`programs.status.position.<tag>`) and tone. */

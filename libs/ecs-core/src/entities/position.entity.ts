@@ -1,4 +1,8 @@
-import type { LocalizedText, PositionStatus } from '@core/components';
+import type {
+  LocalizedText,
+  PositionStatus,
+  WorkplaceMode,
+} from '@core/components';
 import type { LocationId, PositionId } from '@core/primitives';
 
 /**
@@ -9,12 +13,14 @@ import type { LocationId, PositionId } from '@core/primitives';
  * every location (`LocationScopeSystem.serves`). `applyUrl` is where
  * "Apply" sends a candidate; `null` falls back to the shop's shared contact
  * link. `positionStatus` was the bare status field (N8), SCREAMING since
- * flip 4.
+ * flip 4. `workplaceMode` says where the role is worked; a remote one
+ * names no shop (`locationIds` is `[]`, and stands for no shop at all).
  */
 export type Position = {
   readonly id: PositionId;
   readonly title: LocalizedText;
   readonly summary: LocalizedText;
+  readonly workplaceMode: WorkplaceMode;
   readonly locationIds: readonly LocationId[];
   readonly positionStatus: PositionStatus;
   readonly applyUrl: string | null;

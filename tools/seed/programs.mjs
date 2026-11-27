@@ -1,7 +1,7 @@
 /**
  * PROGRAMS for the dev seed (OR-41, DEP-F29): the careers roles, the
  * courses and the shop events `/careers`, `/courses`, `/events` and
- * `/admin/programs` show — two roles (one open, one closed), three courses
+ * `/admin/programs` show — three roles (two open — one of them remote — and one closed), three courses
  * (open, upcoming, closed) and two events (one two weeks ahead, one a
  * month behind). The BODIES are engine output (`fixtures/programs.fixtures.ts`:
  * the admin form judged by `ProgramsSystem`, an event's instant converted

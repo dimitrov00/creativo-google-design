@@ -882,6 +882,11 @@
         "body": "This is where the recap lives once the first one wraps."
       }
     },
+    "workplace": {
+      "ON_SITE": "On-site",
+      "HYBRID": "Hybrid",
+      "REMOTE": "Remote"
+    },
     "status": {
       "position": {
         "OPEN": "Open",
@@ -3012,6 +3017,7 @@
         "linkHint": "Optional. Without a link the button opens Instagram."
       },
       "position": {
+        "workplace": "Workplace",
         "summary": "Summary",
         "shops": "Shops",
         "shopsAll": "All shops",

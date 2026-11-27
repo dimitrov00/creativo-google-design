@@ -2,6 +2,7 @@ import {
   EnrollmentStatus,
   LocalizedText,
   PositionStatus,
+  WorkplaceMode,
   type CourseInput,
   type PositionInput,
   type ShopEventInput,
@@ -261,7 +262,9 @@ export const ProgramsSystem = {
   /**
    * A role from the admin form — sortOrder, title, summary, each location
    * id, apply URL, every refusal at once in that order. The status is the
-   * form's chip, taken as typed.
+   * form's chip, taken as typed, and so is where the role is worked — but
+   * a remote role is tied to no shop, so its location ids are dropped
+   * (after they were judged like any others).
    */
   position(
     id: PositionId,
@@ -293,7 +296,9 @@ export const ProgramsSystem = {
       id,
       title: title.value,
       summary: summary.value,
-      locationIds: locationIds.value,
+      workplaceMode: input.workplaceMode,
+      locationIds:
+        input.workplaceMode === WorkplaceMode.Remote ? [] : locationIds.value,
       positionStatus: input.positionStatus,
       applyUrl: applyUrl.value,
       sortOrder: sortOrder.value,

@@ -344,7 +344,25 @@
                 (uiPicked)="pickPositionStatus($event)"
               />
             </div>
-            @if (shopsShown()) {
+            <!-- WHERE THE ROLE IS WORKED, as job boards word it. A remote
+                 role is tied to no shop, so the shops list below goes. -->
+            <div class="lib-admin-programs__field">
+              <span
+                uiText
+                uiFont="footnote"
+                uiForegroundStyle="secondary"
+                aria-hidden="true"
+                >{{ t('admin.programs.position.workplace') }}</span
+              ><ui-segmented-control
+                uiControlSize="regular"
+                [uiSegments]="[{ id: WorkplaceMode.OnSite, label: t('programs.workplace.' + WorkplaceMode.OnSite), testId: 'admin-position-workplace-' + WorkplaceMode.OnSite },{ id: WorkplaceMode.Hybrid, label: t('programs.workplace.' + WorkplaceMode.Hybrid), testId: 'admin-position-workplace-' + WorkplaceMode.Hybrid },{ id: WorkplaceMode.Remote, label: t('programs.workplace.' + WorkplaceMode.Remote), testId: 'admin-position-workplace-' + WorkplaceMode.Remote },]"
+                [uiSelectedId]="positionWorkplace()"
+                [uiLabel]="t('admin.programs.position.workplace')"
+                data-testid="admin-position-workplace"
+                (uiPicked)="pickWorkplace($event)"
+              />
+            </div>
+            @if (positionShopsShown()) {
             <!-- THE ROLE'S SHOPS: a check list. «Всички салони» heads it
                  and stands for every shop — a check when all are chosen, a
                  dash when some are — and each shop hangs from it by the

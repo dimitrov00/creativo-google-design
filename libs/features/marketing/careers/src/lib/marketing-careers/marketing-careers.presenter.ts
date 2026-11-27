@@ -1,4 +1,4 @@
-import { LocalizedText } from '@core/components';
+import { LocalizedText, WorkplaceMode } from '@core/components';
 import type { Position, ShopLocation } from '@core/entities';
 import type { RepositoryError } from '@core/errors';
 import { type Result } from '@core/primitives';
@@ -19,7 +19,8 @@ import { localeFor } from '@creativo/infrastructure/i18n';
  * `LocationScopeSystem.isMultiShop`'s. It words the title and the summary
  * in the active language and the shops by the names a line that already
  * knows the business calls them (`namedShopsOf`, the one shop-name wording
- * of the programs pages), joined « · ».
+ * of the programs pages), joined « · », and hands on the workplace tag a
+ * row words — none for an on-site role, whose shops say where it is.
  *
  * The shops are named ONCE per emission. Unread or failed, they name
  * nothing: each row prints without its shops line, and no row is ever
@@ -63,6 +64,10 @@ export function positionRowsVm(
       title: LocalizedText.pick(position.title, locale),
       summary: LocalizedText.pick(position.summary, locale),
       shopsLine: shopsLineOf(position, named),
+      workplaceTag:
+        position.workplaceMode === WorkplaceMode.OnSite
+          ? null
+          : position.workplaceMode,
       href: position.applyUrl ?? input.fallbackHref,
       positionStatus: position.positionStatus,
     });

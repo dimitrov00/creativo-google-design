@@ -212,6 +212,7 @@ export * from './profile-completion-key.data';
 export * from './profile-edits.data';
 export * from './program-input.data';
 export * from './program-status.data';
+export * from './workplace-mode.data';
 export * from './public-label.data';
 export * from './punch-card.data';
 export * from './qualifier-comparison.data';
