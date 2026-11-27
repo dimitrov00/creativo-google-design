@@ -194,11 +194,11 @@ export const EngagementErrorCode = {
 
   // ── Programs (positions, courses, shop events) ────────────────────────
   PositionSortOrderInvalid: 'ENGAGEMENT_POSITION_INVALID_SORT_ORDER',
-  PositionApplyUrlInvalid: 'ENGAGEMENT_POSITION_INVALID_APPLY_URL',
+  PositionContactInvalid: 'ENGAGEMENT_POSITION_INVALID_CONTACT',
   CourseSortOrderInvalid: 'ENGAGEMENT_COURSE_INVALID_SORT_ORDER',
-  CourseApplyUrlInvalid: 'ENGAGEMENT_COURSE_INVALID_APPLY_URL',
+  CourseContactInvalid: 'ENGAGEMENT_COURSE_INVALID_CONTACT',
   ShopEventSortOrderInvalid: 'ENGAGEMENT_SHOP_EVENT_INVALID_SORT_ORDER',
-  ShopEventApplyUrlInvalid: 'ENGAGEMENT_SHOP_EVENT_INVALID_APPLY_URL',
+  ShopEventContactInvalid: 'ENGAGEMENT_SHOP_EVENT_INVALID_CONTACT',
   /** An admin update of a role that is no longer stored — nothing is written. */
   PositionNotFound: 'ENGAGEMENT_POSITION_NOT_FOUND',
   /** An admin update of a course that is no longer stored — nothing is written. */
@@ -254,7 +254,7 @@ export type EngagementError =
 
 /**
  * Any refusal of a programs field the admin typed (`ProgramsSystem`): a sort
- * order or apply URL, a blank locale, a location id, the start's form or date.
+ * order or contact, a blank locale, a location id, the start's form or date.
  */
 export type ProgramFieldError =
   EngagementError.ProgramError | CatalogError | PrimitiveError | TimeError;
@@ -625,7 +625,7 @@ export const EngagementError = {
   },
 
   // ── Programs ──────────────────────────────────────────────────────────
-  /** A sort order that is not a non-negative integer, or an apply URL that does not parse. */
+  /** A sort order that is not a non-negative integer, or a contact that is not its method's shape, or a method given twice. */
   program(
     errorCode: EngagementError.ProgramCode,
     rawValue: unknown,
@@ -868,11 +868,11 @@ export namespace EngagementError {
 
   export type ProgramCode =
     | typeof EngagementErrorCode.PositionSortOrderInvalid
-    | typeof EngagementErrorCode.PositionApplyUrlInvalid
+    | typeof EngagementErrorCode.PositionContactInvalid
     | typeof EngagementErrorCode.CourseSortOrderInvalid
-    | typeof EngagementErrorCode.CourseApplyUrlInvalid
+    | typeof EngagementErrorCode.CourseContactInvalid
     | typeof EngagementErrorCode.ShopEventSortOrderInvalid
-    | typeof EngagementErrorCode.ShopEventApplyUrlInvalid;
+    | typeof EngagementErrorCode.ShopEventContactInvalid;
   export type ProgramError = {
     readonly errorCode: ProgramCode;
     readonly rawValue: Scalar;

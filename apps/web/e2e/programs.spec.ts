@@ -129,6 +129,12 @@ test.describe('programs — a content manager publishes, the public pages show i
       );
       // Worked from anywhere: the careers row says so.
       await form.getByTestId('admin-position-workplace-REMOTE').click();
+      // Answered by e-mail: the one way becomes the careers row's own link.
+      await form.getByTestId('admin-contact-add').click();
+      await page.getByTestId('admin-contact-add-EMAIL').click();
+      await form
+        .getByTestId('admin-contact-value-EMAIL')
+        .fill('jobs@example.test');
     });
     const positionRow = page
       .getByTestId('admin-positions-list')
@@ -200,6 +206,10 @@ test.describe('programs — a content manager publishes, the public pages show i
     await expect(statusOf(careersRow)).toHaveText('Отворена');
     await expect(careersRow.getByTestId('careers-row-workplace')).toHaveText(
       'От вкъщи',
+    );
+    await expect(careersRow).toHaveAttribute(
+      'href',
+      'mailto:jobs@example.test',
     );
 
     // /courses — the course under «Open» (the default tab), with its

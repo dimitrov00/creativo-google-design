@@ -304,7 +304,9 @@ const FILLED_POSITION_BODY = bodyOf(
   positionOf('doc-4', {
     locationIds: [LocationId.of('loc-center')],
     positionStatus: PositionStatus.Closed,
-    applyUrl: 'https://example.test/apply',
+    contacts: [
+      { contactMethod: 'LINK', contactValue: 'https://example.test/apply' },
+    ],
     sortOrder: 3,
   }),
 );
@@ -312,7 +314,9 @@ const FILLED_COURSE_BODY = bodyOf(
   courseOf('doc-4', {
     enrollmentStatus: EnrollmentStatus.Upcoming,
     startsLabel: textFixture('Spring 2027', 'Пролет 2027'),
-    applyUrl: 'https://example.test/course',
+    contacts: [
+      { contactMethod: 'LINK', contactValue: 'https://example.test/course' },
+    ],
     sortOrder: 2,
   }),
 );
@@ -320,7 +324,9 @@ const FILLED_EVENT_BODY = bodyOf(
   shopEventOf('doc-4', {
     startMinutes: minute(1439),
     locationId: LocationId.of('loc-center'),
-    applyUrl: 'https://example.test/rsvp',
+    contacts: [
+      { contactMethod: 'LINK', contactValue: 'https://example.test/rsvp' },
+    ],
     sortOrder: 1,
   }),
 );
@@ -971,7 +977,36 @@ describe('firestore.rules', () => {
         'locationIds that are no list',
         ...position({ locationIds: 'loc-center' }),
       ],
-      ['an empty applyUrl — none is null', ...course({ applyUrl: '' })],
+      ['contacts that are no list', ...course({ contacts: null })],
+      [
+        'a contact tag outside ContactMethod',
+        ...course({
+          contacts: [{ contactMethod: 'FAX', contactValue: '+35929800000' }],
+        }),
+      ],
+      [
+        'a contact with an empty value',
+        ...position({
+          contacts: [{ contactMethod: 'EMAIL', contactValue: '' }],
+        }),
+      ],
+      [
+        'a contact with a key of its own',
+        ...event({
+          contacts: [
+            { contactMethod: 'LINK', contactValue: 'https://x.test', note: 1 },
+          ],
+        }),
+      ],
+      [
+        'more contacts than there are methods',
+        ...position({
+          contacts: [1, 2, 3, 4, 5].map((n) => ({
+            contactMethod: 'LINK',
+            contactValue: `https://x.test/${n}`,
+          })),
+        }),
+      ],
       ['a string sortOrder', ...course({ sortOrder: '0' })],
       ['a negative sortOrder', ...position({ sortOrder: -1 })],
     ])(

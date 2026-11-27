@@ -1,3 +1,11 @@
+import { NgTemplateOutlet } from '@angular/common';
+import {
+  ContactSheetComponent,
+  type ContactRowVm,
+  type ContactSheetVm,
+  contactRowVm,
+  opensNewTab,
+} from '@creativo/features/shared/catalog';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -68,6 +76,8 @@ const STATUS_TONES = {
   selector: 'cr-marketing-courses',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    ContactSheetComponent,
+    NgTemplateOutlet,
     SiteFooterComponent,
     SiteHeaderComponent,
     TranslocoDirective,
@@ -94,6 +104,9 @@ export class MarketingCourses {
   private readonly title = inject(Title);
 
   protected readonly instagramUrl = INSTAGRAM_URL;
+  /** The row whose ways to answer the sheet lists; `null` while it is shut. */
+  protected readonly contactFor = signal<ContactSheetVm | null>(null);
+  protected readonly opensNewTab = opensNewTab;
   /** The dictionary, for the template's tab chips (never bare literals). */
   protected readonly EnrollmentStatus = EnrollmentStatus;
   /** The dictionary, for the template's `@case`s (never bare literals). */
@@ -136,8 +149,20 @@ export class MarketingCourses {
     );
   }
 
-  protected applyHref(course: Course): string {
-    return course.applyUrl ?? this.instagramUrl;
+  /** How each course in view is answered — worded once per list, read by its row. */
+  private readonly contacts = computed(() => {
+    const rows = new Map<Course['id'], ContactRowVm>();
+    for (const course of this.visibleCourses()) {
+      rows.set(course.id, contactRowVm(course.contacts, this.instagramUrl));
+    }
+    return rows;
+  });
+
+  protected contactOf(course: Course): ContactRowVm {
+    return (
+      this.contacts().get(course.id) ??
+      contactRowVm(course.contacts, this.instagramUrl)
+    );
   }
 
   protected statusTone(enrollmentStatus: EnrollmentStatus): UiBadgeTone {

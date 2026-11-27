@@ -4,14 +4,14 @@ import { ProgramInput } from './program-input.data';
 import { PositionStatus } from './program-status.data';
 
 describe('ProgramInput — the admin form’s reset values (today’s)', () => {
-  it('opens an empty role: open, no location, no apply URL, sort 0', () => {
+  it('opens an empty role: open, no location, no contact, sort 0', () => {
     expect(ProgramInput.blankPosition()).toEqual({
       title: { bg: '', en: '' },
       summary: { bg: '', en: '' },
       workplaceMode: 'ON_SITE',
       locationIds: [],
       positionStatus: PositionStatus.Open,
-      applyUrl: '',
+      contacts: [],
       sortOrder: 0,
     });
   });
@@ -22,18 +22,18 @@ describe('ProgramInput — the admin form’s reset values (today’s)', () => {
       description: { bg: '', en: '' },
       enrollmentStatus: EnrollmentStatus.Open,
       startsLabel: { bg: '', en: '' },
-      applyUrl: '',
+      contacts: [],
       sortOrder: 0,
     });
   });
 
-  it('opens an empty event: no start, no location, no RSVP link, sort 0', () => {
+  it('opens an empty event: no start, no location, no contact, sort 0', () => {
     expect(ProgramInput.blankShopEvent()).toEqual({
       title: { bg: '', en: '' },
       description: { bg: '', en: '' },
       startsAt: '',
       locationId: '',
-      applyUrl: '',
+      contacts: [],
       sortOrder: 0,
     });
   });

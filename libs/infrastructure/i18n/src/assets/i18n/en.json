@@ -882,6 +882,22 @@
         "body": "This is where the recap lives once the first one wraps."
       }
     },
+    "contact": {
+      "close": "Close",
+      "choose": "Choose how to get in touch",
+      "name": {
+        "PHONE": "Phone",
+        "EMAIL": "Email",
+        "INSTAGRAM": "Instagram",
+        "LINK": "Link"
+      },
+      "action": {
+        "PHONE": "Call",
+        "EMAIL": "Send an email",
+        "INSTAGRAM": "Message on Instagram",
+        "LINK": "Open the link"
+      }
+    },
     "workplace": {
       "ON_SITE": "On-site",
       "HYBRID": "Hybrid",
@@ -3020,10 +3036,13 @@
       "field": {
         "title": "Title",
         "description": "Description",
-        "status": "Status",
-        "applyUrl": "Apply link",
-        "addApplyUrl": "Add an apply link",
-        "linkHint": "Without a link the button opens Instagram."
+        "status": "Status"
+      },
+      "contact": {
+        "add": "Add a way to get in touch",
+        "remove": "Remove: {{name}}",
+        "owed": "Fill it in or remove it.",
+        "hint": "Without one, the button opens the shop's Instagram."
       },
       "position": {
         "open": "Active",
@@ -3041,9 +3060,7 @@
       "event": {
         "startsAt": "Starts — shop's local time",
         "shop": "Shop",
-        "shopNone": "No specific shop",
-        "rsvpUrl": "RSVP link",
-        "addRsvpUrl": "Add an RSVP link"
+        "shopNone": "No specific shop"
       },
       "shopHidden": "{{name}} (hidden)",
       "shopMissing": "Deleted shop"

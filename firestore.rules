@@ -132,9 +132,22 @@ service cloud.firestore {
       return v == null || isLocalizedText(v);
     }
 
-    /** An `applyUrl`: `null` (the shop's shared contact link) or a non-empty string. */
-    function isLinkOrNull(v) {
-      return v == null || (v is string && v.size() > 0);
+    /** One of a program's `contacts`: a `ContactMethod` tag and its non-empty value. */
+    function isContact(c) {
+      return c is map
+        && c.keys().hasOnly(['contactMethod', 'contactValue'])
+        && c.keys().hasAll(['contactMethod', 'contactValue'])
+        && c.contactMethod in ['PHONE', 'EMAIL', 'INSTAGRAM', 'LINK']
+        && c.contactValue is string && c.contactValue.size() > 0;
+    }
+
+    /** A program's `contacts`: a list of at most four (one per method), `[]` = the shop's Instagram. */
+    function isContacts(v) {
+      return v is list && v.size() <= 4
+        && (v.size() < 1 || isContact(v[0]))
+        && (v.size() < 2 || isContact(v[1]))
+        && (v.size() < 3 || isContact(v[2]))
+        && (v.size() < 4 || isContact(v[3]));
     }
 
     /** A `LocationId` (non-empty, no `/`) or `null` (no single shop). */
@@ -149,27 +162,27 @@ service cloud.firestore {
 
     /** `positions/{id}` — `Position` minus `id`; `positionStatus` a `PositionStatus` tag, `workplaceMode` a `WorkplaceMode` one (a remote role names no shop). */
     function validPosition(d) {
-      return d.keys().hasOnly(['title', 'summary', 'workplaceMode', 'locationIds', 'positionStatus', 'applyUrl', 'sortOrder'])
-        && d.keys().hasAll(['title', 'summary', 'workplaceMode', 'locationIds', 'positionStatus', 'applyUrl', 'sortOrder'])
+      return d.keys().hasOnly(['title', 'summary', 'workplaceMode', 'locationIds', 'positionStatus', 'contacts', 'sortOrder'])
+        && d.keys().hasAll(['title', 'summary', 'workplaceMode', 'locationIds', 'positionStatus', 'contacts', 'sortOrder'])
         && isLocalizedText(d.title)
         && isLocalizedText(d.summary)
         && d.workplaceMode in ['ON_SITE', 'HYBRID', 'REMOTE']
         && d.locationIds is list
         && (d.workplaceMode != 'REMOTE' || d.locationIds.size() == 0)
         && d.positionStatus in ['OPEN', 'CLOSED']
-        && isLinkOrNull(d.applyUrl)
+        && isContacts(d.contacts)
         && isSortOrder(d.sortOrder);
     }
 
     /** `courses/{id}` — `Course` minus `id`; `enrollmentStatus` an `EnrollmentStatus` tag. */
     function validCourse(d) {
-      return d.keys().hasOnly(['title', 'description', 'enrollmentStatus', 'startsLabel', 'applyUrl', 'sortOrder'])
-        && d.keys().hasAll(['title', 'description', 'enrollmentStatus', 'startsLabel', 'applyUrl', 'sortOrder'])
+      return d.keys().hasOnly(['title', 'description', 'enrollmentStatus', 'startsLabel', 'contacts', 'sortOrder'])
+        && d.keys().hasAll(['title', 'description', 'enrollmentStatus', 'startsLabel', 'contacts', 'sortOrder'])
         && isLocalizedText(d.title)
         && isLocalizedText(d.description)
         && d.enrollmentStatus in ['OPEN', 'UPCOMING', 'CLOSED']
         && isLocalizedTextOrNull(d.startsLabel)
-        && isLinkOrNull(d.applyUrl)
+        && isContacts(d.contacts)
         && isSortOrder(d.sortOrder);
     }
 
@@ -188,8 +201,8 @@ service cloud.firestore {
      * slash-free string, and costs one document read per save.
      */
     function validEvent(d) {
-      return d.keys().hasOnly(['title', 'description', 'localDate', 'startMinutes', 'utcEpochMs', 'locationId', 'applyUrl', 'sortOrder'])
-        && d.keys().hasAll(['title', 'description', 'localDate', 'startMinutes', 'utcEpochMs', 'locationId', 'applyUrl', 'sortOrder'])
+      return d.keys().hasOnly(['title', 'description', 'localDate', 'startMinutes', 'utcEpochMs', 'locationId', 'contacts', 'sortOrder'])
+        && d.keys().hasAll(['title', 'description', 'localDate', 'startMinutes', 'utcEpochMs', 'locationId', 'contacts', 'sortOrder'])
         && isLocalizedText(d.title)
         && isLocalizedText(d.description)
         && d.localDate is string
@@ -199,7 +212,7 @@ service cloud.firestore {
         && d.startMinutes < 1440
         && d.utcEpochMs is int
         && isLocationIdOrNull(d.locationId)
-        && isLinkOrNull(d.applyUrl)
+        && isContacts(d.contacts)
         && isSortOrder(d.sortOrder)
         && (d.locationId == null || exists(/databases/$(database)/documents/locations/$(d.locationId)));
     }

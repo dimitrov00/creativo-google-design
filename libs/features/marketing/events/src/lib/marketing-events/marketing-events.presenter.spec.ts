@@ -1,3 +1,5 @@
+import type { ContactMethod } from '@core/components';
+import type { ContactRowVm } from '@creativo/features/shared/catalog';
 import type { ShopLocation } from '@core/entities';
 import { RepositoryError } from '@core/errors';
 import { LocationId, Result } from '@core/primitives';
@@ -17,6 +19,12 @@ import { eventRowsVm, type EventRowsInput } from './marketing-events.presenter';
  */
 
 const INSTAGRAM = 'https://instagram.com/creativo.barbershop';
+
+/** A row answered one way: that way is the whole answer, and the row's link. */
+function only(contactMethod: ContactMethod, href: string): ContactRowVm {
+  const link = { contactMethod, href };
+  return { contacts: [link], only: link };
+}
 const MLADOST_ID = LocationId.of('loc-mladost');
 
 const CENTER = locationFixture({ shortName: textFixture('Center', 'Център') });
@@ -31,7 +39,9 @@ const AT_MLADOST = shopEventOf('ev_mladost', {
   title: textFixture('Open studio day', 'Ден на отворените врати'),
   localDate: FIXTURE_EVENT_DAY,
   locationId: MLADOST_ID,
-  applyUrl: 'https://example.com/rsvp',
+  contacts: [
+    { contactMethod: 'LINK', contactValue: 'https://example.com/rsvp' },
+  ],
 });
 const AT_NO_SHOP = shopEventOf('ev_anywhere', { localDate: FIXTURE_EVENT_DAY });
 const AT_GONE_SHOP = shopEventOf('ev_gone', {
@@ -59,20 +69,20 @@ describe('eventRowsVm', () => {
         id: AT_MLADOST.id,
         title: 'Open studio day',
         whenLine: 'Mon, Oct 5, 07:00 PM · Creativo · Mladost',
-        href: 'https://example.com/rsvp',
+        contact: only('LINK', 'https://example.com/rsvp'),
       },
       // At no shop, and at a shop no listed one answers: the date alone.
       {
         id: AT_NO_SHOP.id,
         title: 'Open Chair Day',
         whenLine: 'Mon, Oct 5, 07:00 PM',
-        href: INSTAGRAM,
+        contact: only('INSTAGRAM', INSTAGRAM),
       },
       {
         id: AT_GONE_SHOP.id,
         title: 'Open Chair Day',
         whenLine: 'Mon, Oct 5, 07:00 PM',
-        href: INSTAGRAM,
+        contact: only('INSTAGRAM', INSTAGRAM),
       },
     ]);
   });

@@ -53,7 +53,7 @@ export function shopInstantOf(
   );
 }
 
-/** An open role at every location, no apply URL, first in order. */
+/** An open role at every location, no contact, first in order. */
 export function positionOf(
   id: string,
   overrides: Partial<Position> = {},
@@ -65,13 +65,13 @@ export function positionOf(
     workplaceMode: WorkplaceMode.OnSite,
     locationIds: [],
     positionStatus: PositionStatus.Open,
-    applyUrl: null,
+    contacts: [],
     sortOrder: 0,
     ...overrides,
   } satisfies Position;
 }
 
-/** An open course with no starts label and no apply URL, first in order. */
+/** An open course with no starts label and no contact, first in order. */
 export function courseOf(id: string, overrides: Partial<Course> = {}): Course {
   return {
     id: CourseId.of(id),
@@ -79,7 +79,7 @@ export function courseOf(id: string, overrides: Partial<Course> = {}): Course {
     description: textFixture('Six-week evening course', 'Шестседмичен курс'),
     enrollmentStatus: EnrollmentStatus.Open,
     startsLabel: null,
-    applyUrl: null,
+    contacts: [],
     sortOrder: 0,
     ...overrides,
   } satisfies Course;
@@ -87,7 +87,7 @@ export function courseOf(id: string, overrides: Partial<Course> = {}): Course {
 
 /**
  * An event on {@link FIXTURE_EVENT_DAY} at 19:00 shop time, at no single
- * shop, no RSVP link, first in order; `utcEpochMs` follows the (possibly
+ * shop, no contact, first in order; `utcEpochMs` follows the (possibly
  * overridden) wall clock unless overridden itself.
  */
 export function shopEventOf(
@@ -107,7 +107,7 @@ export function shopEventOf(
     startMinutes,
     utcEpochMs: shopInstantOf(localDate, startMinutes),
     locationId: null,
-    applyUrl: null,
+    contacts: [],
     sortOrder: 0,
     ...overrides,
   } satisfies ShopEvent;
@@ -123,7 +123,7 @@ export function positionInputOf(
     workplaceMode: WorkplaceMode.OnSite,
     locationIds: [],
     positionStatus: PositionStatus.Open,
-    applyUrl: '',
+    contacts: [],
     sortOrder: 0,
     ...overrides,
   } satisfies PositionInput;
@@ -138,7 +138,7 @@ export function courseInputOf(
     description: textFixture('Six-week evening course', 'Шестседмичен курс'),
     enrollmentStatus: EnrollmentStatus.Open,
     startsLabel: textFixture(''),
-    applyUrl: '',
+    contacts: [],
     sortOrder: 0,
     ...overrides,
   } satisfies CourseInput;
@@ -156,7 +156,7 @@ export function shopEventInputOf(
     ),
     startsAt: `${FIXTURE_EVENT_DAY}T19:00`,
     locationId: '',
-    applyUrl: '',
+    contacts: [],
     sortOrder: 0,
     ...overrides,
   } satisfies ShopEventInput;

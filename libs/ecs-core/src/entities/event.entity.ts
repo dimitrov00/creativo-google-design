@@ -1,4 +1,4 @@
-import type { LocalizedText } from '@core/components';
+import type { LocalizedText, ProgramContact } from '@core/components';
 import type {
   EventId,
   LocationId,
@@ -23,8 +23,8 @@ export type ShopEventMeta = {
 /**
  * What an event says, as the admin set it: its texts, its start on the
  * shop's wall clock — `localDate` + `startMinutes` — and where it is.
- * `locationId` `null` is not tied to one shop; `applyUrl` (the RSVP link)
- * `null` falls back to the shop's shared contact link. Every optional is
+ * `locationId` `null` is not tied to one shop; `contacts` are the ways to
+ * RSVP, none falling back to the shop's Instagram. Every optional is
  * present (`null` is written, never a conditional spread).
  */
 export type ShopEventContent = {
@@ -33,7 +33,8 @@ export type ShopEventContent = {
   readonly localDate: LocalDate;
   readonly startMinutes: MinuteOfDay;
   readonly locationId: LocationId | null;
-  readonly applyUrl: string | null;
+  /** The ways to answer it, canonical, at most one per method; `[]` falls back to the shop's Instagram. */
+  readonly contacts: readonly ProgramContact[];
   readonly sortOrder: number;
 };
 

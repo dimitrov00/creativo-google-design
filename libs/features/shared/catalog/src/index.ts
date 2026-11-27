@@ -13,3 +13,6 @@ export * from './lib/service-sheet/service-detail-sheet.component';
 export * from './lib/service-sheet/service-row.component';
 export * from './lib/service-sheet/capsule-list.component';
 export * from './lib/gallery/showcase-gallery.component';
+export * from './lib/contact/program-contact.vm';
+export * from './lib/contact/program-contact.presenter';
+export * from './lib/contact/contact-sheet.component';

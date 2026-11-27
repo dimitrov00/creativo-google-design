@@ -1,18 +1,18 @@
 import type {
   LocalizedText,
   PositionStatus,
+  ProgramContact,
   WorkplaceMode,
 } from '@core/components';
 import type { LocationId, PositionId } from '@core/primitives';
 
 /**
  * An open role on the careers page — `positions/{id}`, the body this type
- * minus `id` (Law 5), **every optional present**: before flip 4 the reader
- * re-added `applyUrl` by conditional spread, so one collection carried two
- * hidden-class shapes; now `null` is written. Empty `locationIds` means
- * every location (`LocationScopeSystem.serves`). `applyUrl` is where
- * "Apply" sends a candidate; `null` falls back to the shop's shared contact
- * link. `positionStatus` was the bare status field (N8), SCREAMING since
+ * minus `id` (Law 5), every field present, so the collection carries one
+ * shape. Empty `locationIds` means every location
+ * (`LocationScopeSystem.serves`). `contacts` are the ways a candidate
+ * answers — by phone, e-mail, Instagram or a link; none falls back to the
+ * shop's Instagram. `positionStatus` was the bare status field (N8), SCREAMING since
  * flip 4. `workplaceMode` says where the role is worked; a remote one
  * names no shop (`locationIds` is `[]`, and stands for no shop at all).
  */
@@ -23,6 +23,7 @@ export type Position = {
   readonly workplaceMode: WorkplaceMode;
   readonly locationIds: readonly LocationId[];
   readonly positionStatus: PositionStatus;
-  readonly applyUrl: string | null;
+  /** The ways to answer it, canonical, at most one per method; `[]` falls back to the shop's Instagram. */
+  readonly contacts: readonly ProgramContact[];
   readonly sortOrder: number;
 };

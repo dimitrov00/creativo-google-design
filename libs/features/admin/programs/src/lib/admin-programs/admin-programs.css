@@ -50,6 +50,16 @@
   resize: vertical;
 }
 
+/* A way to answer: its field, and the mark that takes it away riding the
+   field's own line (the caption sits above, a hint below). */
+.lib-admin-programs__contact {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: var(--sys-space-tight);
+  min-inline-size: 0;
+}
+
 /* A menu's trigger hugs its word rather than stretching like a field. */
 .lib-admin-programs__field--hug {
   align-items: flex-start;

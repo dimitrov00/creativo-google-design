@@ -1,4 +1,5 @@
 import type { EventId } from '@core/primitives';
+import type { ContactRowVm } from '@creativo/features/shared/catalog';
 
 /*
  * THE EVENTS PAGE'S DISPLAY MODEL (OR-37, Law 10.3) — what one row of
@@ -18,6 +19,6 @@ export type EventRowVm = {
    * are unread.
    */
   readonly whenLine: string;
-  /** Where the row leads: the event's RSVP link, else the shop's Instagram. */
-  readonly href: string;
+  /** How the event is answered: one way is the row's link, several open the sheet. */
+  readonly contact: ContactRowVm;
 };

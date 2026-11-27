@@ -211,6 +211,136 @@
            under the thumb. ✕ leaves without saving;
            there is no «Отказ» beside the save. Order is not a field of the
            thing: it is set in the list. -->
+      <!-- THE WAYS TO ANSWER (owner, 2026-11-27): a phone, an e-mail, an
+           Instagram profile, a link — as many as the shop answers by, one
+           of each. Each is added from the menu and becomes its own field
+           with the keyboard that suits it; the menu offers what is left.
+           None at all is allowed: the page then sends people to the shop's
+           Instagram. One block, drawn by all three sheets. -->
+      <ng-template #contactsBlock>
+        @for (contact of contacts(); track contact.contactMethod) {
+        <div
+          class="lib-admin-programs__contact"
+          [attr.data-testid]="'admin-contact-' + contact.contactMethod"
+        >
+          @if (contact.contactMethod === ContactMethod.Phone) {
+          <ui-phone-field
+            class="lib-admin-programs__contact-field"
+            uiControlSize="large"
+            [label]="t('programs.contact.name.' + contact.contactMethod)"
+            [locale]="phoneLocale()"
+            [defaultCountry]="defaultCountry"
+            [disabled]="saving()"
+            [error]="
+              owesContact(contact) ? t('admin.programs.contact.owed') : null
+            "
+            [pickerTitle]="t('auth.identify.countryPicker')"
+            [searchLabel]="t('auth.identify.countrySearch')"
+            [closeLabel]="t('auth.identify.countryClose')"
+            [noResultsLabel]="t('auth.identify.countryNoResults')"
+            [value]="contact.contactValue === '' ? null : contact.contactValue"
+            (valueChange)="setContact(contact.contactMethod, $event ?? '')"
+          />
+          } @else {
+          <label
+            class="lib-admin-programs__field lib-admin-programs__contact-field"
+            ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
+              >{{ t('programs.contact.name.' + contact.contactMethod) }}</span
+            ><input
+              uiTextField
+              uiControlSize="large"
+              autocomplete="off"
+              autocapitalize="none"
+              spellcheck="false"
+              data-contact-field
+              [type]="contactInput[contact.contactMethod].inputType"
+              [attr.inputmode]="contactInput[contact.contactMethod].inputmode"
+              [placeholder]="contactInput[contact.contactMethod].placeholder"
+              [attr.data-testid]="
+                'admin-contact-value-' + contact.contactMethod
+              "
+              [attr.aria-invalid]="owesContact(contact) ? 'true' : null"
+              [readonly]="saving()"
+              [value]="contact.contactValue"
+              (input)="setContact(contact.contactMethod, inputValue($event))"
+            />@if (owesContact(contact)) {<span
+              uiText
+              uiFont="footnote"
+              uiForegroundStyle="destructive"
+              role="alert"
+              >{{ t('admin.programs.contact.owed') }}</span
+            >}
+          </label>
+          }
+          <button
+            type="button"
+            uiButton
+            uiButtonStyle="plain"
+            uiTint="neutral"
+            uiControlSize="large"
+            [uiIconOnly]="true"
+            [disabled]="saving()"
+            [attr.aria-label]="
+              t('admin.programs.contact.remove', {
+                name: t('programs.contact.name.' + contact.contactMethod)
+              })
+            "
+            [attr.data-testid]="
+              'admin-contact-remove-' + contact.contactMethod
+            "
+            (click)="removeContact(contact.contactMethod)"
+          >
+            <ui-icon uiName="field.clear" />
+          </button>
+        </div>
+        } @if (contactsLeft().length > 0) {
+        <div class="lib-admin-programs__field lib-admin-programs__field--hug">
+          <ui-menu
+            uiAlignment="leading"
+            [uiPresented]="contactMenu()"
+            [uiLabel]="t('admin.programs.contact.add')"
+            (uiDismissed)="contactMenu.set(false)"
+          >
+            <button
+              uiMenuTrigger
+              type="button"
+              uiButton
+              uiButtonStyle="bordered"
+              uiTint="neutral"
+              uiControlSize="regular"
+              [disabled]="saving()"
+              data-testid="admin-contact-add"
+              (click)="contactMenu.set(!contactMenu())"
+            >
+              <ui-icon uiLeading uiName="action.add" />
+              <span>{{ t('admin.programs.contact.add') }}</span>
+            </button>
+            <ui-list-group>
+              @for (method of contactsLeft(); track method) {
+              <button
+                type="button"
+                uiMenuItem
+                uiListRow
+                [uiInteractive]="true"
+                [attr.data-testid]="'admin-contact-add-' + method"
+                (click)="addContact(method)"
+              >
+                <span uiLeading>
+                  <ui-icon [uiName]="contactIcon[method]" aria-hidden="true" />
+                </span>
+                {{ t('programs.contact.name.' + method) }}
+              </button>
+              }
+            </ui-list-group>
+          </ui-menu>
+          @if (contacts().length === 0) {
+          <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+            >{{ t('admin.programs.contact.hint') }}</span
+          >
+          }
+        </div>
+        }
+      </ng-template>
       @if (editing(); as current) {
       <ui-modal-sheet
         sheetId="admin-programs-sheet"
@@ -406,53 +536,7 @@
                 {{ t('admin.programs.section.apply') }}
               </h3></ui-section-header
             >
-            <!-- THE LINK IS OPTIONAL, so it starts as a row that adds it
-                 (Calendar's URL): no empty field stands in the sheet. -->
-            @if (linkShown()) {
-            <label class="lib-admin-programs__field"
-              ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-                >{{ t('admin.programs.field.applyUrl') }}</span
-              ><input
-                type="url"
-                data-link-field
-                data-testid="admin-apply-url"
-                inputmode="url"
-                uiTextField
-                uiControlSize="large"
-                autocomplete="off"
-                autocapitalize="none"
-                spellcheck="false"
-                placeholder="https://"
-                [readonly]="saving()"
-                [value]="positionApplyUrl()"
-                (input)="positionApplyUrl.set(inputValue($event))"
-              /><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-                >{{ t('admin.programs.field.linkHint') }}</span
-              ></label
-            >
-            } @else {
-            <div class="lib-admin-programs__field">
-              <ui-list-group>
-                <button
-                  uiListRow
-                  uiSize="large"
-                  type="button"
-                  [uiInteractive]="true"
-                  [disabled]="saving()"
-                  data-testid="admin-add-link"
-                  (click)="addLink()"
-                >
-                  <span uiLeading>
-                    <ui-icon uiName="action.add" aria-hidden="true" />
-                  </span>
-                  {{ t('admin.programs.field.addApplyUrl') }}
-                </button>
-              </ui-list-group>
-              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
-                >{{ t('admin.programs.field.linkHint') }}</span
-              >
-            </div>
-            }
+            <ng-container [ngTemplateOutlet]="contactsBlock" />
           </section>
           <!-- WHETHER THE ROLE IS ACTIVE: one yes-or-no, so a switch, and
                last — the answer given once the rest is written. The row
@@ -504,53 +588,7 @@
                 (uiPicked)="pickEnrollmentStatus($event)"
               />
             </div>
-            <!-- THE LINK IS OPTIONAL, so it starts as a row that adds it
-                 (Calendar's URL): no empty field stands in the sheet. -->
-            @if (linkShown()) {
-            <label class="lib-admin-programs__field"
-              ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-                >{{ t('admin.programs.field.applyUrl') }}</span
-              ><input
-                type="url"
-                data-link-field
-                data-testid="admin-apply-url"
-                inputmode="url"
-                uiTextField
-                uiControlSize="large"
-                autocomplete="off"
-                autocapitalize="none"
-                spellcheck="false"
-                placeholder="https://"
-                [readonly]="saving()"
-                [value]="courseApplyUrl()"
-                (input)="courseApplyUrl.set(inputValue($event))"
-              /><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-                >{{ t('admin.programs.field.linkHint') }}</span
-              ></label
-            >
-            } @else {
-            <div class="lib-admin-programs__field">
-              <ui-list-group>
-                <button
-                  uiListRow
-                  uiSize="large"
-                  type="button"
-                  [uiInteractive]="true"
-                  [disabled]="saving()"
-                  data-testid="admin-add-link"
-                  (click)="addLink()"
-                >
-                  <span uiLeading>
-                    <ui-icon uiName="action.add" aria-hidden="true" />
-                  </span>
-                  {{ t('admin.programs.field.addApplyUrl') }}
-                </button>
-              </ui-list-group>
-              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
-                >{{ t('admin.programs.field.linkHint') }}</span
-              >
-            </div>
-            }
+            <ng-container [ngTemplateOutlet]="contactsBlock" />
           </section>
           } @case (ProgramEditing.Event) {
           <section class="lib-admin-programs__section">
@@ -613,53 +651,7 @@
                 {{ t('admin.programs.section.apply') }}
               </h3></ui-section-header
             >
-            <!-- THE LINK IS OPTIONAL, so it starts as a row that adds it
-                 (Calendar's URL): no empty field stands in the sheet. -->
-            @if (linkShown()) {
-            <label class="lib-admin-programs__field"
-              ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-                >{{ t('admin.programs.event.rsvpUrl') }}</span
-              ><input
-                type="url"
-                data-link-field
-                data-testid="admin-apply-url"
-                inputmode="url"
-                uiTextField
-                uiControlSize="large"
-                autocomplete="off"
-                autocapitalize="none"
-                spellcheck="false"
-                placeholder="https://"
-                [readonly]="saving()"
-                [value]="eventApplyUrl()"
-                (input)="eventApplyUrl.set(inputValue($event))"
-              /><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-                >{{ t('admin.programs.field.linkHint') }}</span
-              ></label
-            >
-            } @else {
-            <div class="lib-admin-programs__field">
-              <ui-list-group>
-                <button
-                  uiListRow
-                  uiSize="large"
-                  type="button"
-                  [uiInteractive]="true"
-                  [disabled]="saving()"
-                  data-testid="admin-add-link"
-                  (click)="addLink()"
-                >
-                  <span uiLeading>
-                    <ui-icon uiName="action.add" aria-hidden="true" />
-                  </span>
-                  {{ t('admin.programs.event.addRsvpUrl') }}
-                </button>
-              </ui-list-group>
-              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
-                >{{ t('admin.programs.field.linkHint') }}</span
-              >
-            </div>
-            }
+            <ng-container [ngTemplateOutlet]="contactsBlock" />
           </section>
           } }
         </div>
