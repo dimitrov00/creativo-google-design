@@ -2998,7 +2998,10 @@
       "position": {
         "summary": "Summary",
         "shops": "Shops",
-        "shopsAll": "Any shop"
+        "shopsAll": "Any shop",
+        "close": "Close",
+        "open": "Open",
+        "statusFailed": "Couldn't change the status. Try again."
       },
       "course": {
         "startsLabel": "When it starts — e.g. “Spring 2026”"

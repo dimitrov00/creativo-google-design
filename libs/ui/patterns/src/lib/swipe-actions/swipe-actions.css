@@ -1,0 +1,183 @@
+/* The row's distance from rest is ONE animated length: the row's shift and
+   both edges' widths are computed from it, so they can never disagree
+   mid-flight. Registered, so a transition can interpolate it. */
+@property --ui-swipe-offset {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+
+@layer sys-components {
+  .ui-swipe-actions {
+    --ui-swipe-seam: calc(var(--sys-space-unit) / 2);
+    position: relative;
+    display: grid;
+    /* Sideways is the row's; up and down stays the page's scroll. */
+    touch-action: pan-y;
+    /* Released: home, or to rest beside its actions, on the snappy spring. */
+    transition: --ui-swipe-offset var(--sys-motion-spring-snappy);
+  }
+
+  /* In the hand the row follows the finger with no lag. */
+  .ui-swipe-actions[data-swiping] {
+    transition: none;
+  }
+
+  /* In a segmented group a wrapper is flattened (`display: contents`); this
+     one must stay a box — its edges are placed against it. The group's own
+     rules still shape the row inside it as a segment. */
+  .ui-list-group > .ui-swipe-actions.ui-swipe-actions {
+    display: grid;
+  }
+
+  /* THE ROW: whatever was wrapped. It GIVES UP ROOM on the pulled side
+     rather than sliding out of the list: a list here is inset from the
+     screen's edge, so a row that slid would hang over the page's gutter.
+     Its far edge and corners stay where they are, its words re-fit, and
+     what it prints at the trailing edge stays in view beside the action. */
+  .ui-swipe-actions > :not(.ui-swipe-actions__edge) {
+    grid-area: 1 / 1;
+    min-inline-size: 0;
+    /* Stated as a width: a row is as wide as its list (`inline-size: 100%`),
+       and a margin alone would push it out of the box, not narrow it. */
+    inline-size: calc(
+      100% - max(var(--ui-swipe-offset), -1 * var(--ui-swipe-offset))
+    );
+    margin-inline-start: max(0px, var(--ui-swipe-offset));
+  }
+
+  /* While its actions show, the row's corners on that side are inner
+     corners: the group's outer corner belongs to the outermost action. */
+  .ui-list-group
+    > .ui-swipe-actions[data-swipe='trailing']
+    > .ui-list-row.ui-list-row {
+    border-start-end-radius: var(--control-radius-subtle);
+    border-end-end-radius: var(--control-radius-subtle);
+  }
+  .ui-list-group
+    > .ui-swipe-actions[data-swipe='leading']
+    > .ui-list-row.ui-list-row {
+    border-start-start-radius: var(--control-radius-subtle);
+    border-end-start-radius: var(--control-radius-subtle);
+  }
+
+  /* AN EDGE: exactly as wide as the row has left it, less the seam — the
+     actions share that room, so they grow out of the edge with the pull
+     and stretch with it past their rest width. */
+  .ui-swipe-actions__edge {
+    position: absolute;
+    inset-block: 0;
+    display: flex;
+    gap: var(--ui-swipe-seam);
+    overflow: clip;
+  }
+
+  .ui-swipe-actions__edge[data-edge='leading'] {
+    inset-inline-start: 0;
+    inline-size: max(0px, var(--ui-swipe-offset) - var(--ui-swipe-seam));
+    /* The primary is the outermost. */
+    flex-direction: row;
+  }
+
+  .ui-swipe-actions__edge[data-edge='trailing'] {
+    inset-inline-end: 0;
+    inline-size: max(0px, -1 * var(--ui-swipe-offset) - var(--ui-swipe-seam));
+    flex-direction: row-reverse;
+  }
+
+  /* AN ACTION: a segment of the list in its tint — a glyph over one short
+     word, centred, clipped by the segment while it is still narrow. */
+  .ui-swipe-action {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sys-space-tight);
+    min-inline-size: 0;
+    padding: 0;
+    border: 0;
+    border-radius: var(--control-radius-subtle);
+    overflow: clip;
+    background: var(--sys-color-primary);
+    color: var(--sys-color-on-primary);
+    font: var(--sys-font-caption);
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+      flex-grow var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-emphasized),
+      border-radius var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard),
+      filter var(--sys-motion-duration-instant) var(--sys-motion-ease-standard);
+  }
+
+  .ui-swipe-action > .ui-icon {
+    font-size: 1.25rem;
+  }
+
+  .ui-swipe-action[data-tint='destructive'] {
+    background: var(--sys-color-destructive);
+    color: var(--sys-color-on-destructive);
+  }
+
+  @media (hover: hover) {
+    .ui-swipe-action:hover {
+      filter: brightness(1.08);
+    }
+  }
+
+  .ui-swipe-action:active {
+    filter: brightness(0.92);
+  }
+
+  .ui-swipe-action:focus-visible {
+    outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+    outline-offset: calc(-1 * var(--sys-focus-ring-width));
+  }
+
+  /* The group's outer corners, on the outermost action of its end rows. */
+  .ui-list-group
+    > .ui-swipe-actions:first-child
+    > .ui-swipe-actions__edge[data-edge='trailing']
+    > .ui-swipe-action:first-child {
+    border-start-end-radius: var(--control-radius-prominent);
+  }
+  .ui-list-group
+    > .ui-swipe-actions:last-child
+    > .ui-swipe-actions__edge[data-edge='trailing']
+    > .ui-swipe-action:first-child {
+    border-end-end-radius: var(--control-radius-prominent);
+  }
+  .ui-list-group
+    > .ui-swipe-actions:first-child
+    > .ui-swipe-actions__edge[data-edge='leading']
+    > .ui-swipe-action:first-child {
+    border-start-start-radius: var(--control-radius-prominent);
+  }
+  .ui-list-group
+    > .ui-swipe-actions:last-child
+    > .ui-swipe-actions__edge[data-edge='leading']
+    > .ui-swipe-action:first-child {
+    border-end-start-radius: var(--control-radius-prominent);
+  }
+
+  /* PULLED PAST THE ACTIONS: the primary takes the whole edge — letting go
+     here runs it — and the others give their room up. */
+  .ui-swipe-actions[data-full='leading']
+    > .ui-swipe-actions__edge[data-edge='leading']
+    > .ui-swipe-action:not(:first-child),
+  .ui-swipe-actions[data-full='trailing']
+    > .ui-swipe-actions__edge[data-edge='trailing']
+    > .ui-swipe-action:not(:first-child) {
+    flex-grow: 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ui-swipe-actions,
+    .ui-swipe-action {
+      transition: none;
+    }
+  }
+}

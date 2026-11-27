@@ -151,6 +151,14 @@ tabular-nums` on every element because the `font` shorthand resets it. An
   `--sys-stroke-emphasis` for drawn marks. A divider is `ui-divider` on
   `--sys-color-separator`, never a border hairline.
 
+**Rows that move (2026-11-27).** A list arranged with `uiReorderList` glides on
+every move, however it was made: each row travels to its place on the snappy
+spring and its corners morph to the place it takes, the row in the hand a card
+of its own until it lands. Quick actions behind a row are `ui-swipe-actions`:
+the row gives up room rather than sliding out of the list, and each action is
+a segment of the group growing out of the edge. These two are the spring's
+second and third uses, beside the segmented pill.
+
 ## Interaction grammar
 
 - **One hover/press grammar.** A pressable card, row or tile carries

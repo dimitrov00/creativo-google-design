@@ -65,6 +65,13 @@
           data-testid="admin-order-error"
           >{{ t('admin.programs.order.failed') }}</ui-notice
         >
+        } @if (statusFailed()) {
+        <ui-notice
+          uiTone="destructive"
+          uiAnnounce="polite"
+          data-testid="admin-status-error"
+          >{{ t('admin.programs.position.statusFailed') }}</ui-notice
+        >
         }
         <span uiVisuallyHidden aria-live="polite"
           >{{ orderAnnouncement() }}</span
@@ -167,6 +174,32 @@
               <ui-icon uiName="list.reorder" />
             </button>
           </ui-list-row>
+          } @else if (row.quick; as quick) {
+          <!-- A ROLE'S QUICK ACTION waits behind its row: swiped in from the
+               trailing edge (or reached with Tab), it turns the status over
+               without opening the editor. -->
+          <ui-swipe-actions [attr.data-testid]="'admin-row-' + row.id">
+            <button
+              type="button"
+              uiListRow
+              [uiInteractive]="true"
+              (click)="openRow(row.id)"
+            >
+              <span>{{ row.title }}</span>
+              @if (row.statusKey; as key) {
+              <span uiTrailing>{{ t(key) }}</span>
+              }
+            </button>
+            <button
+              uiSwipeAction
+              uiTrailing
+              [attr.data-testid]="'admin-row-toggle-' + row.id"
+              (click)="toggleStatus(row.id)"
+            >
+              <ui-icon [uiName]="quick.icon" />
+              {{ t(quick.labelKey) }}
+            </button>
+          </ui-swipe-actions>
           } @else {
           <button
             type="button"

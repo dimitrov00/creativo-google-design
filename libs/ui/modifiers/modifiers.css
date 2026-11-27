@@ -635,10 +635,12 @@
      its place on the same spring. Corners and lift morph on the regular
      tier beside it, so a row arriving at an end of a shaped list takes
      that end's shape on the way, and what was in the air settles into its
-     slot. Stated with the list's own attribute so it out-ranks a list's
-     own `transition` on its rows. */
+     slot. Stated with the list's own attribute AND the `:not()`, so it
+     out-ranks a list's own `transition` on its rows (`.ui-list-group >
+     .ui-list-row` is two classes; a bare `> *` lost to it and nothing
+     glided). */
   [data-reorder-list][data-reorder-dragging] > :not([data-reorder-lifted]),
-  [data-reorder-list][data-reorder-settling] > * {
+  [data-reorder-list][data-reorder-settling] > :not([data-reorder-lifted]) {
     transition:
       translate var(--sys-motion-spring-snappy),
       border-radius var(--sys-motion-duration-regular)
@@ -667,8 +669,9 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    [data-reorder-list][data-reorder-dragging] > *,
-    [data-reorder-list][data-reorder-settling] > * {
+    [data-reorder-list][data-reorder-dragging] > :not([data-reorder-lifted]),
+    [data-reorder-list][data-reorder-settling] > :not([data-reorder-lifted]),
+    [data-reorder-list] > [data-reorder-lifted] {
       transition: none;
     }
   }

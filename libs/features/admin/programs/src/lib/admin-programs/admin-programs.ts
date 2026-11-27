@@ -37,6 +37,7 @@ import {
   UiChoiceMenu,
   type UiChoiceOption,
   UiIcon,
+  type UiIconName,
   UiModalSheet,
   UiSegmentedControl,
   UiTextField,
@@ -52,6 +53,8 @@ import {
   UiPageActionBar,
   UiSectionHeader,
   UiSheetActionBar,
+  UiSwipeAction,
+  UiSwipeActions,
 } from '@creativo/ui/patterns';
 import {
   UiForegroundStyleDirective,
@@ -110,6 +113,14 @@ type ProgramRow = {
   readonly title: string;
   /** The catalogue key of the row's status word; an event prints none. */
   readonly statusKey: string | null;
+  /**
+   * The quick action behind the row — a role's status turned over — as
+   * the word and glyph it shows; a course or an event has none.
+   */
+  readonly quick: {
+    readonly labelKey: string;
+    readonly icon: UiIconName;
+  } | null;
 };
 
 /** One shop chip of the role form: the shop's id and the word it prints. */
@@ -178,6 +189,8 @@ const NO_SHOP = '';
     UiSegmentedControl,
     UiSheetActionBar,
     UiStack,
+    UiSwipeAction,
+    UiSwipeActions,
     UiTextDirective,
     UiTextField,
     UiVisuallyHiddenDirective,
@@ -211,6 +224,8 @@ export class AdminPrograms {
   protected readonly arranging = signal(false);
   /** The row whose handle menu is open, by id. */
   protected readonly orderMenu = signal<string | null>(null);
+  /** A quick status change was refused: said under the list's tabs. */
+  protected readonly statusFailed = signal(false);
   private readonly reorderList = viewChild(UiReorderList);
   /** The last move could not be saved. */
   protected readonly orderFailed = signal(false);
@@ -239,6 +254,16 @@ export class AdminPrograms {
         id: position.id,
         title: position.title[locale],
         statusKey: `programs.status.position.${position.positionStatus}`,
+        quick:
+          position.positionStatus === PositionStatus.Open
+            ? {
+                labelKey: 'admin.programs.position.close',
+                icon: 'program.hide',
+              }
+            : {
+                labelKey: 'admin.programs.position.open',
+                icon: 'program.show',
+              },
       }));
     }
     if (tab === ProgramsTab.Courses) {
@@ -246,12 +271,14 @@ export class AdminPrograms {
         id: course.id,
         title: course.title[locale],
         statusKey: `programs.status.enrollment.${course.enrollmentStatus}`,
+        quick: null,
       }));
     }
     return this.store.events().map((event) => ({
       id: event.id,
       title: event.title[locale],
       statusKey: null,
+      quick: null,
     }));
   });
 
@@ -534,6 +561,19 @@ export class AdminPrograms {
             : count - 1;
     // Through the list, so a pick from the menu glides as a drag does.
     this.reorderList()?.move(from, to);
+  }
+
+  /**
+   * A role's quick action: its status turned over and saved at once. The
+   * live list shows the new word when the store answers; a refused save
+   * says so and nothing has changed.
+   */
+  protected async toggleStatus(id: string): Promise<void> {
+    const position = this.positions().find((entry) => entry.id === id);
+    if (position === undefined) return;
+    this.statusFailed.set(false);
+    const saved = await this.store.togglePositionStatus(position);
+    if (!saved.ok) this.statusFailed.set(true);
   }
 
   /**

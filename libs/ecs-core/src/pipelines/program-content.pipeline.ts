@@ -185,6 +185,19 @@ export const reorderPositions =
     return Result.ok(undefined);
   };
 
+/**
+ * Turns a role's status over (open ⇄ closed) from the list — the row's
+ * quick action. No fresh read: the page hands over the stored role, and it
+ * is saved whole with the other status. Answers the role as saved.
+ */
+export const togglePositionStatus =
+  (ports: PositionWritePorts) =>
+  async (position: Position): Promise<Result<Position, RepositoryError>> => {
+    const next = ProgramsSystem.positionToggled(position);
+    const saved = await ports.savePosition(next);
+    return saved.ok ? Result.ok(next) : saved;
+  };
+
 /** The courses' order, as {@link reorderPositions}. */
 export const reorderCourses =
   (ports: CourseWritePorts) =>

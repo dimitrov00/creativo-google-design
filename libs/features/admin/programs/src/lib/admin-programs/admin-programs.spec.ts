@@ -596,6 +596,32 @@ describe('AdminPrograms', () => {
       ).not.toBeNull();
     });
 
+    it('turns a role’s status over from the action behind its row, without opening the editor', async () => {
+      const { fixture, host, world } = await configure({ positions: three() });
+      const before = world.positions.get(PositionId.of('pos_a'));
+
+      const action = host.querySelector<HTMLButtonElement>(
+        '[data-testid="admin-row-toggle-pos_a"]',
+      );
+      expect(action?.textContent?.trim()).toBe(
+        before?.positionStatus === PositionStatus.Open ? 'Close' : 'Open',
+      );
+      action?.click();
+      await settle(fixture);
+
+      expect(world.positions.get(PositionId.of('pos_a'))).toEqual({
+        ...before,
+        positionStatus:
+          before?.positionStatus === PositionStatus.Open
+            ? PositionStatus.Closed
+            : PositionStatus.Open,
+      });
+      expect(formOpen(fixture)).toBe(false);
+      expect(
+        host.querySelector('[data-testid="admin-status-error"]'),
+      ).toBeNull();
+    });
+
     it('disables the places a row already holds', async () => {
       const { fixture, host } = await configure({ positions: three() });
 

@@ -5,6 +5,7 @@ import type { Course, Position, ShopEvent, ShopLocation } from '@core/entities';
 import {
   reorderCourses,
   reorderPositions,
+  togglePositionStatus,
   writeCourse,
   writePosition,
   writeShopEvent,
@@ -75,6 +76,7 @@ export class AdminProgramsStore {
   /** A list's new order, as arranged: only the places that changed are written. */
   readonly reorderPositions = reorderPositions(this.programs);
   readonly reorderCourses = reorderCourses(this.programs);
+  readonly togglePositionStatus = togglePositionStatus(this.programs);
 
   /** Every role, `sortOrder` order; empty until the first answer and on a failed read. */
   readonly positions = toSignal(

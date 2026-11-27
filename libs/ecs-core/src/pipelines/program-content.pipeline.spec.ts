@@ -45,6 +45,7 @@ import {
   type WriteShopEventPorts,
   reorderCourses,
   reorderPositions,
+  togglePositionStatus,
   writeCourse,
   writePosition,
   writeShopEvent,
@@ -631,5 +632,30 @@ describe('reorderPositions, reorderCourses', () => {
     expect(unwrapErr(await reorder([second, first]))).toEqual(failedWrite);
     expect(attempts).toEqual(['course-b']);
     expect([...world.courses.values()]).toEqual([first, second]);
+  });
+});
+
+describe('togglePositionStatus', () => {
+  it('saves the role whole with the other status and answers it', async () => {
+    const open = positionOf('pos-a', { positionStatus: PositionStatus.Open });
+    const world = memoryProgramsWorld({ positions: [open] });
+    const toggle = togglePositionStatus(memoryProgramsPorts(world));
+
+    const closed = unwrapOk(await toggle(open));
+
+    expect(closed).toEqual({ ...open, positionStatus: PositionStatus.Closed });
+    expect(world.positions.get(open.id)).toEqual(closed);
+  });
+
+  it('answers a failed write and leaves the role as stored', async () => {
+    const open = positionOf('pos-a', { positionStatus: PositionStatus.Open });
+    const world = memoryProgramsWorld({ positions: [open] });
+    const toggle = togglePositionStatus({
+      ...memoryProgramsPorts(world),
+      savePosition: async () => Result.err(failedWrite),
+    });
+
+    expect(unwrapErr(await toggle(open))).toEqual(failedWrite);
+    expect(world.positions.get(open.id)).toEqual(open);
   });
 });

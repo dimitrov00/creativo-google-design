@@ -229,6 +229,11 @@ export const UI_ICON_REGISTRY = {
    *  the button that turns rows into movable ones, never on a row itself
    *  (a row's grip is `list.reorder`). */
   'list.arrange': 'swap_vert',
+  /** Take a program off the public site / put it back — a closed role is
+   *  not shown there. The eye, struck and open: the two halves of one
+   *  quick action on a row. */
+  'program.hide': 'visibility_off',
+  'program.show': 'visibility',
 
   /* ── The visit frame's resize handles ───────────────────────────── */
   /**

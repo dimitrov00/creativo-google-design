@@ -910,3 +910,16 @@ describe('ProgramsSystem — the order of a list', () => {
     expect(ProgramsSystem.resequenced(list.slice(0, 2))).toEqual([]);
   });
 });
+
+describe('ProgramsSystem.positionToggled', () => {
+  it('closes an open role and opens a closed one, keeping the rest and the input', () => {
+    const open = positionOf('pos-1', { positionStatus: PositionStatus.Open });
+    const before = structuredClone(open);
+
+    const closed = ProgramsSystem.positionToggled(open);
+
+    expect(closed).toEqual({ ...open, positionStatus: PositionStatus.Closed });
+    expect(ProgramsSystem.positionToggled(closed)).toEqual(open);
+    expect(open).toEqual(before);
+  });
+});
