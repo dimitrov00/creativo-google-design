@@ -2969,8 +2969,9 @@
       "order": {
         "start": "Reorder",
         "done": "Done",
-        "hint": "Drag ☰ or tap it to move. The site shows them in this order.",
+        "hint": "Drag ☰ to move, or pick a place from the arrows. The site shows them in this order.",
         "handle": "Move “{{name}}”",
+        "place": "Place of “{{name}}”",
         "top": "To the top",
         "up": "Up",
         "down": "Down",

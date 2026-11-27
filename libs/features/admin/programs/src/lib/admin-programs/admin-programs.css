@@ -53,8 +53,8 @@
   margin-block-start: var(--sys-space-compact);
 }
 
-/* THE LIST'S BAR: «Подреди» leading, ＋ trailing; «Готово» alone on the
-   trailing edge while arranging. */
+/* THE LIST'S BAR: «Подреди» leading, ＋ trailing; while arranging,
+   «Готово» stands where «Подреди» stood and ＋ keeps its place. */
 .lib-admin-programs__bar {
   display: flex;
   align-items: center;

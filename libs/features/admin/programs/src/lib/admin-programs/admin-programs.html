@@ -46,7 +46,9 @@
       <ui-stack uiSpacing="comfortable">
         <!-- THE LIST'S BAR: «Подреди» on the leading edge while there is an
              order to arrange, ＋ on the trailing one, as the team list keeps
-             its add. While arranging, the bar holds only «Готово». -->
+             its add. While arranging, «Готово» stands where «Подреди»
+             stood (Edit turns into Done in place) and ＋ keeps its place:
+             nothing in the bar moves. -->
         <div class="lib-admin-programs__bar">
           @if (arranging()) {
           <button
@@ -59,7 +61,7 @@
           >
             {{ t('admin.programs.order.done') }}
           </button>
-          } @else { @if (canArrange()) {
+          } @else if (canArrange()) {
           <button
             type="button"
             uiButton
@@ -84,7 +86,6 @@
           >
             <ui-icon uiName="action.add" />
           </button>
-          }
         </div>
 
         @if (arranging()) {
@@ -109,9 +110,10 @@
         >
 
         <!-- ONE LIST for the tab in view. While it is arranged a row does not
-             open; it carries a HANDLE: dragged, stepped with the arrow keys,
-             or tapped for a menu of places — a drag is never the only way
-             (WCAG 2.5.7). -->
+             open. Its trailing HANDLE only drags (and steps with the arrow
+             keys); its leading pop-up mark opens the menu of places, so a
+             drag is never the only way (WCAG 2.5.7) and neither control
+             does two things. -->
         <ui-list-group
           [attr.data-testid]="listTestId()"
           uiReorderList
@@ -120,28 +122,26 @@
           @for (row of rows(); track row.id; let index = $index; let count =
           $count) { @if (arranging()) {
           <ui-list-row [attr.data-testid]="'admin-order-row-' + row.id">
-            <span>{{ row.title }}</span>
             <ui-menu
-              uiTrailing
-              uiAlignment="trailing"
+              uiLeading
+              uiAlignment="leading"
               [uiPresented]="orderMenu() === row.id"
-              [uiLabel]="t('admin.programs.order.handle', { name: row.title })"
+              [uiLabel]="t('admin.programs.order.place', { name: row.title })"
               (uiDismissed)="orderMenu.set(null)"
             >
               <button
                 uiMenuTrigger
-                uiReorderHandle
                 type="button"
                 uiButton
                 uiButtonStyle="plain"
                 uiTint="neutral"
                 uiControlSize="regular"
                 [uiIconOnly]="true"
-                [attr.aria-label]="t('admin.programs.order.handle', { name: row.title })"
-                [attr.data-testid]="'admin-order-handle-' + row.id"
+                [attr.aria-label]="t('admin.programs.order.place', { name: row.title })"
+                [attr.data-testid]="'admin-order-place-' + row.id"
                 (click)="orderMenu.set(orderMenu() === row.id ? null : row.id)"
               >
-                <ui-icon uiName="list.reorder" />
+                <ui-icon uiName="field.popUp" />
               </button>
               <ui-list-group>
                 <button
@@ -190,6 +190,21 @@
                 </button>
               </ui-list-group>
             </ui-menu>
+            <span>{{ row.title }}</span>
+            <button
+              uiTrailing
+              uiReorderHandle
+              type="button"
+              uiButton
+              uiButtonStyle="plain"
+              uiTint="neutral"
+              uiControlSize="regular"
+              [uiIconOnly]="true"
+              [attr.aria-label]="t('admin.programs.order.handle', { name: row.title })"
+              [attr.data-testid]="'admin-order-handle-' + row.id"
+            >
+              <ui-icon uiName="list.reorder" />
+            </button>
           </ui-list-row>
           } @else {
           <button

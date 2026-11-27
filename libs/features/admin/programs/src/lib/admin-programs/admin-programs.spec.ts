@@ -489,7 +489,8 @@ describe('AdminPrograms', () => {
     const rowNames = (host: HTMLElement) =>
       Array.from(
         host.querySelectorAll('[data-testid^="admin-order-row-"]'),
-        (row) => row.querySelector('span')?.textContent?.trim(),
+        (row) =>
+          row.querySelector('.ui-list-row__label > span')?.textContent?.trim(),
       );
 
     it('puts a new position after the last one, with no order field in the form', async () => {
@@ -553,14 +554,21 @@ describe('AdminPrograms', () => {
       click(host, 'admin-order-start');
       fixture.detectChanges();
       expect(rowNames(host)).toEqual(['A', 'B', 'C']);
-      expect(host.querySelector('[data-testid="admin-new"]')).toBeNull();
+      // «Готово» stands where «Подреди» stood; the add keeps its place.
+      expect(host.querySelector('[data-testid="admin-new"]')).not.toBeNull();
       expect(
         host
           .querySelector('[data-testid="admin-order-handle-pos_c"]')
           ?.getAttribute('aria-label'),
       ).toBe('Move “C”');
 
-      click(host, 'admin-order-handle-pos_c');
+      // The handle only drags: the places open from the row's own mark.
+      expect(
+        host
+          .querySelector('[data-testid="admin-order-place-pos_c"]')
+          ?.getAttribute('aria-label'),
+      ).toBe('Place of “C”');
+      click(host, 'admin-order-place-pos_c');
       fixture.detectChanges();
       const top = host.querySelector<HTMLButtonElement>(
         '[data-testid="admin-order-row-pos_c"] [data-testid="admin-order-top"]',
@@ -583,7 +591,9 @@ describe('AdminPrograms', () => {
       click(host, 'admin-order-done');
       fixture.detectChanges();
       expect(host.querySelector('[data-testid="admin-order-done"]')).toBeNull();
-      expect(host.querySelector('[data-testid="admin-new"]')).not.toBeNull();
+      expect(
+        host.querySelector('[data-testid="admin-order-start"]'),
+      ).not.toBeNull();
     });
 
     it('disables the places a row already holds', async () => {

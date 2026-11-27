@@ -480,7 +480,7 @@ const OVERLAYS: readonly Overlay[] = [
   {
     name: 'a program row’s place menu, while the list is arranged',
     on: 'admin/programs',
-    taps: ['admin-order-start', '[data-testid^="admin-order-handle-"]'],
+    taps: ['admin-order-start', '[data-testid^="admin-order-place-"]'],
     opened: '.ui-menu__surface:popover-open',
   },
   {
