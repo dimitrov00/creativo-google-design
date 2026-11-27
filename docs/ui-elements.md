@@ -78,7 +78,10 @@ styles a native control or builds its own; a new element is added to
 | celebration             | `ui-confetti`, `ui-occasion-band`, `ui-reward-moment`              |
 | cell                    | `ui-list-row`                                                      |
 | center text             | `uiMultilineTextAlignment`                                         |
+| check tree              | `ui-check-list`                                                    |
 | checkbox                | `uiSwitch`                                                         |
+| checkboxes              | `ui-check-list`                                                    |
+| checklist               | `ui-check-list`                                                    |
 | checkmark animation     | `ui-reward-moment`                                                 |
 | chip                    | `uiChip`                                                           |
 | chip group              | `ui-flow`                                                          |
@@ -221,6 +224,7 @@ styles a native control or builds its own; a new element is added to
 | image                   | `ui-async-image`                                                   |
 | image card              | `ui-media-card`                                                    |
 | img                     | `ui-async-image`                                                   |
+| indeterminate           | `ui-check-list`                                                    |
 | info box                | `ui-notice`                                                        |
 | initials                | `ui-avatar`                                                        |
 | ink                     | `uiForegroundStyle`                                                |
@@ -283,6 +287,8 @@ styles a native control or builds its own; a new element is added to
 | month view              | `ui-calendar-grid`, `ui-month-picker`                              |
 | move down               | `uiReorderList`                                                    |
 | move up                 | `uiReorderList`                                                    |
+| multi-select            | `ui-check-list`                                                    |
+| multiselect             | `ui-check-list`                                                    |
 | nav row                 | `ui-list-row`                                                      |
 | navbar                  | `ui-toolbar`                                                       |
 | navigation bar          | `ui-sheet-header`                                                  |
@@ -324,6 +330,7 @@ styles a native control or builds its own; a new element is added to
 | phone input             | `ui-phone-field`                                                   |
 | photo                   | `ui-async-image`, `ui-camera-capture`                              |
 | photo tile              | `ui-media-card`                                                    |
+| pick several            | `ui-check-list`                                                    |
 | picker                  | `ui-choice-menu`                                                   |
 | picture                 | `ui-async-image`                                                   |
 | pie chart               | `ui-ring-chart`                                                    |
@@ -404,6 +411,7 @@ styles a native control or builds its own; a new element is added to
 | section title           | `ui-section-header`                                                |
 | segmented               | `ui-segmented-control`                                             |
 | select                  | `ui-choice-menu`                                                   |
+| select all              | `ui-check-list`                                                    |
 | semibold                | `uiWeight`                                                         |
 | sending indicator       | `ui-progress-disc`                                                 |
 | separator               | `ui-divider`                                                       |
@@ -511,6 +519,7 @@ styles a native control or builds its own; a new element is added to
 | translucent             | `uiMaterial`                                                       |
 | trend                   | `ui-line-chart`                                                    |
 | trend line              | `ui-spark-line`                                                    |
+| tri-state               | `ui-check-list`                                                    |
 | trophy                  | `ui-medal`                                                         |
 | type scale              | `uiFont`                                                           |
 | typeahead               | `ui-search-field`                                                  |
@@ -617,6 +626,7 @@ Import from `@creativo/ui/patterns`.
 | `ui-calendar-scroller`                                        | A scroll box for a continuous run of month sections under a heading that scrolls away with them.                                                              | `ScrollView` over a stack of months                                                                               | One month on its own is `ui-month-picker`; the cells of each month go in a `ui-calendar-grid`.                                                                       |
 | `ui-camera-capture`                                           | A camera viewfinder that takes one picture, cropped to the frame, when the host's own button calls its shutter.                                               | App pattern                                                                                                       | Reading a QR code or a barcode is `ui-code-scanner`.                                                                                                                 |
 | `ui-card, a[uiCard], button[uiCard]`                          | An elevated surface that groups content; as a link or a button the whole card is one thing to press.                                                          | `GroupBox`; the link and button forms are a `NavigationLink` or `Button` whose label is the card                  | A run of rows, each its own segment, is `ui-list-group`.                                                                                                             |
+| `ui-check-list`                                               | Choosing several things from a short list, with one head row that stands for all of them and shows when only some are chosen.                                 | `Toggle(sources:isOn:)` heading a `List` of `Toggle`s                                                             | One answer from a few is `ui-segmented-control` or `ui-choice-menu`; a filter that narrows a list is `uiChip`; one setting that takes effect at once is `uiSwitch`.  |
 | `ui-code-scanner`                                             | A camera viewfinder that reads the first QR code or barcode it sees and reports its value once.                                                               | App pattern                                                                                                       | Taking a picture is `ui-camera-capture`.                                                                                                                             |
 | `ui-confetti`                                                 | Plays one celebratory burst of confetti from the centre of its anchor, then removes itself.                                                                   | App pattern                                                                                                       |                                                                                                                                                                      |
 | `ui-date-badge`                                               | Shows one calendar day number with its selected, today and unavailable looks and an optional events dot.                                                      | App pattern                                                                                                       | A captioned date stamp at the start of a row is `ui-date-tile`; a status capsule is `uiBadge`.                                                                       |

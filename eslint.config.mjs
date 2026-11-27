@@ -659,6 +659,10 @@ export default [
             'libs/ui/controls/src/lib/progress-ring/progress-ring.ts',
             'libs/ui/patterns/src/lib/toast/toast.ts',
             'libs/ui/patterns/src/lib/progress-disc/progress-disc.ts',
+            // The check and the dash DRAW themselves across the mark and
+            // trade places by one drawing over the other (2026-11-27): a
+            // stroke on a dash offset, as the progress disc's check is.
+            'libs/ui/patterns/src/lib/check-list/check-list.ts',
             'libs/ui/patterns/src/lib/gauge/gauge.ts',
             'libs/ui/charts/src/lib/bar-chart/bar-chart.html',
             'libs/ui/charts/src/lib/line-chart/line-chart.html',

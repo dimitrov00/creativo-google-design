@@ -345,58 +345,36 @@
               />
             </div>
             @if (shopsShown()) {
-            <!-- THE ROLE'S SHOPS: «Във всички салони» is a SWITCH — a setting of
-               its own, on by default — and never one more shop beside the
-               shops. Off, the shops appear as rows whose ring fills when
-               chosen: the ring says "more than one" before anything is
-               tapped. -->
+            <!-- THE ROLE'S SHOPS: a check list. «Всички салони» heads it
+                 and stands for every shop — a check when all are chosen, a
+                 dash when some are — and each shop hangs from it by the
+                 trace. All chosen is stored as "every shop", the ones
+                 opened later too; none chosen cannot be saved. -->
             <div class="lib-admin-programs__field">
-              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
-                >{{ t('admin.programs.position.shops') }}</span
-              >
-              <ui-list-group
-                role="group"
-                [attr.aria-label]="t('admin.programs.position.shops')"
-              >
-                <ui-list-row uiSize="regular">
-                  <span>{{ t('admin.programs.position.shopsAll') }}</span>
-                  <button
-                    uiSwitch
-                    uiTrailing
-                    [uiOn]="!shopsLimited()"
-                    [uiDisabled]="saving()"
-                    [attr.aria-label]="t('admin.programs.position.shopsAll')"
-                    data-testid="admin-position-shops-all"
-                    (uiOnChange)="setEveryShop($event)"
-                  ></button>
-                </ui-list-row>
-                @if (shopsLimited()) { @for (choice of shopChoices(); track
-                choice.id) {
-                <button
-                  type="button"
-                  uiListRow
-                  uiSize="regular"
-                  role="checkbox"
-                  [uiInteractive]="true"
-                  [attr.aria-checked]="shopChosen(choice.id)"
-                  [attr.data-testid]="'admin-position-shop-' + choice.id"
-                  (click)="toggleShop(choice.id)"
-                >
-                  <ui-icon
-                    uiLeading
-                    uiScale="medium"
-                    [uiName]="shopChosen(choice.id) ? 'selection.on' : 'selection.off'"
-                    [uiForegroundStyle]="shopChosen(choice.id) ? 'primary' : 'tertiary'"
-                  />
-                  <span>{{ choice.label }}</span>
-                </button>
-                } }
-              </ui-list-group>
-              @if (shopsLimited() && positionShopIds().length === 0) {
               <span
                 uiText
                 uiFont="footnote"
                 uiForegroundStyle="secondary"
+                aria-hidden="true"
+                >{{ t('admin.programs.position.shops') }}</span
+              >
+              <ui-check-list
+                [uiOptions]="shopOptions()"
+                [uiSelectedIds]="shopsSelected()"
+                [uiAllLabel]="t('admin.programs.position.shopsAll')"
+                [uiLabel]="t('admin.programs.position.shops')"
+                [uiSummary]="shopsSummary()"
+                [uiDisabled]="saving()"
+                [uiInvalid]="shopsOwedShown()"
+                uiAllTestId="admin-position-shops-all"
+                (uiSelectedIdsChange)="pickShops($event)"
+              />
+              @if (shopsOwedShown()) {
+              <span
+                uiText
+                uiFont="footnote"
+                uiForegroundStyle="destructive"
+                role="alert"
                 data-testid="admin-position-shops-hint"
                 >{{ t('admin.programs.position.shopsHint') }}</span
               >
