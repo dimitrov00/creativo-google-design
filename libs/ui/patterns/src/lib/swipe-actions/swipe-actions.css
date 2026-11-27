@@ -1,6 +1,7 @@
-/* The row's distance from rest is ONE animated length: the row's shift and
-   both edges' widths are computed from it, so they can never disagree
-   mid-flight. Registered, so a transition can interpolate it. */
+/* The row's distance from rest is ONE length: the row's shift and both
+   edges' widths are computed from it, so they can never disagree
+   mid-flight. Registered, so the component's spring (a Web Animation, see
+   swipe-actions.ts) can interpolate it. */
 @property --ui-swipe-offset {
   syntax: '<length>';
   inherits: true;
@@ -10,17 +11,15 @@
 @layer sys-components {
   .ui-swipe-actions {
     --ui-swipe-seam: calc(var(--sys-space-unit) / 2);
+    --ui-swipe-direction: 1;
     position: relative;
     display: grid;
     /* Sideways is the row's; up and down stays the page's scroll. */
     touch-action: pan-y;
-    /* Released: home, or to rest beside its actions, on the snappy spring. */
-    transition: --ui-swipe-offset var(--sys-motion-spring-snappy);
   }
 
-  /* In the hand the row follows the finger with no lag. */
-  .ui-swipe-actions[data-swiping] {
-    transition: none;
+  .ui-swipe-actions:dir(rtl) {
+    --ui-swipe-direction: -1;
   }
 
   /* In a segmented group a wrapper is flattened (`display: contents`); this
@@ -30,35 +29,34 @@
     display: grid;
   }
 
-  /* THE ROW: whatever was wrapped. It GIVES UP ROOM on the pulled side
-     rather than sliding out of the list: a list here is inset from the
-     screen's edge, so a row that slid would hang over the page's gutter.
-     Its far edge and corners stay where they are, its words re-fit, and
-     what it prints at the trailing edge stays in view beside the action. */
+  /* WHILE THE ROW IS AWAY FROM REST its place clips it: the row slides
+     under the list's own edge instead of out over the page's gutter. The
+     clip is the segment's own shape — the group's outer corners on its end
+     rows — so the row keeps every corner it has while it slides, and the
+     outermost action is rounded by the same curve. At rest nothing is
+     clipped, so a focus ring and the press scale are whole. */
+  .ui-swipe-actions[data-swipe] {
+    overflow: clip;
+  }
+
+  .ui-list-group > .ui-swipe-actions[data-swipe] {
+    border-radius: var(--control-radius-subtle);
+  }
+  .ui-list-group > .ui-swipe-actions[data-swipe]:first-child {
+    border-start-start-radius: var(--control-radius-prominent);
+    border-start-end-radius: var(--control-radius-prominent);
+  }
+  .ui-list-group > .ui-swipe-actions[data-swipe]:last-child {
+    border-end-start-radius: var(--control-radius-prominent);
+    border-end-end-radius: var(--control-radius-prominent);
+  }
+
+  /* THE ROW: whatever was wrapped. It slides whole — its words are never
+     squeezed — by the offset. */
   .ui-swipe-actions > :not(.ui-swipe-actions__edge) {
     grid-area: 1 / 1;
     min-inline-size: 0;
-    /* Stated as a width: a row is as wide as its list (`inline-size: 100%`),
-       and a margin alone would push it out of the box, not narrow it. */
-    inline-size: calc(
-      100% - max(var(--ui-swipe-offset), -1 * var(--ui-swipe-offset))
-    );
-    margin-inline-start: max(0px, var(--ui-swipe-offset));
-  }
-
-  /* While its actions show, the row's corners on that side are inner
-     corners: the group's outer corner belongs to the outermost action. */
-  .ui-list-group
-    > .ui-swipe-actions[data-swipe='trailing']
-    > .ui-list-row.ui-list-row {
-    border-start-end-radius: var(--control-radius-subtle);
-    border-end-end-radius: var(--control-radius-subtle);
-  }
-  .ui-list-group
-    > .ui-swipe-actions[data-swipe='leading']
-    > .ui-list-row.ui-list-row {
-    border-start-start-radius: var(--control-radius-subtle);
-    border-end-start-radius: var(--control-radius-subtle);
+    translate: calc(var(--ui-swipe-offset) * var(--ui-swipe-direction)) 0;
   }
 
   /* AN EDGE: exactly as wide as the row has left it, less the seam — the
@@ -137,32 +135,6 @@
     outline-offset: calc(-1 * var(--sys-focus-ring-width));
   }
 
-  /* The group's outer corners, on the outermost action of its end rows. */
-  .ui-list-group
-    > .ui-swipe-actions:first-child
-    > .ui-swipe-actions__edge[data-edge='trailing']
-    > .ui-swipe-action:first-child {
-    border-start-end-radius: var(--control-radius-prominent);
-  }
-  .ui-list-group
-    > .ui-swipe-actions:last-child
-    > .ui-swipe-actions__edge[data-edge='trailing']
-    > .ui-swipe-action:first-child {
-    border-end-end-radius: var(--control-radius-prominent);
-  }
-  .ui-list-group
-    > .ui-swipe-actions:first-child
-    > .ui-swipe-actions__edge[data-edge='leading']
-    > .ui-swipe-action:first-child {
-    border-start-start-radius: var(--control-radius-prominent);
-  }
-  .ui-list-group
-    > .ui-swipe-actions:last-child
-    > .ui-swipe-actions__edge[data-edge='leading']
-    > .ui-swipe-action:first-child {
-    border-end-start-radius: var(--control-radius-prominent);
-  }
-
   /* PULLED PAST THE ACTIONS: the primary takes the whole edge — letting go
      here runs it — and the others give their room up. */
   .ui-swipe-actions[data-full='leading']
@@ -175,7 +147,6 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .ui-swipe-actions,
     .ui-swipe-action {
       transition: none;
     }
