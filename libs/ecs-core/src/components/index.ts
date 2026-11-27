@@ -211,6 +211,7 @@ export * from './profile-auth-type.data';
 export * from './profile-completion-key.data';
 export * from './profile-edits.data';
 export * from './program-input.data';
+export * from './program-contact.data';
 export * from './program-status.data';
 export * from './workplace-mode.data';
 export * from './public-label.data';

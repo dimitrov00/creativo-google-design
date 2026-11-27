@@ -5,63 +5,74 @@
     <main
       uiFrame
       [uiFrameMaxWidth]="'var(--sys-container-content)'"
-      class="cr-programs-page__main"
+      class="cr-careers"
     >
-      <ui-stack uiSpacing="loose">
-        <ui-section-header uiAlignment="leading">
-          <p uiEyebrow>{{ t('programs.careers.eyebrow') }}</p>
-          <h1 uiTitle>{{ t('programs.careers.title') }}</h1>
-          <p uiLede>{{ t('programs.careers.subtitle') }}</p>
-        </ui-section-header>
+      <!-- THE PAGE (owner, 2026-11-27): the site's own heading — the title
+           and lede every page here opens on, with no eyebrow and no dot —
+           then the open roles, each a roomy row with its words whole, that
+           opens the role itself; and a quiet band for whoever found none.
+           Every face is one the landing already uses. -->
+      <ui-section-header uiAlignment="leading">
+        <h1 uiTitle>{{ t('programs.careers.title') }}</h1>
+        <p uiLede>{{ t('programs.careers.subtitle') }}</p>
+      </ui-section-header>
 
-        @if (state(); as current) { @switch (current.loadState) { @case
-        (LoadState.Loading) {
-        <ui-stack uiSpacing="tight">
-          <ui-skeleton uiRadius="regular" [uiFrameHeight]="'4rem'" uiFrame />
-          <ui-skeleton uiRadius="regular" [uiFrameHeight]="'4rem'" uiFrame />
-          <ui-skeleton uiRadius="regular" [uiFrameHeight]="'4rem'" uiFrame />
-        </ui-stack>
-        } @case (LoadState.Failed) {
-        <ui-card data-testid="careers-error">
-          {{ t('programs.careers.empty.title') }}
-        </ui-card>
-        } @case (LoadState.Ready) { @if (current.data.length === 0) {
-        <ui-card data-testid="careers-empty">
-          <ui-empty-state [uiTitle]="t('programs.careers.empty.title')">
-            <p>{{ t('programs.careers.empty.body') }}</p>
-            <a
-              uiActions
-              [href]="instagramUrl"
-              target="_blank"
-              rel="noopener"
-              uiButton
-              uiButtonStyle="bordered"
-              uiControlSize="regular"
-            >
-              {{ t('programs.careers.empty.cta') }}
-              <ui-icon uiName="link.external" />
-            </a>
-          </ui-empty-state>
-        </ui-card>
-        } @else {
-        <ui-list-group data-testid="careers-list">
-          @for (row of current.data; track row.id) {
+      @if (state(); as current) { @switch (current.loadState) { @case
+      (LoadState.Loading) {
+      <ui-stack uiSpacing="compact">
+        <ui-skeleton uiRadius="regular" [uiFrameHeight]="'11rem'" uiFrame />
+        <ui-skeleton uiRadius="regular" [uiFrameHeight]="'11rem'" uiFrame />
+      </ui-stack>
+      } @case (LoadState.Failed) {
+      <ui-card data-testid="careers-error">
+        {{ t('programs.careers.empty.title') }}
+      </ui-card>
+      } @case (LoadState.Ready) { @if (current.data.length === 0) {
+      <ui-card data-testid="careers-empty">
+        <ui-empty-state [uiTitle]="t('programs.careers.empty.title')">
+          <p>{{ t('programs.careers.empty.body') }}</p>
           <a
-            uiListRow
-            [uiInteractive]="true"
-            [href]="row.href"
+            uiActions
+            [href]="instagramUrl"
             target="_blank"
             rel="noopener"
+            uiButton
+            uiButtonStyle="bordered"
+            uiControlSize="regular"
           >
-            <ui-stack uiSpacing="none">
-              <span>{{ row.title }}</span>
-              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
-                >{{ row.summary }}</span
-              >
-              @if (row.workplaceTag || row.shopsLine) {
-              <!-- WHERE THE ROLE IS WORKED: «От вкъщи», «Хибридно ·
-                   Център», or just the shops of an on-site role. -->
-              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+            {{ t('programs.careers.empty.cta') }}
+            <ui-icon uiName="link.external" />
+          </a>
+        </ui-empty-state>
+      </ui-card>
+      } @else {
+      <!-- A ROLE IS A DOOR, not a link out: the row says what it is and
+           where; a tap opens the role — its words in full and the ways to
+           answer it. -->
+      <ui-list-group data-testid="careers-list">
+        @for (row of current.data; track row.id) {
+        <button
+          uiListRow
+          uiSize="large"
+          uiAlignment="leading"
+          uiLabelWraps
+          type="button"
+          [uiInteractive]="true"
+          aria-haspopup="dialog"
+          data-testid="careers-role"
+          (click)="open(row)"
+        >
+          <ui-stack uiSpacing="tight">
+            <span uiText uiFont="headline">{{ row.title }}</span>
+            <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+              >{{ row.summary }}</span
+            >
+            @if (row.workplaceTag || row.shopsLine) {
+            <!-- WHERE THE ROLE IS WORKED: «От вкъщи», «Хибридно · Център»,
+                 or just the shops of an on-site role. -->
+            <span uiText uiFont="footnote" class="cr-careers__where">
+              <ui-icon uiName="location.place" aria-hidden="true" />
+              <span
                 >@if (row.workplaceTag; as tag) {<span
                   data-testid="careers-row-workplace"
                   >{{ t('programs.workplace.' + tag) }}</span
@@ -70,25 +81,43 @@
                   >{{ shops }}</span
                 >}</span
               >
-              }
-            </ui-stack>
-            <ui-stack
-              uiTrailing
-              uiAxis="horizontal"
-              uiAlignment="center"
-              uiSpacing="compact"
-            >
-              <span uiBadge [uiTone]="statusTone(row.positionStatus)">
-                {{ t('programs.status.position.' + row.positionStatus) }}
-              </span>
-              <ui-icon uiName="link.external" />
-            </ui-stack>
-          </a>
-          }
-        </ui-list-group>
-        } } } }
-      </ui-stack>
+            </span>
+            }
+          </ui-stack>
+          <ui-icon uiTrailing uiName="nav.disclosure" aria-hidden="true" />
+        </button>
+        }
+      </ui-list-group>
+      } } } }
+
+      <!-- THE CLOSER: for whoever did not find their role — the accent as a
+           SHAPE (a washed band), its words ink. -->
+      <aside class="cr-careers__closer" data-testid="careers-closer">
+        <h2 uiText uiFont="title3" class="cr-careers__closer-title">
+          {{ t('programs.careers.closer.title') }}
+        </h2>
+        <p class="cr-careers__closer-body">
+          {{ t('programs.careers.closer.body') }}
+        </p>
+        <a
+          uiButton
+          uiButtonStyle="borderedProminent"
+          uiTint="neutral"
+          uiControlSize="regular"
+          [href]="instagramUrl"
+          target="_blank"
+          rel="noopener"
+        >
+          {{ t('programs.careers.closer.cta') }}
+          <ui-icon uiTrailing uiName="link.external" />
+        </a>
+      </aside>
     </main>
+
+    <cr-contact-sheet
+      [uiContact]="contactFor()"
+      (uiClosed)="contactFor.set(null)"
+    />
 
     <cr-site-footer />
   </div>

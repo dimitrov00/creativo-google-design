@@ -75,14 +75,11 @@
         </ui-card>
         } @else {
         <ui-list-group data-testid="courses-list">
-          @for (course of visibleCourses(); track course.id) {
-          <a
-            uiListRow
-            [uiInteractive]="true"
-            [href]="applyHref(course)"
-            target="_blank"
-            rel="noopener"
-          >
+          @for (course of visibleCourses(); track course.id) { @let contact =
+          contactOf(course);
+          <!-- ONE WAY to answer is the row's own link; several open the
+               contact sheet, which lists them. -->
+          <ng-template #rowBody>
             <ui-stack uiSpacing="none">
               <span>{{ text(course.title) }}</span>
               <span uiText uiFont="footnote" uiForegroundStyle="secondary">
@@ -101,12 +98,39 @@
               </span>
               <ui-icon uiName="link.external" />
             </ui-stack>
+          </ng-template>
+          @if (contact.only; as only) {
+          <a
+            uiListRow
+            [uiInteractive]="true"
+            [href]="only.href"
+            [attr.target]="opensNewTab(only) ? '_blank' : null"
+            rel="noopener"
+          >
+            <ng-container [ngTemplateOutlet]="rowBody" />
           </a>
-          }
+          } @else {
+          <button
+            uiListRow
+            type="button"
+            [uiInteractive]="true"
+            aria-haspopup="dialog"
+            (click)="
+              contactFor.set({ title: text(course.title), contacts: contact.contacts })
+            "
+          >
+            <ng-container [ngTemplateOutlet]="rowBody" />
+          </button>
+          } }
         </ui-list-group>
         } } }
       </ui-stack>
     </main>
+
+    <cr-contact-sheet
+      [uiContact]="contactFor()"
+      (uiClosed)="contactFor.set(null)"
+    />
 
     <cr-site-footer />
   </div>

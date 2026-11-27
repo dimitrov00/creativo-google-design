@@ -1,10 +1,15 @@
 import {
+  ContactMethod,
+  E164,
+  Email,
   EnrollmentStatus,
   LocalizedText,
   PositionStatus,
   WorkplaceMode,
+  type ContactLink,
   type CourseInput,
   type PositionInput,
+  type ProgramContact,
   type ShopEventInput,
 } from '@core/components';
 import type {
@@ -39,8 +44,9 @@ import {
  * EVERY field refusal at once, in the form's order) out. The checks are
  * the legacy domain classes' exactly: both locales of every text trimmed and
  * non-blank (`LocalizedText.parse`, `en` first); a sort order that is an
- * integer `>= 0`; an apply URL trimmed, blank = none, otherwise one the URL
- * parser accepts, stored trimmed; a location id trimmed, blank = none,
+ * integer `>= 0`; each contact trimmed, blank = dropped, otherwise canonical
+ * for its method (E.164, an e-mail, an Instagram handle, a URL the parser
+ * accepts) and one per method; a location id trimmed, blank = none,
  * otherwise `LocationId.parse` (F-3).
  *
  * The event's start is the shop's wall clock (`localDate` + `startMinutes`)
@@ -104,16 +110,75 @@ function parsesAsUrl(text: string): boolean {
   }
 }
 
-/** Trimmed; blank = none; otherwise it must parse as a URL — stored trimmed. */
-function applyUrlOf(
-  raw: string,
+/** An Instagram handle: letters, digits, dots and underscores, 30 at most. */
+const INSTAGRAM_HANDLE = /^[A-Za-z0-9._]{1,30}$/;
+/** A pasted profile address, with or without scheme, `www.` and a trailing slash or query. */
+const INSTAGRAM_ADDRESS =
+  /^(?:https?:\/\/)?(?:www\.)?instagram\.com\/([^/?#]+)\/?(?:[?#].*)?$/i;
+
+/** The handle of what was typed — `@name`, `name` or the profile's address — or `null`. */
+function instagramHandleOf(trimmed: string): string | null {
+  const fromAddress = INSTAGRAM_ADDRESS.exec(trimmed)?.[1];
+  const handle = fromAddress ?? trimmed.replace(/^@/, '');
+  return INSTAGRAM_HANDLE.test(handle) ? handle : null;
+}
+
+/** The canonical value of a contact of `method`, or `null` when `trimmed` is not its shape. */
+function contactValueOf(method: ContactMethod, trimmed: string): string | null {
+  switch (method) {
+    case ContactMethod.Phone:
+      // The phone field hands over E.164; the number plans are its question.
+      return E164.is(trimmed) ? trimmed : null;
+    case ContactMethod.Email:
+      return Email.parse(trimmed);
+    case ContactMethod.Instagram:
+      return instagramHandleOf(trimmed);
+    case ContactMethod.Link:
+      return parsesAsUrl(trimmed) ? trimmed : null;
+  }
+}
+
+/**
+ * The contacts as stored: each value trimmed, a blank one dropped, the rest
+ * canonical, in the order typed. A value that is not its method's shape,
+ * and a method given a second time, are each a refusal.
+ */
+function contactsOf(
+  raws: readonly ProgramContact[],
   errorCode: EngagementError.ProgramCode,
-): FieldResult<string | null> {
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return Result.ok(null);
-  return parsesAsUrl(trimmed)
-    ? Result.ok(trimmed)
-    : Result.err([EngagementError.program(errorCode, trimmed)]);
+): FieldResult<readonly ProgramContact[]> {
+  const kept: ProgramContact[] = [];
+  const refusals: ProgramFieldError[] = [];
+  for (let i = 0; i < raws.length; i++) {
+    const raw = raws[i] as ProgramContact;
+    const trimmed = raw.contactValue.trim();
+    if (trimmed.length === 0) continue;
+    const contactValue = contactValueOf(raw.contactMethod, trimmed);
+    let repeated = false;
+    for (let k = 0; k < kept.length; k++) {
+      if (kept[k]?.contactMethod === raw.contactMethod) repeated = true;
+    }
+    if (contactValue === null || repeated) {
+      refusals.push(EngagementError.program(errorCode, trimmed));
+    } else {
+      kept.push({ contactMethod: raw.contactMethod, contactValue });
+    }
+  }
+  return refusals.length > 0 ? Result.err(refusals) : Result.ok(kept);
+}
+
+/** The address a tap on a contact opens. */
+function contactHrefOf(contact: ProgramContact): string {
+  switch (contact.contactMethod) {
+    case ContactMethod.Phone:
+      return `tel:${contact.contactValue}`;
+    case ContactMethod.Email:
+      return `mailto:${contact.contactValue}`;
+    case ContactMethod.Instagram:
+      return `https://www.instagram.com/${contact.contactValue}`;
+    case ContactMethod.Link:
+      return contact.contactValue;
+  }
 }
 
 /** Both locales blank = no label; otherwise both must be filled. */
@@ -206,6 +271,30 @@ export const ProgramsSystem = {
   },
 
   /**
+   * The ways a page offers to answer a program, each with the address a tap
+   * opens, in the stored order. A program with none of its own is answered
+   * through the shop's Instagram (`instagramUrl`), so the answer is never
+   * empty.
+   */
+  contactLinks(
+    contacts: readonly ProgramContact[],
+    instagramUrl: string,
+  ): readonly ContactLink[] {
+    if (contacts.length === 0) {
+      return [{ contactMethod: ContactMethod.Instagram, href: instagramUrl }];
+    }
+    const links: ContactLink[] = [];
+    for (let i = 0; i < contacts.length; i++) {
+      const contact = contacts[i] as ProgramContact;
+      links.push({
+        contactMethod: contact.contactMethod,
+        href: contactHrefOf(contact),
+      });
+    }
+    return links;
+  },
+
+  /**
    * A role with its status turned over: an open one closed, a closed one
    * opened. Everything else it holds is kept.
    */
@@ -261,7 +350,7 @@ export const ProgramsSystem = {
 
   /**
    * A role from the admin form — sortOrder, title, summary, each location
-   * id, apply URL, every refusal at once in that order. The status is the
+   * id, contacts, every refusal at once in that order. The status is the
    * form's chip, taken as typed, and so is where the role is worked — but
    * a remote role is tied to no shop, so its location ids are dropped
    * (after they were judged like any others).
@@ -277,19 +366,19 @@ export const ProgramsSystem = {
     const title = LocalizedText.parse(input.title);
     const summary = LocalizedText.parse(input.summary);
     const locationIds = locationIdsOf(input.locationIds);
-    const applyUrl = applyUrlOf(
-      input.applyUrl,
-      EngagementErrorCode.PositionApplyUrlInvalid,
+    const contacts = contactsOf(
+      input.contacts,
+      EngagementErrorCode.PositionContactInvalid,
     );
     if (
       !sortOrder.ok ||
       !title.ok ||
       !summary.ok ||
       !locationIds.ok ||
-      !applyUrl.ok
+      !contacts.ok
     ) {
       return Result.err(
-        refusalsOf(sortOrder, title, summary, locationIds, applyUrl),
+        refusalsOf(sortOrder, title, summary, locationIds, contacts),
       );
     }
     return Result.ok({
@@ -300,14 +389,14 @@ export const ProgramsSystem = {
       locationIds:
         input.workplaceMode === WorkplaceMode.Remote ? [] : locationIds.value,
       positionStatus: input.positionStatus,
-      applyUrl: applyUrl.value,
+      contacts: contacts.value,
       sortOrder: sortOrder.value,
     });
   },
 
   /**
    * A course from the admin form — sortOrder, title, description, starts
-   * label (both locales blank = none, one alone refused), apply URL, every
+   * label (both locales blank = none, one alone refused), contacts, every
    * refusal at once in that order.
    */
   course(
@@ -321,19 +410,19 @@ export const ProgramsSystem = {
     const title = LocalizedText.parse(input.title);
     const description = LocalizedText.parse(input.description);
     const startsLabel = startsLabelOf(input.startsLabel);
-    const applyUrl = applyUrlOf(
-      input.applyUrl,
-      EngagementErrorCode.CourseApplyUrlInvalid,
+    const contacts = contactsOf(
+      input.contacts,
+      EngagementErrorCode.CourseContactInvalid,
     );
     if (
       !sortOrder.ok ||
       !title.ok ||
       !description.ok ||
       !startsLabel.ok ||
-      !applyUrl.ok
+      !contacts.ok
     ) {
       return Result.err(
-        refusalsOf(sortOrder, title, description, startsLabel, applyUrl),
+        refusalsOf(sortOrder, title, description, startsLabel, contacts),
       );
     }
     return Result.ok({
@@ -342,14 +431,14 @@ export const ProgramsSystem = {
       description: description.value,
       enrollmentStatus: input.enrollmentStatus,
       startsLabel: startsLabel.value,
-      applyUrl: applyUrl.value,
+      contacts: contacts.value,
       sortOrder: sortOrder.value,
     });
   },
 
   /**
    * An event's fields from the admin form, before its instant — the start
-   * (wall clock), sortOrder, title, description, location id, apply URL,
+   * (wall clock), sortOrder, title, description, location id, contacts,
    * every refusal at once in that order.
    */
   eventFields(
@@ -363,9 +452,9 @@ export const ProgramsSystem = {
     const title = LocalizedText.parse(input.title);
     const description = LocalizedText.parse(input.description);
     const locationId = locationIdOf(input.locationId);
-    const applyUrl = applyUrlOf(
-      input.applyUrl,
-      EngagementErrorCode.ShopEventApplyUrlInvalid,
+    const contacts = contactsOf(
+      input.contacts,
+      EngagementErrorCode.ShopEventContactInvalid,
     );
     if (
       !start.ok ||
@@ -373,10 +462,10 @@ export const ProgramsSystem = {
       !title.ok ||
       !description.ok ||
       !locationId.ok ||
-      !applyUrl.ok
+      !contacts.ok
     ) {
       return Result.err(
-        refusalsOf(start, sortOrder, title, description, locationId, applyUrl),
+        refusalsOf(start, sortOrder, title, description, locationId, contacts),
       );
     }
     return Result.ok({
@@ -385,7 +474,7 @@ export const ProgramsSystem = {
       localDate: start.value.localDate,
       startMinutes: start.value.startMinutes,
       locationId: locationId.value,
-      applyUrl: applyUrl.value,
+      contacts: contacts.value,
       sortOrder: sortOrder.value,
     });
   },
@@ -528,7 +617,7 @@ export const ProgramsSystem = {
       startMinutes: fields.startMinutes,
       utcEpochMs,
       locationId: fields.locationId,
-      applyUrl: fields.applyUrl,
+      contacts: fields.contacts,
       sortOrder: fields.sortOrder,
     };
   },

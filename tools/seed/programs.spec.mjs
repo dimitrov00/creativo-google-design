@@ -106,8 +106,17 @@ function isLocalizedText(value) {
     value.en.length > 0
   );
 }
-const isLinkOrNull = (value) =>
-  value === null || (typeof value === 'string' && value.length > 0);
+const CONTACT_METHODS = ['PHONE', 'EMAIL', 'INSTAGRAM', 'LINK'];
+const isContacts = (value) =>
+  Array.isArray(value) &&
+  value.length <= 4 &&
+  value.every(
+    (contact) =>
+      Object.keys(contact).sort().join() === 'contactMethod,contactValue' &&
+      CONTACT_METHODS.includes(contact.contactMethod) &&
+      typeof contact.contactValue === 'string' &&
+      contact.contactValue.length > 0,
+  );
 const isSortOrder = (value) => typeof value === 'number' && value >= 0;
 
 describe('the seed’s programs', () => {
@@ -180,7 +189,6 @@ describe('the seed’s programs', () => {
     for (const { id, data } of positions) {
       const judged = ProgramsSystem.position(PositionId.of(id), {
         ...data,
-        applyUrl: data.applyUrl ?? '',
       });
       expect(judged, id).toEqual({ ok: true, value: { id, ...data } });
     }
@@ -188,7 +196,6 @@ describe('the seed’s programs', () => {
       const judged = ProgramsSystem.course(CourseId.of(id), {
         ...data,
         startsLabel: data.startsLabel ?? { bg: '', en: '' },
-        applyUrl: data.applyUrl ?? '',
       });
       expect(judged, id).toEqual({ ok: true, value: { id, ...data } });
     }
@@ -201,7 +208,7 @@ describe('the seed’s programs', () => {
           WallTime.of(data.localDate, data.startMinutes),
         ),
         locationId: data.locationId ?? '',
-        applyUrl: data.applyUrl ?? '',
+        contacts: data.contacts,
         sortOrder: data.sortOrder,
       });
       expect(fields.ok, id).toBe(true);
@@ -244,7 +251,7 @@ describe('the seed’s programs', () => {
       // A role names only shops the seed writes.
       for (const shop of data.locationIds)
         expect(shopIds.has(shop), id).toBe(true);
-      expect(isLinkOrNull(data.applyUrl), id).toBe(true);
+      expect(isContacts(data.contacts), id).toBe(true);
       expect(isSortOrder(data.sortOrder), id).toBe(true);
     }
     for (const { id, data } of courses) {
@@ -255,7 +262,7 @@ describe('the seed’s programs', () => {
         data.startsLabel === null || isLocalizedText(data.startsLabel),
         id,
       ).toBe(true);
-      expect(isLinkOrNull(data.applyUrl), id).toBe(true);
+      expect(isContacts(data.contacts), id).toBe(true);
       expect(isSortOrder(data.sortOrder), id).toBe(true);
     }
     for (const { id, data } of events) {
@@ -270,7 +277,7 @@ describe('the seed’s programs', () => {
       expect(data.locationId === null || shopIds.has(data.locationId), id).toBe(
         true,
       );
-      expect(isLinkOrNull(data.applyUrl), id).toBe(true);
+      expect(isContacts(data.contacts), id).toBe(true);
       expect(isSortOrder(data.sortOrder), id).toBe(true);
     }
   });

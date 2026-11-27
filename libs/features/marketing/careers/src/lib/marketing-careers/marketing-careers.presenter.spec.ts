@@ -1,3 +1,5 @@
+import type { ContactMethod } from '@core/components';
+import type { ContactRowVm } from '@creativo/features/shared/catalog';
 import { PositionStatus, WorkplaceMode } from '@core/components';
 import type { ShopLocation } from '@core/entities';
 import { RepositoryError } from '@core/errors';
@@ -22,6 +24,12 @@ import {
 
 const INSTAGRAM = 'https://instagram.com/creativo.barbershop';
 
+/** A row answered one way: that way is the whole answer, and the row's link. */
+function only(contactMethod: ContactMethod, href: string): ContactRowVm {
+  const link = { contactMethod, href };
+  return { contacts: [link], only: link };
+}
+
 const CENTER = locationFixture({ shortName: textFixture('Center', 'Център') });
 /** A shop with no short name — a row names it by its full name. */
 const MLADOST = locationFixture({
@@ -34,7 +42,9 @@ const SCOPED = positionOf('pos_scoped', {
   title: textFixture('Barber — full time', 'Бръснар — пълно работно време'),
   summary: textFixture('Five days a week.', 'Пет дни в седмицата.'),
   locationIds: [MLADOST.id, CENTER.id],
-  applyUrl: 'https://example.com/apply',
+  contacts: [
+    { contactMethod: 'LINK', contactValue: 'https://example.com/apply' },
+  ],
 });
 const EVERYWHERE = positionOf('pos_everywhere', {
   positionStatus: PositionStatus.Closed,
@@ -67,8 +77,7 @@ describe('positionRowsVm', () => {
         summary: 'Five days a week.',
         shopsLine: 'Center · Creativo · Mladost',
         workplaceTag: null,
-        href: 'https://example.com/apply',
-        positionStatus: PositionStatus.Open,
+        contact: only('LINK', 'https://example.com/apply'),
       },
       // Open at every shop, and scoped only to a shop no listed one
       // answers: no shops line.
@@ -78,8 +87,7 @@ describe('positionRowsVm', () => {
         summary: 'Full-time chair',
         shopsLine: null,
         workplaceTag: null,
-        href: INSTAGRAM,
-        positionStatus: PositionStatus.Closed,
+        contact: only('INSTAGRAM', INSTAGRAM),
       },
       {
         id: AT_GONE_SHOP.id,
@@ -87,8 +95,7 @@ describe('positionRowsVm', () => {
         summary: 'Full-time chair',
         shopsLine: null,
         workplaceTag: null,
-        href: INSTAGRAM,
-        positionStatus: PositionStatus.Open,
+        contact: only('INSTAGRAM', INSTAGRAM),
       },
     ]);
   });

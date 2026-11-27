@@ -19,6 +19,9 @@ export interface UiSheetScrollEvent {
   readonly progress: number;
 }
 
+/** The content's own first-focus mark, read once as the sheet opens. */
+const AUTOFOCUS_SELECTOR = '[data-sheet-autofocus]';
+
 /**
  * Wiring passed by the owning sheet component via {@link UiSheetBehavior.connect}.
  * All selectors are resolved inside the host element; `inertSelectors` are
@@ -33,7 +36,10 @@ export interface UiSheetBehaviorOptions {
   readonly dialogSelector?: string;
   /** Scroller reset to the top on each open; source of scroll progress. */
   readonly scrollerSelector?: string;
-  /** Element focused when the sheet opens. */
+  /**
+   * Element focused when the sheet opens — unless the content marks a
+   * field `data-sheet-autofocus`, which then takes the first focus.
+   */
   readonly initialFocusSelector?: string;
   /** Document-level background chrome made `inert` while the sheet is up. */
   readonly inertSelectors?: readonly string[];
@@ -135,11 +141,15 @@ export class UiSheetBehavior {
             );
             if (scroller) scroller.scrollTop = 0;
           }
-          if (options.initialFocusSelector) {
-            host
-              .querySelector<HTMLElement>(options.initialFocusSelector)
-              ?.focus();
-          }
+          // A field the content marks `data-sheet-autofocus` takes the
+          // first focus (a new thing starts at its name, as Reminders and
+          // Calendar do); otherwise the sheet's own target does.
+          const wanted =
+            host.querySelector<HTMLElement>(AUTOFOCUS_SELECTOR) ??
+            (options.initialFocusSelector
+              ? host.querySelector<HTMLElement>(options.initialFocusSelector)
+              : null);
+          wanted?.focus();
         });
       }
       if (!active && this.environmentActive) this.deactivateEnvironment();

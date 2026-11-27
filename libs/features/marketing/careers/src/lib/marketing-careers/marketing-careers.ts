@@ -1,7 +1,12 @@
 import {
+  ContactSheetComponent,
+  type ContactSheetVm,
+} from '@creativo/features/shared/catalog';
+import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  signal,
   inject,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -16,13 +21,7 @@ import {
   SiteFooterComponent,
   SiteHeaderComponent,
 } from '@creativo/features/shared/shell';
-import {
-  UiBadge,
-  UiBadgeTone,
-  UiButton,
-  UiIcon,
-  UiSkeleton,
-} from '@creativo/ui/controls';
+import { UiButton, UiIcon, UiSkeleton } from '@creativo/ui/controls';
 import { UiStack } from '@creativo/ui/layout';
 import {
   UiCard,
@@ -37,11 +36,6 @@ import { positionRowsVm } from './marketing-careers.presenter';
 import type { PositionRowVm } from './marketing-careers.vm';
 
 const INSTAGRAM_URL = 'https://instagram.com/creativo.barbershop';
-
-const STATUS_TONES = {
-  [PositionStatus.Open]: 'accent',
-  [PositionStatus.Closed]: 'neutral',
-} as const satisfies Record<PositionStatus, UiBadgeTone>;
 
 /** `/careers` — public browse page for open positions, replacing the
  *  landing hiring teaser's Instagram-only "Apply" CTA with a real
@@ -60,10 +54,10 @@ const STATUS_TONES = {
   selector: 'cr-marketing-careers',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    ContactSheetComponent,
     SiteFooterComponent,
     SiteHeaderComponent,
     TranslocoDirective,
-    UiBadge,
     UiButton,
     UiCard,
     UiEmptyState,
@@ -87,6 +81,8 @@ export class MarketingCareers {
   private readonly title = inject(Title);
 
   protected readonly instagramUrl = INSTAGRAM_URL;
+  /** The row whose ways to answer the sheet lists; `null` while it is shut. */
+  protected readonly contactFor = signal<ContactSheetVm | null>(null);
   /** The dictionary, for the template's `@case`s (never bare literals). */
   protected readonly LoadState = LoadState;
 
@@ -121,12 +117,18 @@ export class MarketingCareers {
     },
   );
 
-  constructor() {
-    this.title.setTitle('Careers · Creativo');
+  /** A role tapped: its sheet opens on its words and the ways to answer. */
+  protected open(row: PositionRowVm): void {
+    this.contactFor.set({
+      title: row.title,
+      summary: row.summary,
+      workplaceTag: row.workplaceTag,
+      shopsLine: row.shopsLine,
+      contacts: row.contact.contacts,
+    });
   }
 
-  protected statusTone(positionStatus: PositionStatus): UiBadgeTone {
-    // eslint-disable-next-line security/detect-object-injection -- closed union.
-    return STATUS_TONES[positionStatus];
+  constructor() {
+    this.title.setTitle('Careers · Creativo');
   }
 }

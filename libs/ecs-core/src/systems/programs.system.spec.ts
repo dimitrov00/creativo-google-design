@@ -89,7 +89,7 @@ describe('ProgramsSystem.position', () => {
             'Пълен работен ден',
           ),
           locationIds: ['loc_center'],
-          applyUrl: INSTAGRAM,
+          contacts: [{ contactMethod: 'LINK', contactValue: INSTAGRAM }],
         }),
       ),
     );
@@ -103,7 +103,7 @@ describe('ProgramsSystem.position', () => {
       workplaceMode: 'ON_SITE',
       locationIds: ['loc_center'],
       positionStatus: 'OPEN',
-      applyUrl: INSTAGRAM,
+      contacts: [{ contactMethod: 'LINK', contactValue: INSTAGRAM }],
       sortOrder: 0,
     });
   });
@@ -114,25 +114,124 @@ describe('ProgramsSystem.position', () => {
     ).toEqual(positionOf('position_1'));
   });
 
-  it('accepts a blank apply URL as null — empty or spaces', () => {
-    for (const applyUrl of ['', '   ']) {
+  it('drops a contact whose value is blank — empty or spaces', () => {
+    for (const contactValue of ['', '   ']) {
       expect(
         unwrapOk(
-          ProgramsSystem.position(POSITION_ID, positionInputOf({ applyUrl })),
-        ).applyUrl,
-      ).toBeNull();
+          ProgramsSystem.position(
+            POSITION_ID,
+            positionInputOf({
+              contacts: [{ contactMethod: 'PHONE', contactValue }],
+            }),
+          ),
+        ).contacts,
+      ).toEqual([]);
     }
   });
 
-  it('keeps the apply URL trimmed', () => {
+  it('stores each contact canonical for its method, in the order typed', () => {
     expect(
       unwrapOk(
         ProgramsSystem.position(
           POSITION_ID,
-          positionInputOf({ applyUrl: '  https://x.test  ' }),
+          positionInputOf({
+            contacts: [
+              { contactMethod: 'EMAIL', contactValue: '  Jobs@Creativo.Test ' },
+              { contactMethod: 'PHONE', contactValue: ' +359888123456 ' },
+              {
+                contactMethod: 'INSTAGRAM',
+                contactValue: '@creativo.barbershop',
+              },
+              { contactMethod: 'LINK', contactValue: ' https://x.test/apply ' },
+            ],
+          }),
         ),
-      ).applyUrl,
-    ).toBe('https://x.test');
+      ).contacts,
+    ).toEqual([
+      { contactMethod: 'EMAIL', contactValue: 'jobs@creativo.test' },
+      { contactMethod: 'PHONE', contactValue: '+359888123456' },
+      { contactMethod: 'INSTAGRAM', contactValue: 'creativo.barbershop' },
+      { contactMethod: 'LINK', contactValue: 'https://x.test/apply' },
+    ]);
+  });
+
+  it('reads an Instagram handle out of a pasted profile address', () => {
+    for (const contactValue of [
+      'https://www.instagram.com/creativo.barbershop/',
+      'instagram.com/creativo.barbershop?igsh=abc',
+      'creativo.barbershop',
+    ]) {
+      expect(
+        unwrapOk(
+          ProgramsSystem.position(
+            POSITION_ID,
+            positionInputOf({
+              contacts: [{ contactMethod: 'INSTAGRAM', contactValue }],
+            }),
+          ),
+        ).contacts,
+      ).toEqual([
+        { contactMethod: 'INSTAGRAM', contactValue: 'creativo.barbershop' },
+      ]);
+    }
+  });
+
+  it("refuses a contact that is not its method's shape, each by what was typed", () => {
+    expect(
+      unwrapErr(
+        ProgramsSystem.position(
+          POSITION_ID,
+          positionInputOf({
+            contacts: [
+              { contactMethod: 'PHONE', contactValue: '0888 123 456' },
+              { contactMethod: 'EMAIL', contactValue: 'jobs@creativo' },
+              { contactMethod: 'INSTAGRAM', contactValue: 'two words' },
+            ],
+          }),
+        ),
+      ),
+    ).toEqual(
+      ['0888 123 456', 'jobs@creativo', 'two words'].map((rawValue) => ({
+        errorCode: 'ENGAGEMENT_POSITION_INVALID_CONTACT',
+        rawValue,
+      })),
+    );
+  });
+
+  it('refuses a method given a second time', () => {
+    expect(
+      unwrapErr(
+        ProgramsSystem.position(
+          POSITION_ID,
+          positionInputOf({
+            contacts: [
+              { contactMethod: 'LINK', contactValue: 'https://a.test' },
+              { contactMethod: 'LINK', contactValue: 'https://b.test' },
+            ],
+          }),
+        ),
+      ),
+    ).toEqual([
+      {
+        errorCode: 'ENGAGEMENT_POSITION_INVALID_CONTACT',
+        rawValue: 'https://b.test',
+      },
+    ]);
+  });
+
+  it('keeps a link trimmed', () => {
+    expect(
+      unwrapOk(
+        ProgramsSystem.position(
+          POSITION_ID,
+          positionInputOf({
+            contacts: [
+              { contactMethod: 'LINK', contactValue: '  https://x.test  ' },
+            ],
+          }),
+        ),
+      ).contacts,
+    ).toEqual([{ contactMethod: 'LINK', contactValue: 'https://x.test' }]);
   });
 
   it('stores every text trimmed', () => {
@@ -234,17 +333,19 @@ describe('ProgramsSystem.position', () => {
     }
   });
 
-  it('rejects a malformed apply URL', () => {
+  it('rejects a malformed link', () => {
     expect(
       unwrapErr(
         ProgramsSystem.position(
           POSITION_ID,
-          positionInputOf({ applyUrl: 'not a url' }),
+          positionInputOf({
+            contacts: [{ contactMethod: 'LINK', contactValue: 'not a url' }],
+          }),
         ),
       ),
     ).toEqual([
       {
-        errorCode: 'ENGAGEMENT_POSITION_INVALID_APPLY_URL',
+        errorCode: 'ENGAGEMENT_POSITION_INVALID_CONTACT',
         rawValue: 'not a url',
       },
     ]);
@@ -286,7 +387,7 @@ describe('ProgramsSystem.position', () => {
             title: textFixture('', ''),
             summary: textFixture(' ', 'Стол'),
             locationIds: ['', 'a/b'],
-            applyUrl: 'not a url',
+            contacts: [{ contactMethod: 'LINK', contactValue: 'not a url' }],
           }),
         ),
       ).map((error) => error.errorCode),
@@ -297,7 +398,37 @@ describe('ProgramsSystem.position', () => {
       'CATALOG_LOCALIZED_TEXT_FIELD_EMPTY',
       'PRIMITIVE_ID_EMPTY',
       'PRIMITIVE_ID_HAS_SLASH',
-      'ENGAGEMENT_POSITION_INVALID_APPLY_URL',
+      'ENGAGEMENT_POSITION_INVALID_CONTACT',
+    ]);
+  });
+});
+
+describe('ProgramsSystem.contactLinks', () => {
+  it('gives each contact the address a tap opens, in the stored order', () => {
+    expect(
+      ProgramsSystem.contactLinks(
+        [
+          { contactMethod: 'PHONE', contactValue: '+359888123456' },
+          { contactMethod: 'EMAIL', contactValue: 'jobs@creativo.test' },
+          { contactMethod: 'INSTAGRAM', contactValue: 'creativo.barbershop' },
+          { contactMethod: 'LINK', contactValue: 'https://x.test/apply' },
+        ],
+        INSTAGRAM,
+      ),
+    ).toEqual([
+      { contactMethod: 'PHONE', href: 'tel:+359888123456' },
+      { contactMethod: 'EMAIL', href: 'mailto:jobs@creativo.test' },
+      {
+        contactMethod: 'INSTAGRAM',
+        href: 'https://www.instagram.com/creativo.barbershop',
+      },
+      { contactMethod: 'LINK', href: 'https://x.test/apply' },
+    ]);
+  });
+
+  it("answers through the shop's Instagram when a program has no contact of its own", () => {
+    expect(ProgramsSystem.contactLinks([], INSTAGRAM)).toEqual([
+      { contactMethod: 'INSTAGRAM', href: INSTAGRAM },
     ]);
   });
 });
@@ -309,7 +440,7 @@ describe('ProgramsSystem.course', () => {
         COURSE_ID,
         courseInputOf({
           startsLabel: textFixture('Spring 2026', 'Пролет 2026'),
-          applyUrl: INSTAGRAM,
+          contacts: [{ contactMethod: 'LINK', contactValue: INSTAGRAM }],
         }),
       ),
     );
@@ -319,20 +450,20 @@ describe('ProgramsSystem.course', () => {
       description: { bg: 'Шестседмичен курс', en: 'Six-week evening course' },
       enrollmentStatus: 'OPEN',
       startsLabel: { bg: 'Пролет 2026', en: 'Spring 2026' },
-      applyUrl: INSTAGRAM,
+      contacts: [{ contactMethod: 'LINK', contactValue: INSTAGRAM }],
       sortOrder: 0,
     });
   });
 
-  it('accepts a blank starts label and apply URL as null', () => {
+  it('accepts a blank starts label and link as none', () => {
     const course = unwrapOk(
       ProgramsSystem.course(
         COURSE_ID,
-        courseInputOf({ startsLabel: textFixture('  ', ''), applyUrl: ' ' }),
+        courseInputOf({ startsLabel: textFixture('  ', ''), contacts: [] }),
       ),
     );
     expect(course.startsLabel).toBeNull();
-    expect(course.applyUrl).toBeNull();
+    expect(course.contacts).toEqual([]);
     expect(course).toEqual(courseOf('course_1'));
   });
 
@@ -379,17 +510,19 @@ describe('ProgramsSystem.course', () => {
     ]);
   });
 
-  it('rejects a malformed apply URL', () => {
+  it('rejects a malformed link', () => {
     expect(
       unwrapErr(
         ProgramsSystem.course(
           COURSE_ID,
-          courseInputOf({ applyUrl: 'not a url' }),
+          courseInputOf({
+            contacts: [{ contactMethod: 'LINK', contactValue: 'not a url' }],
+          }),
         ),
       ),
     ).toEqual([
       EngagementError.program(
-        EngagementErrorCode.CourseApplyUrlInvalid,
+        EngagementErrorCode.CourseContactInvalid,
         'not a url',
       ),
     ]);
@@ -405,7 +538,7 @@ describe('ProgramsSystem.course', () => {
             title: textFixture('Fade', ''),
             description: textFixture('', 'Курс'),
             startsLabel: textFixture('', 'Пролет'),
-            applyUrl: 'nope',
+            contacts: [{ contactMethod: 'LINK', contactValue: 'nope' }],
           }),
         ),
       ),
@@ -414,23 +547,20 @@ describe('ProgramsSystem.course', () => {
       blankBg,
       blankEn,
       blankEn,
-      EngagementError.program(
-        EngagementErrorCode.CourseApplyUrlInvalid,
-        'nope',
-      ),
+      EngagementError.program(EngagementErrorCode.CourseContactInvalid, 'nope'),
     ]);
   });
 });
 
 describe('ProgramsSystem.eventFields', () => {
-  it('reads the wall clock of a valid event, with its location and RSVP link', () => {
+  it('reads the wall clock of a valid event, with its location and its link', () => {
     expect(
       unwrapOk(
         ProgramsSystem.eventFields(
           shopEventInputOf({
             startsAt: '2026-11-05T19:00',
             locationId: 'loc_center',
-            applyUrl: INSTAGRAM,
+            contacts: [{ contactMethod: 'LINK', contactValue: INSTAGRAM }],
           }),
         ),
       ),
@@ -443,19 +573,19 @@ describe('ProgramsSystem.eventFields', () => {
       localDate: '2026-11-05',
       startMinutes: 1140,
       locationId: 'loc_center',
-      applyUrl: INSTAGRAM,
+      contacts: [{ contactMethod: 'LINK', contactValue: INSTAGRAM }],
       sortOrder: 0,
     });
   });
 
-  it('accepts a blank location and apply URL as null, and trims a typed location', () => {
+  it('accepts a blank location and link as none, and trims a typed location', () => {
     const none = unwrapOk(
       ProgramsSystem.eventFields(
-        shopEventInputOf({ locationId: '  ', applyUrl: '' }),
+        shopEventInputOf({ locationId: '  ', contacts: [] }),
       ),
     );
     expect(none.locationId).toBeNull();
-    expect(none.applyUrl).toBeNull();
+    expect(none.contacts).toEqual([]);
     expect(
       unwrapOk(
         ProgramsSystem.eventFields(
@@ -559,14 +689,18 @@ describe('ProgramsSystem.eventFields', () => {
     ]);
   });
 
-  it('rejects a malformed apply URL', () => {
+  it('rejects a malformed link', () => {
     expect(
       unwrapErr(
-        ProgramsSystem.eventFields(shopEventInputOf({ applyUrl: 'not a url' })),
+        ProgramsSystem.eventFields(
+          shopEventInputOf({
+            contacts: [{ contactMethod: 'LINK', contactValue: 'not a url' }],
+          }),
+        ),
       ),
     ).toEqual([
       EngagementError.program(
-        EngagementErrorCode.ShopEventApplyUrlInvalid,
+        EngagementErrorCode.ShopEventContactInvalid,
         'not a url',
       ),
     ]);
@@ -580,7 +714,7 @@ describe('ProgramsSystem.eventFields', () => {
           description: textFixture('Day', ''),
           startsAt: 'soon',
           locationId: 'a/b',
-          applyUrl: 'nope',
+          contacts: [{ contactMethod: 'LINK', contactValue: 'nope' }],
           sortOrder: -3,
         }),
       ),
@@ -594,7 +728,7 @@ describe('ProgramsSystem.eventFields', () => {
       blankBg,
       PrimitiveError.of(PrimitiveErrorCode.IdHasSlash, 'a/b', 'LocationId'),
       EngagementError.program(
-        EngagementErrorCode.ShopEventApplyUrlInvalid,
+        EngagementErrorCode.ShopEventContactInvalid,
         'nope',
       ),
     ]);
@@ -851,7 +985,7 @@ describe('ProgramsSystem.shopEvent', () => {
       'startMinutes',
       'utcEpochMs',
       'locationId',
-      'applyUrl',
+      'contacts',
       'sortOrder',
     ]);
     expect(event.id).toBe('event_1');
@@ -875,7 +1009,7 @@ describe('ProgramsSystem — purity', () => {
     const positionInput = deepFreeze(
       positionInputOf({
         locationIds: ['loc-center'],
-        applyUrl: ' https://x.test ',
+        contacts: [{ contactMethod: 'LINK', contactValue: ' https://x.test ' }],
       }),
     );
     const courseInput = deepFreeze(
@@ -901,7 +1035,7 @@ describe('ProgramsSystem — purity', () => {
     expect(unwrapOk(once[3] as ReturnType<typeof ProgramsSystem.zoneOf>)).toBe(
       zone,
     );
-    expect(positionInput.applyUrl).toBe(' https://x.test ');
+    expect(positionInput.contacts[0]?.contactValue).toBe(' https://x.test ');
     expect(eventInput.locationId).toBe(' loc-x ');
   });
 });

@@ -4,6 +4,7 @@ import type { RepositoryError } from '@core/errors';
 import { type Result } from '@core/primitives';
 import { ProgramsSystem } from '@core/systems';
 import {
+  contactRowVm,
   type NamedShop,
   namedShopsOf,
 } from '@creativo/features/shared/catalog';
@@ -68,8 +69,7 @@ export function positionRowsVm(
         position.workplaceMode === WorkplaceMode.OnSite
           ? null
           : position.workplaceMode,
-      href: position.applyUrl ?? input.fallbackHref,
-      positionStatus: position.positionStatus,
+      contact: contactRowVm(position.contacts, input.fallbackHref),
     });
   }
   return rows;

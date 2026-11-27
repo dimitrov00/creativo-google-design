@@ -843,8 +843,12 @@
   "programs": {
     "careers": {
       "back": "Creativo",
-      "eyebrow": "Careers",
-      "title": "Open positions.",
+      "title": "Come work the other side of the chair.",
+      "closer": {
+        "title": "Don't see your role?",
+        "body": "Write to us. There is always a chair for good hands.",
+        "cta": "Message us on Instagram"
+      },
       "subtitle": "A few seats open for people who take their craft seriously.",
       "empty": {
         "title": "Nothing open right now.",
@@ -880,6 +884,22 @@
       "emptyPast": {
         "title": "No past events yet.",
         "body": "This is where the recap lives once the first one wraps."
+      }
+    },
+    "contact": {
+      "close": "Close",
+      "choose": "Get in touch",
+      "name": {
+        "PHONE": "Phone",
+        "EMAIL": "Email",
+        "INSTAGRAM": "Instagram",
+        "LINK": "Link"
+      },
+      "action": {
+        "PHONE": "Call",
+        "EMAIL": "Send an email",
+        "INSTAGRAM": "Message on Instagram",
+        "LINK": "Open the link"
       }
     },
     "workplace": {
@@ -3006,17 +3026,31 @@
         "newEvent": "New event"
       },
       "section": {
-        "shared": "For every language"
+        "about": {
+          "POSITION": "About the role",
+          "COURSE": "About the course",
+          "EVENT": "About the event"
+        },
+        "where": "Where",
+        "when": "When and where",
+        "apply": "Applying",
+        "enrollment": "Enrolment"
       },
       "saveFailed": "Couldn't save. Check the required fields and try again.",
       "field": {
         "title": "Title",
         "description": "Description",
-        "status": "Status",
-        "applyUrl": "Apply link",
-        "linkHint": "Optional. Without a link the button opens Instagram."
+        "status": "Status"
+      },
+      "contact": {
+        "add": "Add a way to get in touch",
+        "remove": "Remove: {{name}}",
+        "owed": "Fill it in or remove it.",
+        "hint": "Without one, the button opens the shop's Instagram."
       },
       "position": {
+        "open": "Active",
+        "openHint": "An inactive role is not shown on the careers page.",
         "workplace": "Workplace",
         "summary": "Summary",
         "shops": "Shops",
@@ -3030,8 +3064,7 @@
       "event": {
         "startsAt": "Starts — shop's local time",
         "shop": "Shop",
-        "shopNone": "No specific shop",
-        "rsvpUrl": "RSVP link"
+        "shopNone": "No specific shop"
       },
       "shopHidden": "{{name}} (hidden)",
       "shopMissing": "Deleted shop"

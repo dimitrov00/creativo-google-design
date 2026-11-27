@@ -1,3 +1,9 @@
+import { NgTemplateOutlet } from '@angular/common';
+import {
+  ContactSheetComponent,
+  type ContactSheetVm,
+  opensNewTab,
+} from '@creativo/features/shared/catalog';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -63,6 +69,8 @@ const INSTAGRAM_URL = 'https://instagram.com/creativo.barbershop';
   selector: 'cr-marketing-events',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    ContactSheetComponent,
+    NgTemplateOutlet,
     SiteFooterComponent,
     SiteHeaderComponent,
     TranslocoDirective,
@@ -90,6 +98,9 @@ export class MarketingEvents {
   private readonly title = inject(Title);
 
   protected readonly instagramUrl = INSTAGRAM_URL;
+  /** The row whose ways to answer the sheet lists; `null` while it is shut. */
+  protected readonly contactFor = signal<ContactSheetVm | null>(null);
+  protected readonly opensNewTab = opensNewTab;
   /** The dictionary, for the template's `@case`s (never bare literals). */
   protected readonly LoadState = LoadState;
   /** The tabs, for the template's chips (never bare literals). */

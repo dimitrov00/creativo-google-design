@@ -295,7 +295,7 @@ export async function seedClosedPositions(run: string): Promise<void> {
         workplaceMode: 'ON_SITE',
         locationIds: [],
         positionStatus: 'CLOSED',
-        applyUrl: null,
+        contacts: [],
         sortOrder: 900 + place,
       }),
     ),

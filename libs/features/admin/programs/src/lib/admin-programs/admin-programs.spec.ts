@@ -50,6 +50,7 @@ import {
   utcMs,
 } from '@core/testing';
 import {
+  AUTH_DEPLOYMENT_PORTS,
   CATALOG_PORTS,
   CLOCK_PORTS,
   DEFAULT_LOCATION_PORTS,
@@ -294,6 +295,10 @@ async function configure(
         useValue: memoryLocationLoadPorts(world),
       },
       {
+        provide: AUTH_DEPLOYMENT_PORTS,
+        useValue: { authDeployment: { defaultCountry: 'BG' } },
+      },
+      {
         provide: DEFAULT_LOCATION_PORTS,
         useValue: memoryDefaultLocationPorts(),
       },
@@ -409,7 +414,7 @@ describe('AdminPrograms', () => {
         workplaceMode: 'ON_SITE',
         locationIds: [],
         positionStatus: PositionStatus.Open,
-        applyUrl: null,
+        contacts: [],
         sortOrder: 0,
       },
     ]);
@@ -517,9 +522,11 @@ describe('AdminPrograms', () => {
     rowsOf(host, 'admin-positions-list')[0]?.click();
     fixture.detectChanges();
 
-    expect(segmentWorded(host, 'Closed').getAttribute('data-selected')).toBe(
-      '',
-    );
+    expect(
+      host
+        .querySelector('[data-testid="admin-position-open"]')
+        ?.getAttribute('aria-checked'),
+    ).toBe('false');
   });
 
   it('switches tabs and clears any open form', async () => {
@@ -570,8 +577,9 @@ describe('AdminPrograms', () => {
       'Заглавие',
       'Описание',
       'Начало — по часа на салона',
-      'Линк за записване',
     ]);
+    // The ways to answer start as the button that adds one.
+    expect(textOf(host, 'admin-contact-add')).toBe('Добави начин за връзка');
     expect(
       host.querySelector('#admin-programs-sheet-title')?.textContent?.trim(),
     ).toBe('Ново събитие');
@@ -837,6 +845,190 @@ describe('AdminPrograms', () => {
       expect(trailingTextOf(host, 'admin-positions-list')).toBe(
         'Отворена · Затворена',
       );
+    });
+
+    it('closes a role with the switch at the end of the sheet', async () => {
+      const stored = positionOf('pos_1');
+      const { fixture, host, world } = await configure({
+        positions: [stored],
+      });
+
+      rowsOf(host, 'admin-positions-list')[0]?.click();
+      fixture.detectChanges();
+      const open = () =>
+        host
+          .querySelector('[data-testid="admin-position-open"]')
+          ?.getAttribute('aria-checked');
+      expect(open()).toBe('true');
+
+      click(host, 'admin-position-open');
+      fixture.detectChanges();
+      expect(open()).toBe('false');
+      click(host, 'admin-save');
+      await settle(fixture);
+
+      expect(world.positions.get(stored.id)?.positionStatus).toBe(
+        PositionStatus.Closed,
+      );
+    });
+
+    it('opens a stored contact as its field, and adds the others from the menu', async () => {
+      const { fixture, host, world } = await configure({
+        positions: [
+          positionOf('pos_1', {
+            contacts: [
+              {
+                contactMethod: 'LINK',
+                contactValue: 'https://example.test/apply',
+              },
+            ],
+          }),
+        ],
+      });
+      const value = (method: string) =>
+        host.querySelector<HTMLInputElement>(
+          `[data-testid="admin-contact-value-${method}"]`,
+        );
+      const offered = () =>
+        Array.from(
+          host.querySelectorAll('[data-testid^="admin-contact-add-"]'),
+          (row) => row.getAttribute('data-testid'),
+        );
+
+      rowsOf(host, 'admin-positions-list')[0]?.click();
+      fixture.detectChanges();
+      // The sheet takes its own first focus a frame after it opens.
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      expect(value('LINK')?.value).toBe('https://example.test/apply');
+
+      // The menu offers what is not added yet, in the dictionary's order.
+      click(host, 'admin-contact-add');
+      fixture.detectChanges();
+      expect(offered()).toEqual([
+        'admin-contact-add-PHONE',
+        'admin-contact-add-EMAIL',
+        'admin-contact-add-INSTAGRAM',
+      ]);
+
+      click(host, 'admin-contact-add-EMAIL');
+      await settle(fixture);
+      expect(document.activeElement).toBe(value('EMAIL'));
+      fillInput(host, 'admin-contact-value-EMAIL', ' Jobs@Example.Test ');
+      click(host, 'admin-save');
+      await settle(fixture);
+
+      expect(world.positions.get(PositionId.of('pos_1'))?.contacts).toEqual([
+        { contactMethod: 'LINK', contactValue: 'https://example.test/apply' },
+        { contactMethod: 'EMAIL', contactValue: 'jobs@example.test' },
+      ]);
+    });
+
+    it('refuses a contact added and left blank, until it is filled or removed', async () => {
+      const stored = positionOf('pos_1');
+      const { fixture, host, world } = await configure({
+        positions: [stored],
+      });
+
+      rowsOf(host, 'admin-positions-list')[0]?.click();
+      fixture.detectChanges();
+      click(host, 'admin-contact-add');
+      fixture.detectChanges();
+      click(host, 'admin-contact-add-INSTAGRAM');
+      await settle(fixture);
+      click(host, 'admin-save');
+      await settle(fixture);
+
+      expect(formOpen(fixture)).toBe(true);
+      expect(world.positions.get(stored.id)).toEqual(stored);
+      expect(
+        host
+          .querySelector('[data-testid="admin-contact-value-INSTAGRAM"]')
+          ?.getAttribute('aria-invalid'),
+      ).toBe('true');
+
+      click(host, 'admin-contact-remove-INSTAGRAM');
+      fixture.detectChanges();
+      click(host, 'admin-save');
+      await settle(fixture);
+
+      expect(formOpen(fixture)).toBe(false);
+      expect(world.positions.get(stored.id)?.contacts).toEqual([]);
+    });
+
+    it('draws the phone as the phone field, and the menu goes once every method is added', async () => {
+      const { fixture, host } = await configure({
+        positions: [
+          positionOf('pos_1', {
+            contacts: [
+              { contactMethod: 'PHONE', contactValue: '+359888123456' },
+              { contactMethod: 'EMAIL', contactValue: 'jobs@example.test' },
+              { contactMethod: 'INSTAGRAM', contactValue: 'creativo' },
+              { contactMethod: 'LINK', contactValue: 'https://example.test' },
+            ],
+          }),
+        ],
+      });
+
+      rowsOf(host, 'admin-positions-list')[0]?.click();
+      fixture.detectChanges();
+
+      expect(
+        host.querySelector(
+          '[data-testid="admin-contact-PHONE"] ui-phone-field',
+        ),
+      ).not.toBeNull();
+      expect(
+        host.querySelector('[data-testid="admin-contact-add"]'),
+      ).toBeNull();
+    });
+
+    it('says inside the «Active» row what switching it off means', async () => {
+      const { fixture, host } = await configure({
+        positions: [positionOf('pos_1')],
+      });
+
+      rowsOf(host, 'admin-positions-list')[0]?.click();
+      fixture.detectChanges();
+
+      const row = host
+        .querySelector('[data-testid="admin-position-open"]')
+        ?.closest('ui-list-row');
+      expect(
+        Array.from(row?.querySelectorAll('ui-stack > span') ?? [], (line) =>
+          line.textContent?.trim(),
+        ),
+      ).toEqual([
+        'Active',
+        'An inactive role is not shown on the careers page.',
+      ]);
+    });
+
+    it('puts the cursor in the title of a new role', async () => {
+      const { fixture, host } = await configure();
+
+      click(host, 'admin-new');
+      await settle(fixture);
+      // The sheet gives its first focus a frame after it opens.
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+
+      expect(document.activeElement).toBe(
+        host.querySelector('[data-testid^="admin-position-title-"]'),
+      );
+    });
+
+    it('names each section of the sheet for what it asks, the «Active» switch standing alone', async () => {
+      const { fixture, host } = await configure({
+        positions: [positionOf('pos_1')],
+      });
+
+      rowsOf(host, 'admin-positions-list')[0]?.click();
+      fixture.detectChanges();
+
+      expect(
+        [...host.querySelectorAll('.lib-admin-programs__section h3')].map(
+          (heading) => heading.textContent?.trim(),
+        ),
+      ).toEqual(['About the role', 'Where', 'Applying']);
     });
 
     it('keeps the stored scope on an edit (OR-42)', async () => {
@@ -1120,7 +1312,7 @@ describe('AdminPrograms', () => {
           description: { en: 'Six weeks', bg: 'Шест седмици' },
           enrollmentStatus: EnrollmentStatus.Upcoming,
           startsLabel: null,
-          applyUrl: null,
+          contacts: [],
           sortOrder: 0,
         },
       ]);
@@ -1181,7 +1373,7 @@ describe('AdminPrograms', () => {
           // After the fall-back switch: Sofia is UTC+2.
           utcEpochMs: utcMs('2026-11-05T19:00:00.000+02:00'),
           locationId: null,
-          applyUrl: null,
+          contacts: [],
           sortOrder: 0,
         },
       ]);

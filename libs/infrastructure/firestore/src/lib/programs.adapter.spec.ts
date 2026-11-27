@@ -92,7 +92,9 @@ describe('positionReadPorts / positionWritePorts — positions/{id}', () => {
     const ports = positionWritePorts(asDb(fake));
     const role = positionOf('p-1', {
       locationIds: [LocationId.of('loc-center')],
-      applyUrl: 'https://example.test/apply',
+      contacts: [
+        { contactMethod: 'LINK', contactValue: 'https://example.test/apply' },
+      ],
     });
 
     const saved = await ports.savePosition(role);
@@ -334,7 +336,9 @@ describe('shopEventReadPorts / shopEventWritePorts — events/{id}', () => {
     const ports = shopEventWritePorts(asDb(fake));
     const event = eventOn('e-1', 7, {
       locationId: LocationId.of('loc-center'),
-      applyUrl: 'https://example.test/rsvp',
+      contacts: [
+        { contactMethod: 'LINK', contactValue: 'https://example.test/rsvp' },
+      ],
     });
 
     const saved = await ports.saveEvent(event);
@@ -346,7 +350,7 @@ describe('shopEventReadPorts / shopEventWritePorts — events/{id}', () => {
     ]);
     // The flat body: the shop wall clock and the one instant, no zone (Law 7.2).
     expect(Object.keys(bodyOf(event)).sort()).toEqual([
-      'applyUrl',
+      'contacts',
       'description',
       'localDate',
       'locationId',

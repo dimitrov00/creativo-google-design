@@ -1,5 +1,6 @@
-import type { PositionStatus, WorkplaceMode } from '@core/components';
+import type { WorkplaceMode } from '@core/components';
 import type { PositionId } from '@core/primitives';
+import type { ContactRowVm } from '@creativo/features/shared/catalog';
 
 /*
  * THE CAREERS PAGE'S DISPLAY MODEL (OR-42, Law 10.3) — what one row of
@@ -26,8 +27,6 @@ export type PositionRowVm = {
    * on-site role — its shops line already says where.
    */
   readonly workplaceTag: WorkplaceMode | null;
-  /** Where the row leads: the role's apply link, else the shop's Instagram. */
-  readonly href: string;
-  /** The stored status — the badge's word (`programs.status.position.<tag>`) and tone. */
-  readonly positionStatus: PositionStatus;
+  /** How the role is answered: one way is the row's link, several open the sheet. */
+  readonly contact: ContactRowVm;
 };

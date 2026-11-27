@@ -68,12 +68,14 @@ function programStatusWords(lang: string): Translation {
     readonly programs: {
       readonly status: Translation;
       readonly workplace: Translation;
+      readonly careers: Translation;
     };
   };
   return {
     programs: {
       status: catalogue.programs.status,
       workplace: catalogue.programs.workplace,
+      careers: catalogue.programs.careers,
     },
   };
 }
@@ -216,97 +218,146 @@ describe('MarketingCareers', () => {
     expect(host.querySelector('[data-testid="careers-list"]')).toBeNull();
   });
 
-  it('renders one row per open position, linking to its apply URL, with a status badge', async () => {
-    const asked: (PositionStatus | null)[] = [];
-    const fixture = await configure(
-      [positionOf('pos_1', { applyUrl: 'https://example.com/apply' })],
-      asked,
+  /** The page with its first role tapped: the role's sheet is up. */
+  async function openFirstRole(
+    fixture: Awaited<ReturnType<typeof configure>>,
+  ): Promise<HTMLElement> {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const host: HTMLElement = fixture.nativeElement;
+    host.querySelector<HTMLElement>('[data-testid="careers-role"]')?.click();
+    fixture.detectChanges();
+    return host;
+  }
+  /** The sheet's ways to answer, each as `[href, target]`. */
+  const waysOf = (host: HTMLElement) =>
+    Array.from(
+      host.querySelectorAll('[data-testid^="contact-link-"]'),
+      (link) => [link.getAttribute('href'), link.getAttribute('target')],
     );
+
+  it('lists one row per open role, each a door to the role and none a status capsule', async () => {
+    const asked: (PositionStatus | null)[] = [];
+    const fixture = await configure([positionOf('pos_1')], asked);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
 
     const host: HTMLElement = fixture.nativeElement;
-    const list = host.querySelector('[data-testid="careers-list"]');
-    expect(list).not.toBeNull();
-    const row = list?.querySelector('a[uilistrow]');
-    expect(row?.getAttribute('href')).toBe('https://example.com/apply');
-    const badge = row?.querySelector('[uibadge]');
-    expect(badge?.getAttribute('data-tone')).toBe('accent');
+    const rows = host.querySelectorAll(
+      '[data-testid="careers-list"] button[data-testid="careers-role"]',
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(
+      host.querySelector('[data-testid="careers-list"] [uibadge]'),
+    ).toBeNull();
+    expect(host.querySelector('[data-testid="contact-sheet"]')).toBeNull();
     // The page asks for open roles only — once.
     expect(asked).toEqual([PositionStatus.Open]);
   });
 
-  it('badges a closed position with a neutral tone', async () => {
-    const fixture = await configure([
-      positionOf('pos_1', { positionStatus: PositionStatus.Closed }),
-    ]);
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    const host: HTMLElement = fixture.nativeElement;
-    const badge = host.querySelector(
-      '[data-testid="careers-list"] a[uilistrow] [uibadge]',
+  it('opens the role: its name, where it is worked, its words in full, and every way to answer', async () => {
+    const host = await openFirstRole(
+      await configure(
+        [
+          positionOf('pos_1', {
+            summary: textFixture('Five days a week.', 'Пет дни в седмицата.'),
+            locationIds: [CENTER.id],
+            contacts: [
+              { contactMethod: 'PHONE', contactValue: '+359888123456' },
+              { contactMethod: 'EMAIL', contactValue: 'jobs@example.test' },
+              { contactMethod: 'INSTAGRAM', contactValue: 'creativo' },
+              {
+                contactMethod: 'LINK',
+                contactValue: 'https://example.com/apply',
+              },
+            ],
+          }),
+        ],
+        [],
+        [CENTER, MLADOST],
+      ),
     );
-    expect(badge?.getAttribute('data-tone')).toBe('neutral');
+
+    const sheet = host.querySelector('[data-testid="contact-sheet"]');
+    expect(sheet?.querySelector('h2')?.textContent?.trim()).toBe('Barber');
+    expect(
+      sheet
+        ?.querySelector('[data-testid="contact-sheet-where"]')
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim(),
+    ).toBe('Center');
+    expect(
+      sheet
+        ?.querySelector('[data-testid="contact-sheet-summary"]')
+        ?.textContent?.trim(),
+    ).toBe('Five days a week.');
+    // A call or a mail is handed to the device; a web address opens beside.
+    expect(waysOf(host)).toEqual([
+      ['tel:+359888123456', null],
+      ['mailto:jobs@example.test', null],
+      ['https://www.instagram.com/creativo', '_blank'],
+      ['https://example.com/apply', '_blank'],
+    ]);
   });
 
-  it('falls back to the Instagram link when a position has no applyUrl', async () => {
-    const fixture = await configure([positionOf('pos_1')]);
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
+  it("answers a role with no way of its own through the shop's Instagram", async () => {
+    const host = await openFirstRole(await configure([positionOf('pos_1')]));
 
-    const host: HTMLElement = fixture.nativeElement;
-    const row = host.querySelector('[data-testid="careers-list"] a[uilistrow]');
-    expect(row?.getAttribute('href')).toBe(
+    expect(waysOf(host)).toEqual([
+      ['https://instagram.com/creativo.barbershop', '_blank'],
+    ]);
+  });
+
+  it("opens on the site's own heading — the title and the lede, no eyebrow over them", async () => {
+    const host = await render(await configure([positionOf('pos_1')]));
+
+    const header = host.querySelector('ui-section-header');
+    expect(header?.querySelector('h1[uititle]')?.textContent?.trim()).toBe(
+      'Come work the other side of the chair.',
+    );
+    expect(header?.querySelector('[uilede]')).not.toBeNull();
+    expect(host.querySelector('[uieyebrow]')).toBeNull();
+  });
+
+  it('numbers nothing: a role is its words, not a figure', async () => {
+    const host = await render(
+      await configure([
+        positionOf('pos_1'),
+        positionOf('pos_2', { sortOrder: 1 }),
+      ]),
+    );
+
+    expect(
+      Array.from(host.querySelectorAll('[data-testid="careers-role"]'), (row) =>
+        /\d/.test(row.textContent ?? ''),
+      ),
+    ).toEqual([false, false]);
+  });
+
+  it("closes on the way in for whoever found no role: the shop's Instagram", async () => {
+    const host = await render(await configure([positionOf('pos_1')]));
+
+    const closer = host.querySelector('[data-testid="careers-closer"]');
+    expect(closer?.querySelector('h2')?.textContent?.trim()).toBe(
+      "Don't see your role?",
+    );
+    expect(closer?.querySelector('a')?.getAttribute('href')).toBe(
       'https://instagram.com/creativo.barbershop',
     );
   });
 
-  // Flip 4, F4-7: the stored status is SCREAMING (`OPEN`); the badge prints
-  // the catalogue's word for it (OR-53).
-  it('prints the badge text "Open" for an open role', async () => {
-    const host = await render(await configure([positionOf('pos_1')]));
-
-    const badge = host.querySelector(
-      '[data-testid="careers-list"] a[uilistrow] [uibadge]',
-    );
-    expect(badge?.textContent?.trim()).toBe('Open');
-  });
-
-  it('prints the badge text "Closed" for a closed role', async () => {
-    const host = await render(
-      await configure([
-        positionOf('pos_1', { positionStatus: PositionStatus.Closed }),
-      ]),
-    );
-
-    const badge = host.querySelector(
-      '[data-testid="careers-list"] a[uilistrow] [uibadge]',
-    );
-    expect(badge?.textContent?.trim()).toBe('Closed');
-  });
-
-  it('prints the bg badge word, agreeing with «позиция» (OR-53)', async () => {
-    const host = await render(await configure([positionOf('pos_1')]), 'bg');
-
-    const badge = host.querySelector(
-      '[data-testid="careers-list"] a[uilistrow] [uibadge]',
-    );
-    expect(badge?.textContent?.trim()).toBe('Отворена');
-  });
-
   it('prints the title and summary in the active language', async () => {
     const en = await render(await configure([positionOf('pos_1')]), 'en');
-    const enRow = en.querySelector('[data-testid="careers-list"] a[uilistrow]');
+    const enRow = en.querySelector('[data-testid="careers-role"]');
     expect(enRow?.textContent).toContain('Barber');
     expect(enRow?.textContent).toContain('Full-time chair');
     TestBed.resetTestingModule();
 
     const bg = await render(await configure([positionOf('pos_1')]), 'bg');
-    const bgRow = bg.querySelector('[data-testid="careers-list"] a[uilistrow]');
+    const bgRow = bg.querySelector('[data-testid="careers-role"]');
     expect(bgRow?.textContent).toContain('Бръснар');
     expect(bgRow?.textContent).toContain('Пълен работен ден');
   });
@@ -328,9 +379,7 @@ describe('MarketingCareers', () => {
       'bg',
     );
 
-    const rows = host.querySelectorAll(
-      '[data-testid="careers-list"] a[uilistrow]',
-    );
+    const rows = host.querySelectorAll('[data-testid="careers-role"]');
     expect(
       rows[0]
         ?.querySelector('[data-testid="careers-row-shops"]')
@@ -358,9 +407,7 @@ describe('MarketingCareers', () => {
       'bg',
     );
 
-    const rows = host.querySelectorAll(
-      '[data-testid="careers-list"] a[uilistrow]',
-    );
+    const rows = host.querySelectorAll('[data-testid="careers-role"]');
     const placeOf = (row: Element | undefined) =>
       row
         ?.querySelector('[data-testid="careers-row-workplace"]')
