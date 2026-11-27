@@ -94,7 +94,23 @@ const HIDDEN = locationFixture({
 /** An id no shop answers — its document was deleted. */
 const GONE = LocationId.of('loc-gone');
 
+/** Redraws the mounted page; set by `configure`. */
+let redraw: () => void = () => undefined;
+
+/**
+ * Types into a field. A translated field is named with its language
+ * (`…-bg`, `…-en`) and is on screen only while that language is in view,
+ * so a field that is not there is reached through the switcher first.
+ */
 function fillInput(host: HTMLElement, testId: string, value: string): void {
+  const language = /-(bg|en)$/.exec(testId)?.[1];
+  if (
+    language !== undefined &&
+    host.querySelector(`[data-testid="${testId}"]`) === null
+  ) {
+    click(host, `admin-language-${language}`);
+    redraw();
+  }
   const el = host.querySelector(`[data-testid="${testId}"]`) as
     HTMLInputElement | HTMLTextAreaElement;
   el.value = value;
@@ -170,8 +186,10 @@ function shopChipsOf(host: HTMLElement): string[] {
     host.querySelectorAll<HTMLButtonElement>(
       '[data-testid="admin-position-shops-all"], [data-testid^="admin-position-shop-"]',
     ),
-    (chip) =>
-      `${chip.textContent?.trim()}${chip.hasAttribute('data-selected') ? ' ✓' : ''}`,
+    // The switch is named by its label; a shop row by its words. Either
+    // is «✓» while it is on.
+    (control) =>
+      `${control.textContent?.trim() || control.getAttribute('aria-label')}${control.getAttribute('aria-checked') === 'true' ? ' ✓' : ''}`,
   );
 }
 
@@ -280,6 +298,7 @@ async function configure(
   }).compileComponents();
 
   const fixture = TestBed.createComponent(AdminPrograms);
+  redraw = () => fixture.detectChanges();
   fixture.detectChanges();
   await fixture.whenStable();
   fixture.detectChanges();
@@ -391,21 +410,95 @@ describe('AdminPrograms', () => {
     expect(formOpen(fixture)).toBe(false);
   });
 
-  it('shows the generic line and keeps the form open when the save fails validation', async () => {
+  it('asks for the missing translations and sends nothing, the fields of the language in view marked', async () => {
     const { fixture, host, world } = await configure();
 
     click(host, 'admin-new');
     fixture.detectChanges();
+    // Nothing is marked before a save is tried.
+    expect(host.querySelector('.ui-segmented-control__attention')).toBeNull();
 
-    // Blank title and summary — ProgramsSystem refuses all four fields.
     click(host, 'admin-save');
     await settle(fixture);
 
     expect(world.positions.size).toBe(0);
     expect(formOpen(fixture)).toBe(true);
-    expect(textOf(host, 'admin-save-error')).toBe(
-      "Couldn't save. Check the required fields and try again.",
+    expect(host.querySelector('[data-testid="admin-save-error"]')).toBeNull();
+    expect(textOf(host, 'admin-translation-owed')).toBe(
+      'A translation is missing: Bulgarian, English.',
     );
+    // The shop's own language is owed, so the sheet stays on it.
+    for (const field of [
+      'admin-position-title-bg',
+      'admin-position-summary-bg',
+    ]) {
+      expect(
+        host
+          .querySelector(`[data-testid="${field}"]`)
+          ?.getAttribute('aria-invalid'),
+      ).toBe('true');
+    }
+    for (const language of ['bg', 'en']) {
+      expect(
+        host.querySelector(
+          `[data-testid="admin-language-${language}"] .ui-segmented-control__attention`,
+        ),
+      ).not.toBeNull();
+    }
+  });
+
+  it('turns to the language that owes a translation, and offers the shop’s own words to start from', async () => {
+    const { fixture, host, world } = await configure();
+
+    click(host, 'admin-new');
+    fixture.detectChanges();
+    fillInput(host, 'admin-position-title-bg', 'Бръснар');
+    fillInput(host, 'admin-position-summary-bg', 'Пълен работен ден');
+    fixture.detectChanges();
+    // In the shop's own language there is nothing to copy from.
+    expect(
+      host.querySelector('[data-testid="admin-language-copy"]'),
+    ).toBeNull();
+
+    click(host, 'admin-save');
+    await settle(fixture);
+
+    expect(world.positions.size).toBe(0);
+    expect(textOf(host, 'admin-translation-owed')).toBe(
+      'A translation is missing: English.',
+    );
+    expect(
+      host
+        .querySelector('[data-testid="admin-language-en"]')
+        ?.getAttribute('aria-checked'),
+    ).toBe('true');
+    expect(
+      host.querySelector(
+        '[data-testid="admin-language-bg"] .ui-segmented-control__attention',
+      ),
+    ).toBeNull();
+
+    expect(textOf(host, 'admin-language-copy')).toBe('Copy from Bulgarian');
+    click(host, 'admin-language-copy');
+    fixture.detectChanges();
+    expect(
+      host.querySelector<HTMLInputElement>(
+        '[data-testid="admin-position-title-en"]',
+      )?.value,
+    ).toBe('Бръснар');
+    fillInput(host, 'admin-position-title-en', 'Barber');
+    fixture.detectChanges();
+
+    click(host, 'admin-save');
+    await settle(fixture);
+
+    const [saved] = [...world.positions.values()];
+    expect(saved?.title).toEqual({ bg: 'Бръснар', en: 'Barber' });
+    expect(saved?.summary).toEqual({
+      bg: 'Пълен работен ден',
+      en: 'Пълен работен ден',
+    });
+    expect(formOpen(fixture)).toBe(false);
   });
 
   it('opens an edit form pre-filled from the clicked row', async () => {
@@ -466,13 +559,12 @@ describe('AdminPrograms', () => {
       host.querySelectorAll('[data-testid="admin-form"] label'),
       (label) => label.querySelector('span')?.textContent?.trim(),
     );
+    // One language at a time: each translated field is on the sheet once.
     expect(labels).toEqual([
       'Заглавие',
       'Описание',
       'Начало — по часа на салона',
       'Линк за записване',
-      'Заглавие',
-      'Описание',
     ]);
     expect(
       host.querySelector('#admin-programs-sheet-title')?.textContent?.trim(),
@@ -665,9 +757,9 @@ describe('AdminPrograms', () => {
       expect(formOpen(fixture)).toBe(true);
       expect(
         host.querySelector<HTMLInputElement>(
-          '[data-testid="admin-event-title-en"]',
+          '[data-testid="admin-event-title-bg"]',
         )?.value,
-      ).toBe(stored.title.en);
+      ).toBe(stored.title.bg);
       // Nothing is written until the sheet's own save.
       expect(world.events.size).toBe(1);
 
@@ -750,8 +842,12 @@ describe('AdminPrograms', () => {
 
       rowsOf(host, 'admin-positions-list')[0]?.click();
       fixture.detectChanges();
-      // Prefilled from the stored scope — «Всеки салон» is not chosen.
-      expect(shopChipsOf(host)).toEqual(['Any shop', 'Center ✓', 'Mladost ✓']);
+      // Prefilled from the stored scope — «Във всички салони» is off.
+      expect(shopChipsOf(host)).toEqual([
+        'At every shop',
+        'Center ✓',
+        'Mladost ✓',
+      ]);
 
       click(host, 'admin-save');
       await settle(fixture);
@@ -779,7 +875,7 @@ describe('AdminPrograms', () => {
       ]);
     });
 
-    it('edits the scope through the chips (OR-42)', async () => {
+    it('edits the scope through the switch and the shop rows (OR-42)', async () => {
       const { fixture, host, world } = await configure({
         locations: [CENTER, MLADOST],
         positions: [positionOf('pos_1')],
@@ -787,18 +883,33 @@ describe('AdminPrograms', () => {
 
       rowsOf(host, 'admin-positions-list')[0]?.click();
       fixture.detectChanges();
-      expect(shopChipsOf(host)).toEqual(['Any shop ✓', 'Center', 'Mladost']);
+      // Open at every shop: the switch is on and no shop is listed.
+      expect(shopChipsOf(host)).toEqual(['At every shop ✓']);
+
+      click(host, 'admin-position-shops-all');
+      fixture.detectChanges();
+      expect(shopChipsOf(host)).toEqual(['At every shop', 'Center', 'Mladost']);
+      expect(textOf(host, 'admin-position-shops-hint')).toBe(
+        'Choose the shops. With none chosen the role stays open at every shop.',
+      );
 
       click(host, 'admin-position-shop-loc-mladost');
       fixture.detectChanges();
-      expect(shopChipsOf(host)).toEqual(['Any shop', 'Center', 'Mladost ✓']);
+      expect(shopChipsOf(host)).toEqual([
+        'At every shop',
+        'Center',
+        'Mladost ✓',
+      ]);
+      expect(
+        host.querySelector('[data-testid="admin-position-shops-hint"]'),
+      ).toBeNull();
       click(host, 'admin-save');
       await settle(fixture);
       expect(world.positions.get(PositionId.of('pos_1'))?.locationIds).toEqual([
         MLADOST.id,
       ]);
 
-      // «Всеки салон» clears the scope: every shop again, written `[]`.
+      // The switch back on clears the scope: every shop again, written `[]`.
       rowsOf(host, 'admin-positions-list')[0]?.click();
       fixture.detectChanges();
       click(host, 'admin-position-shops-all');
@@ -820,7 +931,7 @@ describe('AdminPrograms', () => {
       rowsOf(host, 'admin-positions-list')[0]?.click();
       await settle(fixture);
       expect(shopChipsOf(host)).toEqual([
-        'Any shop',
+        'At every shop',
         'Center ✓',
         'Mladost',
         'Old Town (hidden) ✓',
@@ -829,7 +940,7 @@ describe('AdminPrograms', () => {
 
       await inBulgarian(fixture);
       expect(shopChipsOf(host)).toEqual([
-        'Всеки салон',
+        'Във всички салони',
         'Център ✓',
         'Младост',
         'Стария град (скрит) ✓',
@@ -940,10 +1051,21 @@ describe('AdminPrograms', () => {
 
       expect(world.courses.size).toBe(0);
       expect(formOpen(fixture)).toBe(true);
-      // One refusal the catalogue has no words for: the generic line.
-      expect(textOf(host, 'admin-save-error')).toBe(
-        "Couldn't save. Check the required fields and try again.",
+      // An optional field is translated whole or left out whole: the sheet
+      // turns to the language that lacks it and marks the field.
+      expect(textOf(host, 'admin-translation-owed')).toBe(
+        'A translation is missing: Bulgarian.',
       );
+      expect(
+        host
+          .querySelector('[data-testid="admin-course-starts-label-bg"]')
+          ?.getAttribute('aria-invalid'),
+      ).toBe('true');
+      expect(
+        host
+          .querySelector('[data-testid="admin-course-title-bg"]')
+          ?.getAttribute('aria-invalid'),
+      ).toBeNull();
     });
   });
 

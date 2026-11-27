@@ -29,6 +29,13 @@ export interface UiSegment {
   readonly disabled?: boolean;
   /** The segment's `data-testid`, when a test needs to find it. */
   readonly testId?: string;
+  /**
+   * Something behind this segment is owed (a language with a missing
+   * translation): a small accent dot after the words. The string is what
+   * the dot MEANS, read after the label by a screen reader — a dot alone
+   * says nothing to someone who cannot see it.
+   */
+  readonly attention?: string;
 }
 
 /**
@@ -87,6 +94,13 @@ export interface UiSegment {
           }
           @if (!segment.iconOnly) {
             <span class="ui-segmented-control__label">{{ segment.label }}</span>
+          }
+          @if (segment.attention; as owed) {
+            <span
+              class="ui-segmented-control__attention"
+              aria-hidden="true"
+            ></span>
+            <span data-visually-hidden>, {{ owed }}</span>
           }
         </button>
       }

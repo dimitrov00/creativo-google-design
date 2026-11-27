@@ -206,9 +206,9 @@
       </ui-stack>
 
       <!-- THE EDITOR IS A SHEET (owner, 2026-11-27): the house form sheet,
-           as the team's «Профил» — a large title naming the thing, the
-           shop's own language first and its translation as a section, and
-           ONE answer in the dock under the thumb. ✕ leaves without saving;
+           as the team's «Профил» — a large title naming the thing, its
+           words in one language at a time, and ONE answer in the dock
+           under the thumb. ✕ leaves without saving;
            there is no «Отказ» beside the save. Order is not a field of the
            thing: it is set in the list. -->
       @if (editing(); as current) {
@@ -239,387 +239,294 @@
             data-testid="admin-save-error"
             >{{ saveError() }}</ui-notice
           >
-          } @switch (current.programEditing) { @case (ProgramEditing.Position) {
-          <label class="lib-admin-programs__field"
-            ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-              >{{ t('admin.programs.field.title') }}</span
-            ><input
-              type="text"
-              uiTextField
-              uiControlSize="large"
-              autocomplete="off"
-              data-testid="admin-position-title-bg"
-              [readonly]="saving()"
-              [value]="positionTitleBg()"
-              (input)="positionTitleBg.set(inputValue($event))"
-          /></label>
-          <label class="lib-admin-programs__field"
-            ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-              >{{ t('admin.programs.position.summary') }}</span
-            ><textarea
-              uiTextField
-              uiControlSize="large"
-              rows="4"
-              data-testid="admin-position-summary-bg"
-              [readonly]="saving()"
-              [value]="positionSummaryBg()"
-              (input)="positionSummaryBg.set(inputValue($event))"
-            ></textarea>
-          </label>
+          } @if (owedNotice(); as owed) {
+          <ui-notice
+            uiTone="warning"
+            uiAnnounce="polite"
+            data-testid="admin-translation-owed"
+            >{{ owed }}</ui-notice
+          >
+          }
+          <!-- ONE LANGUAGE AT A TIME (owner, 2026-11-27): the switcher names
+               every language of the shop under its own name, and the fields
+               below show the one in view — so the sheet is no longer with
+               each language added. A dot marks a language a save found
+               wanting. What is not words (status, shops, dates, links) is
+               said once, under «За всички езици». -->
+          @if (manyLanguages) {
           <div class="lib-admin-programs__field">
             <span
               uiText
               uiFont="footnote"
               uiForegroundStyle="secondary"
               aria-hidden="true"
-              >{{ t('admin.programs.field.status') }}</span
+              >{{ t('admin.programs.language.label') }}</span
             ><ui-segmented-control
               uiControlSize="regular"
-              [uiSegments]="[{ id: PositionStatus.Open, label: t('programs.status.position.' + PositionStatus.Open) },{ id: PositionStatus.Closed, label: t('programs.status.position.' + PositionStatus.Closed) },]"
-              [uiSelectedId]="positionStatus()"
-              [uiLabel]="t('admin.programs.field.status')"
-              data-testid="admin-position-status"
-              (uiPicked)="pickPositionStatus($event)"
+              [uiSegments]="languageSegments()"
+              [uiSelectedId]="language()"
+              [uiLabel]="t('admin.programs.language.label')"
+              data-testid="admin-language"
+              (uiPicked)="pickLanguage($event)"
             />
           </div>
-          @if (shopsShown()) {
-          <div
+          } @for (input of translatedInputs(); track input.id) {
+          <label
             class="lib-admin-programs__field"
-            role="group"
-            [attr.aria-label]="t('admin.programs.position.shops')"
-          >
-            <span uiText uiFont="footnote" uiForegroundStyle="secondary"
-              >{{ t('admin.programs.position.shops') }}</span
+            [htmlFor]="'admin-field-' + input.id"
+            ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
+              >{{ t(input.labelKey) }}</span
+            >@if (input.multiline) {<textarea
+              uiTextField
+              [id]="'admin-field-' + input.id"
+              uiControlSize="large"
+              rows="4"
+              [attr.data-testid]="'admin-' + input.id + '-' + language()"
+              [attr.lang]="language()"
+              [attr.aria-invalid]="owes(input) ? 'true' : null"
+              [attr.data-owed]="owes(input) ? '' : null"
+              [readonly]="saving()"
+              [value]="input.text()[language()]"
+              (input)="typeText(input, $event)"
+            ></textarea>
+            } @else {<input
+              type="text"
+              uiTextField
+              [id]="'admin-field-' + input.id"
+              uiControlSize="large"
+              autocomplete="off"
+              [attr.data-testid]="'admin-' + input.id + '-' + language()"
+              [attr.lang]="language()"
+              [attr.aria-invalid]="owes(input) ? 'true' : null"
+              [attr.data-owed]="owes(input) ? '' : null"
+              [readonly]="saving()"
+              [value]="input.text()[language()]"
+              (input)="typeText(input, $event)"
+            />}
+          </label>
+          } @if (language() !== defaultLanguage) {
+          <div class="lib-admin-programs__field lib-admin-programs__field--hug">
+            <button
+              type="button"
+              uiButton
+              uiButtonStyle="bordered"
+              uiTint="neutral"
+              uiControlSize="regular"
+              [disabled]="saving()"
+              data-testid="admin-language-copy"
+              (click)="copyFromDefault()"
             >
-            <ui-flow uiSpacing="compact" uiAlignment="leading">
-              <button
-                type="button"
-                uiChip
-                [uiSelected]="positionShopIds().length === 0"
-                data-testid="admin-position-shops-all"
-                (click)="chooseEveryShop()"
-              >
-                {{ t('admin.programs.position.shopsAll') }}
-              </button>
-              @for (choice of shopChoices(); track choice.id) {
-              <button
-                type="button"
-                uiChip
-                [uiSelected]="shopChosen(choice.id)"
-                [attr.data-testid]="'admin-position-shop-' + choice.id"
-                (click)="toggleShop(choice.id)"
-              >
-                {{ choice.label }}
-              </button>
-              }
-            </ui-flow>
+              {{ t('admin.programs.language.copy', { from:
+              t('admin.programs.language.name.' + defaultLanguage) }) }}
+            </button>
           </div>
           }
-          <label class="lib-admin-programs__field"
-            ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-              >{{ t('admin.programs.field.applyUrl') }}</span
-            ><input
-              type="url"
-              inputmode="url"
-              uiTextField
-              uiControlSize="large"
-              autocomplete="off"
-              autocapitalize="none"
-              spellcheck="false"
-              placeholder="https://"
-              [readonly]="saving()"
-              [value]="positionApplyUrl()"
-              (input)="positionApplyUrl.set(inputValue($event))"
-            /><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-              >{{ t('admin.programs.field.linkHint') }}</span
-            ></label
-          >
           <section class="lib-admin-programs__section">
             <ui-section-header uiHeaderProminence="increased"
               ><h3 uiTitle>
-                {{ t('admin.programs.section.translation') }}
+                {{ t('admin.programs.section.shared') }}
               </h3></ui-section-header
-            ><label class="lib-admin-programs__field"
-              ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-                >{{ t('admin.programs.field.title') }}</span
-              ><input
-                type="text"
-                uiTextField
-                uiControlSize="large"
-                autocomplete="off"
-                data-testid="admin-position-title-en"
-                lang="en"
-                [readonly]="saving()"
-                [value]="positionTitleEn()"
-                (input)="positionTitleEn.set(inputValue($event))"
-            /></label>
-            <label class="lib-admin-programs__field"
-              ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-                >{{ t('admin.programs.position.summary') }}</span
-              ><textarea
-                uiTextField
-                uiControlSize="large"
-                rows="4"
-                data-testid="admin-position-summary-en"
-                lang="en"
-                [readonly]="saving()"
-                [value]="positionSummaryEn()"
-                (input)="positionSummaryEn.set(inputValue($event))"
-              ></textarea>
-            </label>
-          </section>
-
-          } @case (ProgramEditing.Course) {
-          <label class="lib-admin-programs__field"
-            ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-              >{{ t('admin.programs.field.title') }}</span
-            ><input
-              type="text"
-              uiTextField
-              uiControlSize="large"
-              autocomplete="off"
-              data-testid="admin-course-title-bg"
-              [readonly]="saving()"
-              [value]="courseTitleBg()"
-              (input)="courseTitleBg.set(inputValue($event))"
-          /></label>
-          <label class="lib-admin-programs__field"
-            ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-              >{{ t('admin.programs.field.description') }}</span
-            ><textarea
-              uiTextField
-              uiControlSize="large"
-              rows="4"
-              data-testid="admin-course-description-bg"
-              [readonly]="saving()"
-              [value]="courseDescriptionBg()"
-              (input)="courseDescriptionBg.set(inputValue($event))"
-            ></textarea>
-          </label>
-          <div class="lib-admin-programs__field">
-            <span
-              uiText
-              uiFont="footnote"
-              uiForegroundStyle="secondary"
-              aria-hidden="true"
-              >{{ t('admin.programs.field.status') }}</span
-            ><ui-segmented-control
-              uiControlSize="regular"
-              [uiSegments]="[{ id: EnrollmentStatus.Open, label: t('programs.status.enrollment.' + EnrollmentStatus.Open) },{ id: EnrollmentStatus.Upcoming, label: t('programs.status.enrollment.' + EnrollmentStatus.Upcoming) },{ id: EnrollmentStatus.Closed, label: t('programs.status.enrollment.' + EnrollmentStatus.Closed) },]"
-              [uiSelectedId]="courseEnrollmentStatus()"
-              [uiLabel]="t('admin.programs.field.status')"
-              data-testid="admin-course-status"
-              (uiPicked)="pickEnrollmentStatus($event)"
-            />
-          </div>
-          <label class="lib-admin-programs__field"
-            ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-              >{{ t('admin.programs.course.startsLabel') }}</span
-            ><input
-              type="text"
-              uiTextField
-              uiControlSize="large"
-              autocomplete="off"
-              data-testid="admin-course-starts-label-bg"
-              [readonly]="saving()"
-              [value]="courseStartsLabelBg()"
-              (input)="courseStartsLabelBg.set(inputValue($event))"
-          /></label>
-          <label class="lib-admin-programs__field"
-            ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-              >{{ t('admin.programs.field.applyUrl') }}</span
-            ><input
-              type="url"
-              inputmode="url"
-              uiTextField
-              uiControlSize="large"
-              autocomplete="off"
-              autocapitalize="none"
-              spellcheck="false"
-              placeholder="https://"
-              [readonly]="saving()"
-              [value]="courseApplyUrl()"
-              (input)="courseApplyUrl.set(inputValue($event))"
-            /><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-              >{{ t('admin.programs.field.linkHint') }}</span
-            ></label
-          >
-          <section class="lib-admin-programs__section">
-            <ui-section-header uiHeaderProminence="increased"
-              ><h3 uiTitle>
-                {{ t('admin.programs.section.translation') }}
-              </h3></ui-section-header
-            ><label class="lib-admin-programs__field"
-              ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-                >{{ t('admin.programs.field.title') }}</span
-              ><input
-                type="text"
-                uiTextField
-                uiControlSize="large"
-                autocomplete="off"
-                data-testid="admin-course-title-en"
-                lang="en"
-                [readonly]="saving()"
-                [value]="courseTitleEn()"
-                (input)="courseTitleEn.set(inputValue($event))"
-            /></label>
-            <label class="lib-admin-programs__field"
-              ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-                >{{ t('admin.programs.field.description') }}</span
-              ><textarea
-                uiTextField
-                uiControlSize="large"
-                rows="4"
-                data-testid="admin-course-description-en"
-                lang="en"
-                [readonly]="saving()"
-                [value]="courseDescriptionEn()"
-                (input)="courseDescriptionEn.set(inputValue($event))"
-              ></textarea>
-            </label>
-            <label class="lib-admin-programs__field"
-              ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-                >{{ t('admin.programs.course.startsLabel') }}</span
-              ><input
-                type="text"
-                uiTextField
-                uiControlSize="large"
-                autocomplete="off"
-                data-testid="admin-course-starts-label-en"
-                lang="en"
-                [readonly]="saving()"
-                [value]="courseStartsLabelEn()"
-                (input)="courseStartsLabelEn.set(inputValue($event))"
-            /></label>
-          </section>
-
-          } @case (ProgramEditing.Event) {
-          <label class="lib-admin-programs__field"
-            ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-              >{{ t('admin.programs.field.title') }}</span
-            ><input
-              type="text"
-              uiTextField
-              uiControlSize="large"
-              autocomplete="off"
-              data-testid="admin-event-title-bg"
-              [readonly]="saving()"
-              [value]="eventTitleBg()"
-              (input)="eventTitleBg.set(inputValue($event))"
-          /></label>
-          <label class="lib-admin-programs__field"
-            ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-              >{{ t('admin.programs.field.description') }}</span
-            ><textarea
-              uiTextField
-              uiControlSize="large"
-              rows="4"
-              data-testid="admin-event-description-bg"
-              [readonly]="saving()"
-              [value]="eventDescriptionBg()"
-              (input)="eventDescriptionBg.set(inputValue($event))"
-            ></textarea>
-          </label>
-          <label class="lib-admin-programs__field"
-            ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-              >{{ t('admin.programs.event.startsAt') }}</span
-            ><input
-              type="datetime-local"
-              uiTextField
-              uiControlSize="large"
-              autocomplete="off"
-              data-testid="admin-event-starts-at"
-              [readonly]="saving()"
-              [value]="eventStartsAt()"
-              (input)="eventStartsAt.set(inputValue($event))"
-          /></label>
-          @if (shopsShown()) {
-          <div class="lib-admin-programs__field lib-admin-programs__field--hug">
-            <span uiText uiFont="footnote" uiForegroundStyle="secondary"
-              >{{ t('admin.programs.event.shop') }}</span
             >
-            <ui-choice-menu
-              data-testid="admin-event-shop"
-              [uiOptions]="eventShopOptions()"
-              [uiSelectedId]="eventLocationId()"
-              [uiLabel]="t('admin.programs.event.shop')"
-              [(uiPresented)]="eventShopMenu"
-              (uiPicked)="eventLocationId.set($event)"
-            >
-              <button
-                type="button"
-                uiButton
-                uiButtonStyle="bordered"
-                uiTint="neutral"
+            @switch (current.programEditing) { @case (ProgramEditing.Position) {
+            <div class="lib-admin-programs__field">
+              <span
+                uiText
+                uiFont="footnote"
+                uiForegroundStyle="secondary"
+                aria-hidden="true"
+                >{{ t('admin.programs.field.status') }}</span
+              ><ui-segmented-control
                 uiControlSize="regular"
-                uiMenuTrigger
-                [attr.aria-label]="
+                [uiSegments]="[{ id: PositionStatus.Open, label: t('programs.status.position.' + PositionStatus.Open) },{ id: PositionStatus.Closed, label: t('programs.status.position.' + PositionStatus.Closed) },]"
+                [uiSelectedId]="positionStatus()"
+                [uiLabel]="t('admin.programs.field.status')"
+                data-testid="admin-position-status"
+                (uiPicked)="pickPositionStatus($event)"
+              />
+            </div>
+            @if (shopsShown()) {
+            <!-- THE ROLE'S SHOPS: «Във всички салони» is a SWITCH — a setting of
+               its own, on by default — and never one more shop beside the
+               shops. Off, the shops appear as rows whose ring fills when
+               chosen: the ring says "more than one" before anything is
+               tapped. -->
+            <div class="lib-admin-programs__field">
+              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                >{{ t('admin.programs.position.shops') }}</span
+              >
+              <ui-list-group
+                role="group"
+                [attr.aria-label]="t('admin.programs.position.shops')"
+              >
+                <ui-list-row uiSize="regular">
+                  <span>{{ t('admin.programs.position.shopsAll') }}</span>
+                  <button
+                    uiSwitch
+                    uiTrailing
+                    [uiOn]="!shopsLimited()"
+                    [uiDisabled]="saving()"
+                    [attr.aria-label]="t('admin.programs.position.shopsAll')"
+                    data-testid="admin-position-shops-all"
+                    (uiOnChange)="setEveryShop($event)"
+                  ></button>
+                </ui-list-row>
+                @if (shopsLimited()) { @for (choice of shopChoices(); track
+                choice.id) {
+                <button
+                  type="button"
+                  uiListRow
+                  uiSize="regular"
+                  role="checkbox"
+                  [uiInteractive]="true"
+                  [attr.aria-checked]="shopChosen(choice.id)"
+                  [attr.data-testid]="'admin-position-shop-' + choice.id"
+                  (click)="toggleShop(choice.id)"
+                >
+                  <ui-icon
+                    uiLeading
+                    uiScale="medium"
+                    [uiName]="shopChosen(choice.id) ? 'selection.on' : 'selection.off'"
+                    [uiForegroundStyle]="shopChosen(choice.id) ? 'primary' : 'tertiary'"
+                  />
+                  <span>{{ choice.label }}</span>
+                </button>
+                } }
+              </ui-list-group>
+              @if (shopsLimited() && positionShopIds().length === 0) {
+              <span
+                uiText
+                uiFont="footnote"
+                uiForegroundStyle="secondary"
+                data-testid="admin-position-shops-hint"
+                >{{ t('admin.programs.position.shopsHint') }}</span
+              >
+              }
+            </div>
+            }
+            <label class="lib-admin-programs__field"
+              ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                >{{ t('admin.programs.field.applyUrl') }}</span
+              ><input
+                type="url"
+                inputmode="url"
+                uiTextField
+                uiControlSize="large"
+                autocomplete="off"
+                autocapitalize="none"
+                spellcheck="false"
+                placeholder="https://"
+                [readonly]="saving()"
+                [value]="positionApplyUrl()"
+                (input)="positionApplyUrl.set(inputValue($event))"
+              /><span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                >{{ t('admin.programs.field.linkHint') }}</span
+              ></label
+            >
+            } @case (ProgramEditing.Course) {
+            <div class="lib-admin-programs__field">
+              <span
+                uiText
+                uiFont="footnote"
+                uiForegroundStyle="secondary"
+                aria-hidden="true"
+                >{{ t('admin.programs.field.status') }}</span
+              ><ui-segmented-control
+                uiControlSize="regular"
+                [uiSegments]="[{ id: EnrollmentStatus.Open, label: t('programs.status.enrollment.' + EnrollmentStatus.Open) },{ id: EnrollmentStatus.Upcoming, label: t('programs.status.enrollment.' + EnrollmentStatus.Upcoming) },{ id: EnrollmentStatus.Closed, label: t('programs.status.enrollment.' + EnrollmentStatus.Closed) },]"
+                [uiSelectedId]="courseEnrollmentStatus()"
+                [uiLabel]="t('admin.programs.field.status')"
+                data-testid="admin-course-status"
+                (uiPicked)="pickEnrollmentStatus($event)"
+              />
+            </div>
+            <label class="lib-admin-programs__field"
+              ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                >{{ t('admin.programs.field.applyUrl') }}</span
+              ><input
+                type="url"
+                inputmode="url"
+                uiTextField
+                uiControlSize="large"
+                autocomplete="off"
+                autocapitalize="none"
+                spellcheck="false"
+                placeholder="https://"
+                [readonly]="saving()"
+                [value]="courseApplyUrl()"
+                (input)="courseApplyUrl.set(inputValue($event))"
+              /><span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                >{{ t('admin.programs.field.linkHint') }}</span
+              ></label
+            >
+            } @case (ProgramEditing.Event) {
+            <label class="lib-admin-programs__field"
+              ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                >{{ t('admin.programs.event.startsAt') }}</span
+              ><input
+                type="datetime-local"
+                uiTextField
+                uiControlSize="large"
+                autocomplete="off"
+                data-testid="admin-event-starts-at"
+                [readonly]="saving()"
+                [value]="eventStartsAt()"
+                (input)="eventStartsAt.set(inputValue($event))"
+            /></label>
+            @if (shopsShown()) {
+            <div
+              class="lib-admin-programs__field lib-admin-programs__field--hug"
+            >
+              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                >{{ t('admin.programs.event.shop') }}</span
+              >
+              <ui-choice-menu
+                data-testid="admin-event-shop"
+                [uiOptions]="eventShopOptions()"
+                [uiSelectedId]="eventLocationId()"
+                [uiLabel]="t('admin.programs.event.shop')"
+                [(uiPresented)]="eventShopMenu"
+                (uiPicked)="eventLocationId.set($event)"
+              >
+                <button
+                  type="button"
+                  uiButton
+                  uiButtonStyle="bordered"
+                  uiTint="neutral"
+                  uiControlSize="regular"
+                  uiMenuTrigger
+                  [attr.aria-label]="
                     t('admin.programs.event.shop') + ': ' + eventShopLabel()
                   "
-                data-testid="admin-event-shop-trigger"
-                (click)="eventShopMenu.set(true)"
-              >
-                <span>{{ eventShopLabel() }}</span>
-                <ui-icon uiTrailing uiName="field.popUp" />
-              </button>
-            </ui-choice-menu>
-          </div>
-          }
-          <label class="lib-admin-programs__field"
-            ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-              >{{ t('admin.programs.event.rsvpUrl') }}</span
-            ><input
-              type="url"
-              inputmode="url"
-              uiTextField
-              uiControlSize="large"
-              autocomplete="off"
-              autocapitalize="none"
-              spellcheck="false"
-              placeholder="https://"
-              [readonly]="saving()"
-              [value]="eventApplyUrl()"
-              (input)="eventApplyUrl.set(inputValue($event))"
-            /><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-              >{{ t('admin.programs.field.linkHint') }}</span
-            ></label
-          >
-          <section class="lib-admin-programs__section">
-            <ui-section-header uiHeaderProminence="increased"
-              ><h3 uiTitle>
-                {{ t('admin.programs.section.translation') }}
-              </h3></ui-section-header
-            ><label class="lib-admin-programs__field"
+                  data-testid="admin-event-shop-trigger"
+                  (click)="eventShopMenu.set(true)"
+                >
+                  <span>{{ eventShopLabel() }}</span>
+                  <ui-icon uiTrailing uiName="field.popUp" />
+                </button>
+              </ui-choice-menu>
+            </div>
+            }
+            <label class="lib-admin-programs__field"
               ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-                >{{ t('admin.programs.field.title') }}</span
+                >{{ t('admin.programs.event.rsvpUrl') }}</span
               ><input
-                type="text"
+                type="url"
+                inputmode="url"
                 uiTextField
                 uiControlSize="large"
                 autocomplete="off"
-                data-testid="admin-event-title-en"
-                lang="en"
+                autocapitalize="none"
+                spellcheck="false"
+                placeholder="https://"
                 [readonly]="saving()"
-                [value]="eventTitleEn()"
-                (input)="eventTitleEn.set(inputValue($event))"
-            /></label>
-            <label class="lib-admin-programs__field"
-              ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-                >{{ t('admin.programs.field.description') }}</span
-              ><textarea
-                uiTextField
-                uiControlSize="large"
-                rows="4"
-                data-testid="admin-event-description-en"
-                lang="en"
-                [readonly]="saving()"
-                [value]="eventDescriptionEn()"
-                (input)="eventDescriptionEn.set(inputValue($event))"
-              ></textarea>
-            </label>
+                [value]="eventApplyUrl()"
+                (input)="eventApplyUrl.set(inputValue($event))"
+              /><span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                >{{ t('admin.programs.field.linkHint') }}</span
+              ></label
+            >
+            } }
           </section>
-
-          } }
         </div>
         <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
           <button

@@ -67,3 +67,53 @@ describe('LocalizedText.equals', () => {
     );
   });
 });
+
+describe('LocalizedText.blank, with', () => {
+  it('starts every locale empty, and replaces one without touching the input', () => {
+    const blank = LocalizedText.blank();
+    expect(blank).toEqual({ bg: '', en: '' });
+
+    const typed = LocalizedText.with(blank, Locale.Bg, 'Коса');
+    expect(typed).toEqual({ bg: 'Коса', en: '' });
+    expect(blank).toEqual({ bg: '', en: '' });
+  });
+});
+
+describe('LocalizedText.owedLocales', () => {
+  const text = (bg: string, en: string): LocalizedText => ({ bg, en });
+
+  it('owes every locale a required field is blank in, in dictionary order', () => {
+    expect(
+      LocalizedText.owedLocales([{ text: text('', '  '), required: true }]),
+    ).toEqual([Locale.Bg, Locale.En]);
+    expect(
+      LocalizedText.owedLocales([{ text: text('Коса', ''), required: true }]),
+    ).toEqual([Locale.En]);
+  });
+
+  it('owes an optional field only once it is written in another locale', () => {
+    expect(
+      LocalizedText.owedLocales([{ text: text('', ''), required: false }]),
+    ).toEqual([]);
+    expect(
+      LocalizedText.owedLocales([
+        { text: text('Пролет', ''), required: false },
+      ]),
+    ).toEqual([Locale.En]);
+  });
+
+  it('owes nothing when every field is whole, and names a locale once', () => {
+    expect(
+      LocalizedText.owedLocales([
+        { text: text('Коса', 'Hair'), required: true },
+        { text: text('Пролет', 'Spring'), required: false },
+      ]),
+    ).toEqual([]);
+    expect(
+      LocalizedText.owedLocales([
+        { text: text('Коса', ''), required: true },
+        { text: text('Пролет', ''), required: false },
+      ]),
+    ).toEqual([Locale.En]);
+  });
+});

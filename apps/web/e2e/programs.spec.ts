@@ -111,11 +111,15 @@ test.describe('programs — a content manager publishes, the public pages show i
     // THE POSITION — open (the form's default status), its segment worded by
     // the catalogue (OR-53).
     await create(page, 'positions', async (form) => {
+      await form.getByTestId('admin-language-en').click();
       await form.getByTestId('admin-position-title-en').fill(position.en);
+      await form.getByTestId('admin-language-bg').click();
       await form.getByTestId('admin-position-title-bg').fill(position.bg);
+      await form.getByTestId('admin-language-en').click();
       await form
         .getByTestId('admin-position-summary-en')
         .fill('Full-time, at the Center.');
+      await form.getByTestId('admin-language-bg').click();
       await form
         .getByTestId('admin-position-summary-bg')
         .fill('Пълен работен ден, в Центъра.');
@@ -129,16 +133,22 @@ test.describe('programs — a content manager publishes, the public pages show i
 
     // THE COURSE — open for enrolment, with when it starts.
     await create(page, 'courses', async (form) => {
+      await form.getByTestId('admin-language-en').click();
       await form.getByTestId('admin-course-title-en').fill(course.en);
+      await form.getByTestId('admin-language-bg').click();
       await form.getByTestId('admin-course-title-bg').fill(course.bg);
+      await form.getByTestId('admin-language-en').click();
       await form
         .getByTestId('admin-course-description-en')
         .fill('Six evenings on the skin fade.');
+      await form.getByTestId('admin-language-bg').click();
       await form
         .getByTestId('admin-course-description-bg')
         .fill('Шест вечери върху фейда.');
       await form.getByRole('radio', { name: 'Отворен', exact: true }).click();
+      await form.getByTestId('admin-language-en').click();
       await form.getByTestId('admin-course-starts-label-en').fill('Spring');
+      await form.getByTestId('admin-language-bg').click();
       await form.getByTestId('admin-course-starts-label-bg').fill('Пролет');
     });
     const courseRow = page
@@ -151,11 +161,15 @@ test.describe('programs — a content manager publishes, the public pages show i
     // «Салон» menu (OR-37): the default location's zone places it (flip 4
     // F4-11).
     await create(page, 'events', async (form) => {
+      await form.getByTestId('admin-language-en').click();
       await form.getByTestId('admin-event-title-en').fill(event.en);
+      await form.getByTestId('admin-language-bg').click();
       await form.getByTestId('admin-event-title-bg').fill(event.bg);
+      await form.getByTestId('admin-language-en').click();
       await form
         .getByTestId('admin-event-description-en')
         .fill('Hot towels and straight razors.');
+      await form.getByTestId('admin-language-bg').click();
       await form
         .getByTestId('admin-event-description-bg')
         .fill('Горещи кърпи и бръсначи.');
