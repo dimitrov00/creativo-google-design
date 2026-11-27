@@ -889,6 +889,17 @@ export class AdminPrograms {
     if (next === WorkplaceMode.Remote) this.shopsOwedShown.set(false);
   }
 
+  /**
+   * Remote hides the shops and the save drops them; the draft keeps what
+   * was picked, so turning back to a shop role finds them again.
+   */
+  protected pickWorkplace(id: string): void {
+    const next = Object.values(WorkplaceMode).find((tag) => tag === id);
+    if (next === undefined) return;
+    this.positionWorkplace.set(next);
+    if (next === WorkplaceMode.Remote) this.shopsOwedShown.set(false);
+  }
+
   protected pickEnrollmentStatus(id: string): void {
     const next = Object.values(EnrollmentStatus).find((tag) => tag === id);
     if (next !== undefined) this.courseEnrollmentStatus.set(next);
