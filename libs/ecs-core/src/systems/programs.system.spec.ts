@@ -923,3 +923,23 @@ describe('ProgramsSystem.positionToggled', () => {
     expect(open).toEqual(before);
   });
 });
+
+describe('ProgramsSystem.courseToggled', () => {
+  it('closes an open course, opens a closed or upcoming one, and keeps the rest and the input', () => {
+    const open = courseOf('course-1', {
+      enrollmentStatus: EnrollmentStatus.Open,
+    });
+    const upcoming = { ...open, enrollmentStatus: EnrollmentStatus.Upcoming };
+    const before = structuredClone(open);
+
+    const closed = ProgramsSystem.courseToggled(open);
+
+    expect(closed).toEqual({
+      ...open,
+      enrollmentStatus: EnrollmentStatus.Closed,
+    });
+    expect(ProgramsSystem.courseToggled(closed)).toEqual(open);
+    expect(ProgramsSystem.courseToggled(upcoming)).toEqual(open);
+    expect(open).toEqual(before);
+  });
+});

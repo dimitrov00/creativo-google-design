@@ -65,12 +65,12 @@
           data-testid="admin-order-error"
           >{{ t('admin.programs.order.failed') }}</ui-notice
         >
-        } @if (statusFailed()) {
+        } @if (quickFailed()) {
         <ui-notice
           uiTone="destructive"
           uiAnnounce="polite"
-          data-testid="admin-status-error"
-          >{{ t('admin.programs.position.toggleFailed') }}</ui-notice
+          data-testid="admin-quick-error"
+          >{{ t('admin.programs.quick.failed') }}</ui-notice
         >
         }
         <span uiVisuallyHidden aria-live="polite"
@@ -174,10 +174,11 @@
               <ui-icon uiName="list.reorder" />
             </button>
           </ui-list-row>
-          } @else if (row.quick; as quick) {
-          <!-- A ROLE'S QUICK ACTION waits behind its row: swiped in from the
-               trailing edge (or reached with Tab), it turns the status over
-               without opening the editor. -->
+          } @else {
+          <!-- EVERY ROW'S QUICK ACTION waits behind it: swiped in from the
+               trailing edge (or reached with Tab). A role or a course turns
+               its status over without opening the editor; an event starts
+               a new one from a copy of itself. -->
           <ui-swipe-actions [attr.data-testid]="'admin-row-' + row.id">
             <button
               type="button"
@@ -193,25 +194,13 @@
             <button
               uiSwipeAction
               uiTrailing
-              [attr.data-testid]="'admin-row-toggle-' + row.id"
-              (click)="toggleStatus(row.id)"
+              [attr.data-testid]="'admin-row-quick-' + row.id"
+              (click)="runQuick(row.id)"
             >
-              <ui-icon [uiName]="quick.icon" />
-              {{ t(quick.labelKey) }}
+              <ui-icon [uiName]="row.quick.icon" />
+              {{ t(row.quick.labelKey) }}
             </button>
           </ui-swipe-actions>
-          } @else {
-          <button
-            type="button"
-            uiListRow
-            [uiInteractive]="true"
-            (click)="openRow(row.id)"
-          >
-            <span>{{ row.title }}</span>
-            @if (row.statusKey; as key) {
-            <span uiTrailing>{{ t(key) }}</span>
-            }
-          </button>
           } }
         </ui-list-group>
       </ui-stack>

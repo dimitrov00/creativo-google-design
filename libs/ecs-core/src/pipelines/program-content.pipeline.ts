@@ -198,6 +198,15 @@ export const togglePositionStatus =
     return saved.ok ? Result.ok(next) : saved;
   };
 
+/** A course's enrolment turned over from the list, as {@link togglePositionStatus}. */
+export const toggleCourseEnrollment =
+  (ports: CourseWritePorts) =>
+  async (course: Course): Promise<Result<Course, RepositoryError>> => {
+    const next = ProgramsSystem.courseToggled(course);
+    const saved = await ports.saveCourse(next);
+    return saved.ok ? Result.ok(next) : saved;
+  };
+
 /** The courses' order, as {@link reorderPositions}. */
 export const reorderCourses =
   (ports: CourseWritePorts) =>

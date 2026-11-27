@@ -114,13 +114,33 @@ type ProgramRow = {
   /** The catalogue key of the row's status word; an event prints none. */
   readonly statusKey: string | null;
   /**
-   * The quick action behind the row — a role's status turned over — as
+   * The quick action behind the row — a role's status or a course's
+   * enrolment turned over, an event started again from a copy — as
    * the word and glyph it shows; a course or an event has none.
    */
-  readonly quick: {
-    readonly labelKey: string;
-    readonly icon: UiIconName;
-  } | null;
+  readonly quick: QuickAction;
+};
+
+/** The word and glyph of a row's quick action. */
+type QuickAction = {
+  readonly labelKey: string;
+  readonly icon: UiIconName;
+};
+
+/** Take an open role or course off the public pages. */
+const QUICK_CLOSE: QuickAction = {
+  labelKey: 'admin.programs.quick.close',
+  icon: 'program.hide',
+};
+/** Put a closed (or upcoming) one on them. */
+const QUICK_OPEN: QuickAction = {
+  labelKey: 'admin.programs.quick.open',
+  icon: 'program.show',
+};
+/** An event has no status: its quick action starts a new one from a copy. */
+const QUICK_DUPLICATE: QuickAction = {
+  labelKey: 'admin.programs.quick.duplicate',
+  icon: 'program.duplicate',
 };
 
 /** One shop chip of the role form: the shop's id and the word it prints. */
@@ -224,8 +244,8 @@ export class AdminPrograms {
   protected readonly arranging = signal(false);
   /** The row whose handle menu is open, by id. */
   protected readonly orderMenu = signal<string | null>(null);
-  /** A quick status change was refused: said under the list's tabs. */
-  protected readonly statusFailed = signal(false);
+  /** A row's quick change was refused: said under the list's tabs. */
+  protected readonly quickFailed = signal(false);
   private readonly reorderList = viewChild(UiReorderList);
   /** The last move could not be saved. */
   protected readonly orderFailed = signal(false);
@@ -256,14 +276,8 @@ export class AdminPrograms {
         statusKey: `programs.status.position.${position.positionStatus}`,
         quick:
           position.positionStatus === PositionStatus.Open
-            ? {
-                labelKey: 'admin.programs.position.close',
-                icon: 'program.hide',
-              }
-            : {
-                labelKey: 'admin.programs.position.open',
-                icon: 'program.show',
-              },
+            ? QUICK_CLOSE
+            : QUICK_OPEN,
       }));
     }
     if (tab === ProgramsTab.Courses) {
@@ -271,14 +285,17 @@ export class AdminPrograms {
         id: course.id,
         title: course.title[locale],
         statusKey: `programs.status.enrollment.${course.enrollmentStatus}`,
-        quick: null,
+        quick:
+          course.enrollmentStatus === EnrollmentStatus.Open
+            ? QUICK_CLOSE
+            : QUICK_OPEN,
       }));
     }
     return this.store.events().map((event) => ({
       id: event.id,
       title: event.title[locale],
       statusKey: null,
-      quick: null,
+      quick: QUICK_DUPLICATE,
     }));
   });
 
@@ -564,16 +581,32 @@ export class AdminPrograms {
   }
 
   /**
-   * A role's quick action: its status turned over and saved at once. The
-   * live list shows the new word when the store answers; a refused save
-   * says so and nothing has changed.
+   * A row's quick action, by the list in view. A role's status or a
+   * course's enrolment is turned over and saved at once — the live list
+   * shows the new word when the store answers, and a refused save says so
+   * with nothing changed. An event opens the editor on a COPY of itself:
+   * nothing is written until that sheet's «Запази», which saves a new one.
    */
-  protected async toggleStatus(id: string): Promise<void> {
-    const position = this.positions().find((entry) => entry.id === id);
-    if (position === undefined) return;
-    this.statusFailed.set(false);
-    const saved = await this.store.togglePositionStatus(position);
-    if (!saved.ok) this.statusFailed.set(true);
+  protected async runQuick(id: string): Promise<void> {
+    const tab = this.tab();
+    this.quickFailed.set(false);
+    if (tab === ProgramsTab.Positions) {
+      const position = this.positions().find((entry) => entry.id === id);
+      if (position === undefined) return;
+      const saved = await this.store.togglePositionStatus(position);
+      if (!saved.ok) this.quickFailed.set(true);
+    } else if (tab === ProgramsTab.Courses) {
+      const course = this.courses().find((entry) => entry.id === id);
+      if (course === undefined) return;
+      const saved = await this.store.toggleCourseEnrollment(course);
+      if (!saved.ok) this.quickFailed.set(true);
+    } else {
+      const event = this.store.events().find((entry) => entry.id === id);
+      if (event === undefined) return;
+      this.startEditEvent(event);
+      // The same fields, no source: the sheet is a new event's.
+      this.editing.set({ programEditing: ProgramEditing.Event, source: null });
+    }
   }
 
   /**

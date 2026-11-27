@@ -234,6 +234,9 @@ export const UI_ICON_REGISTRY = {
    *  quick action on a row. */
   'program.hide': 'visibility_off',
   'program.show': 'visibility',
+  /** Start a new program from a copy of this one — an event that comes
+   *  round again. */
+  'program.duplicate': 'content_copy',
 
   /* ── The visit frame's resize handles ───────────────────────────── */
   /**

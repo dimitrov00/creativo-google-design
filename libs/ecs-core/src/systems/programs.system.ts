@@ -219,6 +219,20 @@ export const ProgramsSystem = {
   },
 
   /**
+   * A course with its enrolment turned over: an open one closed, and one
+   * that is closed or still upcoming opened. Everything else is kept.
+   */
+  courseToggled(course: Course): Course {
+    return {
+      ...course,
+      enrollmentStatus:
+        course.enrollmentStatus === EnrollmentStatus.Open
+          ? EnrollmentStatus.Closed
+          : EnrollmentStatus.Open,
+    };
+  },
+
+  /**
    * A list with the thing at `from` moved to `to`, the rest keeping their
    * order. An index outside the list, or a move to its own place, answers
    * the list as it is.
