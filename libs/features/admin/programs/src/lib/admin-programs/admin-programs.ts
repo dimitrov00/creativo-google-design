@@ -57,6 +57,10 @@ import {
   UiSwitch,
   UiTextField,
 } from '@creativo/ui/controls';
+import {
+  UiRichTextEditor,
+  type UiRichTextEditorWords,
+} from '@creativo/ui/controls/rich-text-editor';
 import { UiStack } from '@creativo/ui/layout';
 import {
   type UiCheckOption,
@@ -201,6 +205,8 @@ type TranslatedInput = {
   readonly id: string;
   readonly labelKey: string;
   readonly multiline: boolean;
+  /** A description: drawn as the rich text editor, its text Markdown. */
+  readonly rich: boolean;
   /** May the thing be saved without it (in every language). */
   readonly required: boolean;
   readonly text: WritableSignal<LocalizedText>;
@@ -261,6 +267,7 @@ const NO_SHOP = '';
   imports: [
     NgTemplateOutlet,
     UiPhoneField,
+    UiRichTextEditor,
     SiteHeaderComponent,
     TranslocoDirective,
     UiButton,
@@ -419,6 +426,14 @@ export class AdminPrograms {
   // Position fields
   protected readonly positionTitle = signal(LocalizedText.blank());
   protected readonly positionSummary = signal(LocalizedText.blank());
+  /** The role's description: Markdown per language, blank for none. */
+  protected readonly positionBody = signal(LocalizedText.blank());
+  /**
+   * The description is in hand: at once for a new role, once it is read
+   * for a stored one. Until then its editor is locked, and a save leaves
+   * the stored description alone — a text never read is never overwritten.
+   */
+  protected readonly positionBodyReady = signal(false);
   protected readonly positionStatus = signal<PositionStatus>(
     PositionStatus.Open,
   );
@@ -702,6 +717,7 @@ export class AdminPrograms {
               id: 'position-title',
               labelKey: 'admin.programs.field.title',
               multiline: false,
+              rich: false,
               required: true,
               text: this.positionTitle,
             },
@@ -709,8 +725,17 @@ export class AdminPrograms {
               id: 'position-summary',
               labelKey: 'admin.programs.position.summary',
               multiline: true,
+              rich: false,
               required: true,
               text: this.positionSummary,
+            },
+            {
+              id: 'position-body',
+              labelKey: 'admin.programs.position.body',
+              multiline: false,
+              rich: true,
+              required: false,
+              text: this.positionBody,
             },
           ];
         case ProgramEditing.Course:
@@ -719,6 +744,7 @@ export class AdminPrograms {
               id: 'course-title',
               labelKey: 'admin.programs.field.title',
               multiline: false,
+              rich: false,
               required: true,
               text: this.courseTitle,
             },
@@ -726,6 +752,7 @@ export class AdminPrograms {
               id: 'course-description',
               labelKey: 'admin.programs.field.description',
               multiline: true,
+              rich: false,
               required: true,
               text: this.courseDescription,
             },
@@ -733,6 +760,7 @@ export class AdminPrograms {
               id: 'course-starts-label',
               labelKey: 'admin.programs.course.startsLabel',
               multiline: false,
+              rich: false,
               required: false,
               text: this.courseStartsLabel,
             },
@@ -743,6 +771,7 @@ export class AdminPrograms {
               id: 'event-title',
               labelKey: 'admin.programs.field.title',
               multiline: false,
+              rich: false,
               required: true,
               text: this.eventTitle,
             },
@@ -750,6 +779,7 @@ export class AdminPrograms {
               id: 'event-description',
               labelKey: 'admin.programs.field.description',
               multiline: true,
+              rich: false,
               required: true,
               text: this.eventDescription,
             },
@@ -796,6 +826,32 @@ export class AdminPrograms {
 
   /** More than one language to switch between: with one there is no switcher. */
   protected readonly manyLanguages = Tag.values(Locale).length > 1;
+
+  /** The editor's own words, in the reader's language. */
+  protected readonly editorWords = computed((): UiRichTextEditorWords => {
+    const lang = this.loadedLang() ?? undefined;
+    const word = (key: keyof UiRichTextEditorWords): string =>
+      this.transloco.translate(`admin.programs.richText.${key}`, {}, lang);
+    return {
+      toolbar: word('toolbar'),
+      paragraph: word('paragraph'),
+      heading1: word('heading1'),
+      heading2: word('heading2'),
+      bold: word('bold'),
+      italic: word('italic'),
+      bulletList: word('bulletList'),
+      orderedList: word('orderedList'),
+      quote: word('quote'),
+      link: word('link'),
+      undo: word('undo'),
+      redo: word('redo'),
+      linkAddress: word('linkAddress'),
+      linkPlaceholder: word('linkPlaceholder'),
+      linkApply: word('linkApply'),
+      linkRemove: word('linkRemove'),
+      linkInvalid: word('linkInvalid'),
+    };
+  });
 
   /** «Липсва превод на: английски, …» — the languages owed, in the reader's words. */
   protected readonly owedNotice = computed((): string | null => {
@@ -1037,6 +1093,19 @@ export class AdminPrograms {
 
   protected startEditPosition(position: Position): void {
     this.fillPosition(position);
+    this.positionBodyReady.set(false);
+    void this.store.loadPositionBody(position.id).then((body) => {
+      const editing = this.editing();
+      if (
+        !body.ok ||
+        editing?.programEditing !== ProgramEditing.Position ||
+        editing.source?.id !== position.id
+      ) {
+        return;
+      }
+      this.positionBody.set(body.value?.body ?? LocalizedText.blank());
+      this.positionBodyReady.set(true);
+    });
     // The stored scope, as stored — an edit never wipes it (OR-42).
     this.positionShopIds.set(position.locationIds);
     this.shopsLimited.set(position.locationIds.length > 0);
@@ -1113,6 +1182,12 @@ export class AdminPrograms {
     input.text.update((text) => LocalizedText.with(text, language, value));
   }
 
+  /** The description edited: the language in view takes the Markdown. */
+  protected typeRich(input: TranslatedInput, markdown: string): void {
+    const language = this.language();
+    input.text.update((text) => LocalizedText.with(text, language, markdown));
+  }
+
   /** Is this field what the language in view still owes, now that a save has asked. */
   protected owes(input: TranslatedInput): boolean {
     if (!this.owedShown()) return false;
@@ -1185,6 +1260,15 @@ export class AdminPrograms {
       );
       return;
     }
+    // A description over the size limit: nothing is sent — the role is
+    // never saved with its description refused behind it.
+    if (editing.programEditing === ProgramEditing.Position) {
+      const body = ProgramsSystem.body(this.positionBody());
+      if (!body.ok) {
+        this.saveRefusals.set(body.error);
+        return;
+      }
+    }
     this.saving.set(true);
     this.saveRefusals.set(null);
 
@@ -1194,7 +1278,24 @@ export class AdminPrograms {
         id: editing.source?.id ?? null,
         input: this.positionInput(),
       });
-      refusals = saved.ok ? null : saved.error;
+      if (!saved.ok) {
+        refusals = saved.error;
+      } else if (!this.positionBodyReady()) {
+        refusals = null;
+      } else {
+        // The role is stored: its description goes beside it. Should that
+        // write fail, the sheet now edits the stored role, so a second
+        // «Запази» never creates it twice.
+        this.editing.set({
+          programEditing: ProgramEditing.Position,
+          source: saved.value,
+        });
+        const body = await this.store.submitPositionBody({
+          id: saved.value.id,
+          body: this.positionBody(),
+        });
+        refusals = body.ok ? null : body.error;
+      }
     } else if (editing.programEditing === ProgramEditing.Course) {
       const saved = await this.store.submitCourse({
         id: editing.source?.id ?? null,
@@ -1226,6 +1327,8 @@ export class AdminPrograms {
     this.openOn();
     this.positionTitle.set(input.title);
     this.positionSummary.set(input.summary);
+    this.positionBody.set(LocalizedText.blank());
+    this.positionBodyReady.set(true);
     this.positionStatus.set(input.positionStatus);
     this.positionWorkplace.set(input.workplaceMode);
     this.contacts.set(input.contacts);

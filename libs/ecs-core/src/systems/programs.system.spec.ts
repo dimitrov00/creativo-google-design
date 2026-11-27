@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   EnrollmentStatus,
   PositionStatus,
+  RichText,
   WorkplaceMode,
 } from '@core/components';
 import {
@@ -1124,5 +1125,53 @@ describe('ProgramsSystem.courseToggled', () => {
     expect(ProgramsSystem.courseToggled(closed)).toEqual(open);
     expect(ProgramsSystem.courseToggled(upcoming)).toEqual(open);
     expect(open).toEqual(before);
+  });
+});
+
+describe('ProgramsSystem.body', () => {
+  it('answers none for a description blank in every language', () => {
+    expect(ProgramsSystem.body({ bg: '', en: '' })).toEqual({
+      ok: true,
+      value: null,
+    });
+    expect(ProgramsSystem.body({ bg: '  \n', en: '\t' })).toEqual({
+      ok: true,
+      value: null,
+    });
+  });
+
+  it('answers the Markdown per language, trimmed', () => {
+    expect(
+      ProgramsSystem.body({ bg: '  # Роля\n\nДуми. ', en: '# Role\n\nWords.' }),
+    ).toEqual({
+      ok: true,
+      value: { bg: '# Роля\n\nДуми.', en: '# Role\n\nWords.' },
+    });
+  });
+
+  it('owes every language once one is written', () => {
+    expect(ProgramsSystem.body({ bg: 'Думи.', en: ' ' })).toEqual({
+      ok: false,
+      error: [CatalogError.localizedTextFieldEmpty(Locale.En)],
+    });
+  });
+
+  it('admits a language at the size limit and refuses one character over, naming its length', () => {
+    const longest = 'я'.repeat(RichText.BODY_MAX_CHARS);
+    expect(ProgramsSystem.body({ bg: longest, en: 'Words.' }).ok).toBe(true);
+    expect(ProgramsSystem.body({ bg: longest + 'я', en: 'Words.' })).toEqual({
+      ok: false,
+      error: [
+        EngagementError.program(
+          EngagementErrorCode.ProgramBodyTooLong,
+          RichText.BODY_MAX_CHARS + 1,
+        ),
+      ],
+    });
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const raw = deepFreeze({ bg: ' Думи. ', en: 'Words.' });
+    expect(ProgramsSystem.body(raw)).toEqual(ProgramsSystem.body(raw));
   });
 });

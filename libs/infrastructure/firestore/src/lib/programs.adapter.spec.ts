@@ -525,19 +525,22 @@ describe('shopEventReadPorts / shopEventWritePorts — events/{id}', () => {
 });
 
 describe('programsPorts — PROGRAMS_PORTS, the admin page’s suite', () => {
-  it('is exactly the six bundles over one instance: nine members', () => {
+  it('is exactly the eight bundles over one instance: twelve members', () => {
     expect(
       Object.keys(programsPorts(asDb(new FakeFirestore()))).sort(),
     ).toEqual([
+      'clearPositionBody',
       'loadCourse',
       'loadEvent',
       'loadPosition',
+      'loadPositionBody',
       'observeCourses',
       'observeEvents',
       'observePositions',
       'saveCourse',
       'saveEvent',
       'savePosition',
+      'savePositionBody',
     ]);
   });
 
@@ -604,6 +607,32 @@ describe('the body ports — positionBodies, courseBodies, eventBodies /{id}', (
     expect(
       await shopEventBodyReadPorts(db).loadEventBody(eventBody.id),
     ).toEqual(Result.ok(eventBody));
+  });
+
+  it('removes a description with one delete, and removing none is no failure', async () => {
+    const fake = new FakeFirestore({
+      'positionBodies/p-1': { body: text },
+      'courseBodies/c-1': { body: text },
+      'eventBodies/e-1': { body: text },
+    });
+    const db = asDb(fake);
+
+    expect(
+      await positionBodyWritePorts(db).clearPositionBody(roleBody.id),
+    ).toEqual(Result.ok(undefined));
+    expect(
+      await courseBodyWritePorts(db).clearCourseBody(courseBody.id),
+    ).toEqual(Result.ok(undefined));
+    expect(
+      await shopEventBodyWritePorts(db).clearEventBody(eventBody.id),
+    ).toEqual(Result.ok(undefined));
+    expect(
+      await positionBodyWritePorts(db).clearPositionBody(roleBody.id),
+    ).toEqual(Result.ok(undefined));
+
+    expect(fake.documentAt('positionBodies/p-1')).toBeUndefined();
+    expect(fake.documentAt('courseBodies/c-1')).toBeUndefined();
+    expect(fake.documentAt('eventBodies/e-1')).toBeUndefined();
   });
 
   it('answers null for a thing with no description', async () => {

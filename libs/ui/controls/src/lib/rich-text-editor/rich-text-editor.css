@@ -1,0 +1,200 @@
+@layer sys-components {
+  /* A field like every other: the translucent fill, a hairline, the ring
+     while the caret is inside. The toolbar is its head, the counter its
+     foot, the text between them. */
+  .ui-rich-text-editor {
+    display: flex;
+    flex-direction: column;
+    min-inline-size: 0;
+    border: 1px solid var(--sys-color-separator);
+    border-radius: var(--control-radius-regular);
+    background: var(--sys-color-fill);
+    color: var(--sys-color-foreground);
+    outline: none;
+    transition:
+      border-color var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard),
+      box-shadow var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard);
+  }
+
+  /* The caret is inside: the same accent edge and glow as a text field. */
+  .ui-rich-text-editor[data-focused] {
+    border-color: var(--sys-color-accent);
+    box-shadow: 0 0 0 var(--sys-focus-glow-width)
+      color-mix(
+        in srgb,
+        var(--sys-color-accent) var(--sys-focus-glow-alpha),
+        transparent
+      );
+  }
+
+  .ui-rich-text-editor[data-invalid] {
+    border-color: var(--sys-color-destructive);
+  }
+
+  .ui-rich-text-editor[data-disabled] {
+    opacity: var(--sys-opacity-disabled);
+  }
+
+  /* The toolbar, and the address row under it while a link is being set,
+     stay in view while a long text scrolls under them. They carry a solid
+     surface, so the words passing beneath do not show through the field's
+     translucent fill. */
+  .ui-rich-text-editor__head {
+    position: sticky;
+    /* Inside a sheet it stops under the sheet's own bar and its fade
+       (`--modal-sheet-clear-top`); on a page, at the top. */
+    inset-block-start: var(
+      --ui-rich-text-editor-sticky-top,
+      var(--modal-sheet-clear-top, 0px)
+    );
+    z-index: 1;
+    border-start-start-radius: inherit;
+    border-start-end-radius: inherit;
+    background: var(
+      --ui-rich-text-editor-bar,
+      var(--sys-color-surface-secondary)
+    );
+  }
+
+  .ui-rich-text-editor__bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sys-space-tight);
+    padding: var(--sys-space-tight);
+    border-block-end: 1px solid var(--sys-color-separator);
+  }
+
+  /* On a narrow screen the bar takes a second row rather than hiding a
+     tool: every tool is always in reach, undo and redo at the trailing
+     edge of whichever row they land on. */
+  .ui-rich-text-editor__tools {
+    display: flex;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sys-space-tight);
+    min-inline-size: 0;
+  }
+
+  .ui-rich-text-editor__group {
+    display: flex;
+    flex: none;
+    align-items: center;
+  }
+
+  /* A hairline between two groups says they are different kinds of thing. */
+  .ui-rich-text-editor__tools
+    > .ui-rich-text-editor__group
+    + .ui-rich-text-editor__group {
+    padding-inline-start: var(--sys-space-tight);
+    border-inline-start: 1px solid var(--sys-color-separator);
+  }
+
+  .ui-rich-text-editor__history {
+    margin-inline-start: auto;
+  }
+
+  .ui-rich-text-editor__link {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sys-space-compact);
+    padding: var(--sys-space-compact);
+    border-block-end: 1px solid var(--sys-color-separator);
+  }
+
+  .ui-rich-text-editor__link > .ui-text-field {
+    flex: 1 1 12rem;
+    inline-size: auto;
+  }
+
+  .ui-rich-text-editor__refusal {
+    flex: 1 0 100%;
+    margin: 0;
+    color: var(--sys-color-destructive-label);
+    font: var(--sys-font-footnote);
+  }
+
+  /* The text. A press anywhere in the field lands in it, so the field is
+     never a small target inside a large box. */
+  .ui-rich-text-editor__surface {
+    min-block-size: 12rem;
+    padding: var(--sys-space-regular);
+    cursor: text;
+  }
+
+  .ui-rich-text-editor__content {
+    min-block-size: 10rem;
+    outline: none;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    -webkit-font-variant-ligatures: none;
+    font-variant-ligatures: none;
+  }
+
+  /* The editor needs real white space kept where `ui-rich-text` folds it. */
+  .ui-rich-text-editor__content .ui-rich-text__paragraph,
+  .ui-rich-text-editor__content .ui-rich-text__quote {
+    white-space: pre-wrap;
+  }
+
+  .ui-rich-text-editor__content li > p,
+  .ui-rich-text-editor__content blockquote > p {
+    margin: 0;
+  }
+
+  .ui-rich-text-editor__content blockquote > p + p {
+    margin-block-start: var(--sys-space-tight);
+  }
+
+  /* Touch devices floor the text at 1rem so focusing never zooms the page
+     (the same rule every text-entry control carries). */
+  @media (hover: none) and (pointer: coarse) {
+    .ui-rich-text-editor__content {
+      font-size: 1rem;
+    }
+  }
+
+  /* Nothing typed yet: the hint, in the first empty line. */
+  .ui-rich-text-editor__content .is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    float: inline-start;
+    block-size: 0;
+    color: var(--sys-color-tertiary-label);
+    pointer-events: none;
+  }
+
+  /* A picture the text names, until pictures are drawn here: a plate. */
+  .ui-rich-text-editor__image {
+    padding: var(--sys-space-regular);
+    border: 1px dashed var(--sys-color-separator);
+    border-radius: var(--control-radius-subtle);
+    color: var(--sys-color-secondary-label);
+    font: var(--sys-font-footnote);
+    text-align: center;
+  }
+
+  .ui-rich-text-editor__content .ProseMirror-selectednode {
+    outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+    outline-offset: var(--sys-focus-ring-offset);
+  }
+
+  .ui-rich-text-editor__foot {
+    display: flex;
+    justify-content: flex-end;
+    padding: 0 var(--sys-space-regular) var(--sys-space-compact);
+  }
+
+  .ui-rich-text-editor__count {
+    color: var(--sys-color-secondary-label);
+    font: var(--sys-font-footnote);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ui-rich-text-editor__count[data-over] {
+    color: var(--sys-color-destructive-label);
+  }
+}

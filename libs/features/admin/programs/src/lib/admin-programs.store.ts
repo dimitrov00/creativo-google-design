@@ -9,6 +9,7 @@ import {
   togglePositionStatus,
   writeCourse,
   writePosition,
+  writePositionBody,
   writeShopEvent,
 } from '@core/pipelines';
 import type { LocationId } from '@core/primitives';
@@ -66,6 +67,10 @@ export class AdminProgramsStore {
     ...this.programs,
     ...this.ids,
   });
+  /** A role's description, judged and saved whole — or removed when blank. */
+  readonly submitPositionBody = writePositionBody(this.programs);
+  /** A role's description, read once when its sheet opens. */
+  readonly loadPositionBody = this.programs.loadPositionBody;
   readonly submitCourse = writeCourse({ ...this.programs, ...this.ids });
   readonly submitEvent = writeShopEvent({
     ...this.programs,

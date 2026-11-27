@@ -199,6 +199,8 @@ export const EngagementErrorCode = {
   CourseContactInvalid: 'ENGAGEMENT_COURSE_INVALID_CONTACT',
   ShopEventSortOrderInvalid: 'ENGAGEMENT_SHOP_EVENT_INVALID_SORT_ORDER',
   ShopEventContactInvalid: 'ENGAGEMENT_SHOP_EVENT_INVALID_CONTACT',
+  /** A description longer than one language may hold (`rawValue`: its length). */
+  ProgramBodyTooLong: 'ENGAGEMENT_PROGRAM_BODY_TOO_LONG',
   /** An admin update of a role that is no longer stored — nothing is written. */
   PositionNotFound: 'ENGAGEMENT_POSITION_NOT_FOUND',
   /** An admin update of a course that is no longer stored — nothing is written. */
@@ -872,7 +874,8 @@ export namespace EngagementError {
     | typeof EngagementErrorCode.CourseSortOrderInvalid
     | typeof EngagementErrorCode.CourseContactInvalid
     | typeof EngagementErrorCode.ShopEventSortOrderInvalid
-    | typeof EngagementErrorCode.ShopEventContactInvalid;
+    | typeof EngagementErrorCode.ShopEventContactInvalid
+    | typeof EngagementErrorCode.ProgramBodyTooLong;
   export type ProgramError = {
     readonly errorCode: ProgramCode;
     readonly rawValue: Scalar;

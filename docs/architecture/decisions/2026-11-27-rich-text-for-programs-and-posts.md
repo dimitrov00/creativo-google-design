@@ -1,7 +1,8 @@
 # Rich text for programs and posts (2026-11-27)
 
 > **Status: DECIDED by Claude under the owner's standing delegation
-> (2026-10-26), awaiting the owner's read. Not built.** The owner asked on
+> (2026-10-26), awaiting the owner's read. Steps 1–3 built for roles
+> (2026-11-27); pictures (step 4), and courses and events, are not.** The owner asked on
 > 2026-11-27 for a role's page to hold a real description — headings, lists,
 > pictures — written by staff in a rich text editor, and for the same thing
 > to carry blog posts later; and asked whether Firebase can hold it or
@@ -104,3 +105,29 @@ Each step is its own pull request. Steps 1 and 2 need no new dependency.
   optional).
 - Whether courses and events get the editor in step 3 or after roles have
   been lived with (assumed together: they share the sheet and the editor).
+
+## As built (steps 1–3, 2026-11-27)
+
+- **The editor never sees an HTML string.** Tiptap's Markdown extension
+  goes through HTML (`DOMParser`), which the security header guards, so it
+  is not used. `RichTextSystem.write` is the parser's inverse (a round-trip
+  property test holds the two together), and the editor is handed and asked
+  for ProseMirror JSON, converted to and from the block list by pure
+  functions. Tiptap's own style tag is off; its few rules are in the
+  element's stylesheet.
+- **Paste.** A paste or a drop from outside is taken as plain text before
+  ProseMirror reads the clipboard's HTML. What was copied inside the editor
+  is remembered by the editor itself, so pasting it back keeps its
+  formatting without a Trusted Types policy.
+- **Clearing a description removes its document** (`clearPositionBody`;
+  the rules let the parent's writers delete a body). A thing with no
+  description has no document.
+- **Roles only, for now.** `/courses` and `/events` link a row straight to
+  its one way of answering, and a list cannot know whether a sibling body
+  exists, so showing a course's or an event's description needs those rows
+  to open the sheet first. That is its own change; the ports, adapters and
+  rules for both are in place.
+- **Not yet checked under the deployed security header.** The dev server
+  sends no `require-trusted-types-for`; the three sinks the library has
+  were closed by reading its source. `verify:csp` should visit the editor
+  before a release.

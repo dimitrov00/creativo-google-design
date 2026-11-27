@@ -168,6 +168,25 @@ export const UI_ICON_REGISTRY = {
   /** Apply-via-Instagram CTA on the hiring section. */
   'hiring.apply': 'arrow_right_alt',
 
+  /* ── Rich text (the editor's toolbar) ───────────────────────────── */
+  /** What a block of a description is: the two heading levels and plain text. */
+  'richText.heading1': 'format_h1',
+  'richText.heading2': 'format_h2',
+  'richText.paragraph': 'format_paragraph',
+  /** How a run is set. */
+  'richText.bold': 'format_bold',
+  'richText.italic': 'format_italic',
+  /** The two lists and the quote. */
+  'richText.bulletList': 'format_list_bulleted',
+  'richText.orderedList': 'format_list_numbered',
+  'richText.quote': 'format_quote',
+  /** Turns the chosen words into a link, or edits the one under the caret. */
+  'richText.link': 'link',
+  /** Takes a link off the words it is on. */
+  'richText.unlink': 'link_off',
+  'richText.undo': 'undo',
+  'richText.redo': 'redo',
+
   /* ── Sheets / overlays ──────────────────────────────────────────── */
   'sheet.close': 'close',
   /** Send a toast away before its clock runs out. Its own intent: a toast is

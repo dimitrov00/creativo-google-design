@@ -104,6 +104,7 @@ styles a native control or builds its own; a new element is added to
 | confirmation            | `ui-alert`, `ui-reward-moment`                                     |
 | contact actions         | `ui-quick-actions`                                                 |
 | container               | `ui-card`, `uiFrame`                                               |
+| content editor          | `ui-rich-text-editor`                                              |
 | context menu            | `ui-menu`                                                          |
 | continuous calendar     | `ui-calendar-scroller`                                             |
 | copy to clipboard       | `ui-reference`                                                     |
@@ -186,6 +187,7 @@ styles a native control or builds its own; a new element is added to
 | form date               | `ui-date-row`                                                      |
 | form field              | `uiTextField`                                                      |
 | formatted text          | `ui-rich-text`                                                     |
+| formatting toolbar      | `ui-rich-text-editor`                                              |
 | frosted                 | `uiMaterial`                                                       |
 | full width              | `uiFrame`                                                          |
 | gallery                 | `ui-grid`                                                          |
@@ -266,6 +268,7 @@ styles a native control or builds its own; a new element is added to
 | margin auto             | `ui-spacer`                                                        |
 | mark                    | `ui-marked-text`                                                   |
 | markdown                | `ui-rich-text`                                                     |
+| markdown editor         | `ui-rich-text-editor`                                              |
 | markers                 | `ui-map`                                                           |
 | marks                   | `ui-mark-scale`                                                    |
 | matched text            | `ui-marked-text`                                                   |
@@ -364,6 +367,7 @@ styles a native control or builds its own; a new element is added to
 | progress steps          | `ui-stepper`                                                       |
 | promo code              | `ui-code-field`, `uiCouponCard`                                    |
 | prose                   | `ui-rich-text`                                                     |
+| prosemirror             | `ui-rich-text-editor`                                              |
 | qr                      | `ui-code-scanner`                                                  |
 | qr code                 | `ui-code-scanner`                                                  |
 | quantity                | `ui-count-stepper`                                                 |
@@ -388,6 +392,7 @@ styles a native control or builds its own; a new element is added to
 | retry                   | `ui-notice`                                                        |
 | review score            | `ui-rating`                                                        |
 | rich text               | `ui-rich-text`                                                     |
+| rich text editor        | `ui-rich-text-editor`                                              |
 | ring                    | `ui-gauge`                                                         |
 | ring chart              | `ui-ring-chart`                                                    |
 | ripple                  | `uiInteractive`                                                    |
@@ -497,6 +502,7 @@ styles a native control or builds its own; a new element is added to
 | text                    | `uiText`                                                           |
 | text alignment          | `uiMultilineTextAlignment`                                         |
 | text color              | `uiForegroundStyle`                                                |
+| text editor             | `ui-rich-text-editor`                                              |
 | text input              | `uiTextField`                                                      |
 | text style              | `uiFont`                                                           |
 | text-align              | `uiMultilineTextAlignment`                                         |
@@ -515,6 +521,7 @@ styles a native control or builds its own; a new element is added to
 | tiny line chart         | `ui-spark-line`                                                    |
 | tip amount              | `ui-amount-field`                                                  |
 | tip picker              | `ui-choice-tiles`                                                  |
+| tiptap                  | `ui-rich-text-editor`                                              |
 | toast                   | `ui-toast`                                                         |
 | toggle                  | `uiSwitch`                                                         |
 | toggle button           | `uiChip`                                                           |
@@ -556,7 +563,7 @@ styles a native control or builds its own; a new element is added to
 | wizard steps            | `ui-stepper`                                                       |
 | wordmark                | `ui-logo`                                                          |
 | wrap                    | `ui-flow`                                                          |
-| wysiwyg                 | `ui-rich-text`                                                     |
+| wysiwyg                 | `ui-rich-text`, `ui-rich-text-editor`                              |
 | zero state              | `ui-empty-state`                                                   |
 
 ## controls
@@ -588,6 +595,7 @@ Import from `@creativo/ui/controls`.
 | `ui-phone-field`                                | A phone number field with a country picker, formatting as you type and an E.164 value.                                                                  | App pattern                                                                       | Plain text is `uiTextField`.                                                                                                                                   |
 | `ui-progress-ring`                              | A ring that draws how much of a whole is done, with projected content at its centre.                                                                    | `ProgressView(value:)` with `.progressViewStyle(.circular)`                       | A spinner or a linear bar is `ui-progress-view`; a standing level such as loyalty points is `ui-gauge`.                                                        |
 | `ui-progress-view`                              | The loading indicator: a spinner while the length is unknown, a linear bar once a value is bound.                                                       | `ProgressView` and `ProgressView(value:)`                                         | A circular share of a whole is `ui-progress-ring`; a placeholder for content still loading is `ui-skeleton`; a busy button draws its own spinner (`uiButton`). |
+| `ui-rich-text-editor`                           | The editor a description is written in: headings, bold, italic, lists, quotes and links from a toolbar, read and answered as Markdown.                  | `TextEditor` over an `AttributedString`, with a formatting toolbar                | A few plain lines are `textarea[uiTextField]`; a description only shown is `ui-rich-text`.                                                                     |
 | `ui-search-field`                               | The search field: leading glyph, clear button, busy ring, optional filter tokens and a suggestions dropdown.                                            | `.searchable(text:)`, with `.searchable(text:tokens:)` for the tokens             | Free text that is not a search is `uiTextField`.                                                                                                               |
 | `ui-segmented-control`                          | Two to five short, exclusive answers side by side on one track: a view toggle or a scope.                                                               | `Picker` with `.pickerStyle(.segmented)`                                          | Options with a second line are `ui-choice-tiles`; a long list is `ui-choice-menu`.                                                                             |
 | `ui-skeleton`                                   | A shimmering placeholder block standing where content will appear once it has loaded.                                                                   | `.redacted(reason: .placeholder)`                                                 | A spinner or progress bar is `ui-progress-view`.                                                                                                               |

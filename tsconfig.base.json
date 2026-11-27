@@ -27,6 +27,9 @@
       "@creativo/ui/modifiers": ["./libs/ui/modifiers/src/index.ts"],
       "@creativo/ui/charts": ["./libs/ui/charts/src/index.ts"],
       "@creativo/ui/controls": ["./libs/ui/controls/src/index.ts"],
+      "@creativo/ui/controls/rich-text-editor": [
+        "./libs/ui/controls/src/rich-text-editor.ts"
+      ],
       "@creativo/ui/layout": ["./libs/ui/layout/src/index.ts"],
       "@creativo/ui/patterns": ["./libs/ui/patterns/src/index.ts"],
       "@creativo/ui/wall-clock": ["./libs/ui/wall-clock/src/index.ts"],

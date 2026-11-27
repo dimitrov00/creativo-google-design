@@ -5,6 +5,7 @@ import {
   EnrollmentStatus,
   LocalizedText,
   PositionStatus,
+  RichText,
   WorkplaceMode,
   type ContactLink,
   type CourseInput,
@@ -21,9 +22,11 @@ import type {
 } from '@core/entities';
 import {
   LocalDate,
+  Locale,
   LocationId,
   MinuteOfDay,
   Result,
+  Tag,
   type CourseId,
   type EventId,
   type PositionId,
@@ -320,6 +323,34 @@ export const ProgramsSystem = {
           ? EnrollmentStatus.Closed
           : EnrollmentStatus.Open,
     };
+  },
+
+  /**
+   * A description as the editor typed it, judged: the Markdown per
+   * language to store; `null` for none — every language blank — whose
+   * document is then removed; or what refuses it: written in one language
+   * it is owed in each (`LocalizedText.parse`), and no language may hold
+   * more than `RichText.BODY_MAX_CHARS`.
+   */
+  body(raw: LocalizedText): FieldResult<LocalizedText | null> {
+    if (raw.bg.trim().length === 0 && raw.en.trim().length === 0) {
+      return Result.ok(null);
+    }
+    const text = LocalizedText.parse(raw);
+    if (!text.ok) return text;
+    const tooLong: ProgramFieldError[] = [];
+    for (const locale of Tag.values(Locale)) {
+      const length = text.value[locale].length;
+      if (length > RichText.BODY_MAX_CHARS) {
+        tooLong.push(
+          EngagementError.program(
+            EngagementErrorCode.ProgramBodyTooLong,
+            length,
+          ),
+        );
+      }
+    }
+    return tooLong.length > 0 ? Result.err(tooLong) : text;
   },
 
   /**

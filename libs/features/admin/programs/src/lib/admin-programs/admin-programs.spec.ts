@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { UiRichTextEditor } from '@creativo/ui/controls/rich-text-editor';
 import {
   Component,
   EnvironmentProviders,
@@ -18,6 +19,7 @@ import {
   EnrollmentStatus,
   LocationStatus,
   PositionStatus,
+  RichText,
 } from '@core/components';
 import type { ShopLocation } from '@core/entities';
 import type { ProgramsPorts } from '@core/ports';
@@ -1584,5 +1586,173 @@ describe('AdminPrograms', () => {
 
       expect(rowsOf(host, 'admin-events-list')).toHaveLength(0);
     });
+  });
+});
+
+describe('AdminPrograms — a role’s description (rich text)', () => {
+  const stored = positionOf('pos_1');
+  const text = textFixture('# What you do\n\nCut **hair**.', '# Какво правиш');
+
+  /** The description's editor in the sheet. */
+  const editorOf = (fixture: ComponentFixture<AdminPrograms>) =>
+    fixture.debugElement.query(By.directive(UiRichTextEditor));
+
+  /** The editor answers `markdown`, as it does when its words change. */
+  function typeBody(
+    fixture: ComponentFixture<AdminPrograms>,
+    markdown: string,
+  ): void {
+    editorOf(fixture).triggerEventHandler('uiMarkdownChange', markdown);
+    fixture.detectChanges();
+  }
+
+  async function openStored(
+    seed: ProgramsWorldSeed,
+    scripted?: (double: ProgramsPorts) => Partial<ProgramsPorts>,
+  ) {
+    const page = await configure(seed, scripted);
+    rowsOf(page.host, 'admin-positions-list')[0]?.click();
+    await settle(page.fixture);
+    return page;
+  }
+
+  it('hands the stored description to the editor in the language in view, once it is read', async () => {
+    const { fixture, host } = await openStored({
+      positions: [stored],
+      positionBodies: [{ id: stored.id, body: text }],
+    });
+
+    const editor = editorOf(fixture);
+    expect(editor.componentInstance.uiMarkdown()).toBe(text.bg);
+    expect(editor.componentInstance.uiDisabled()).toBe(false);
+    expect(editor.nativeElement.getAttribute('lang')).toBe('bg');
+
+    click(host, 'admin-language-en');
+    fixture.detectChanges();
+    expect(editorOf(fixture).componentInstance.uiMarkdown()).toBe(text.en);
+  });
+
+  it('opens a role with no description on an empty, unlocked editor', async () => {
+    const { fixture, host } = await openStored({ positions: [stored] });
+    expect(editorOf(fixture).componentInstance.uiMarkdown()).toBe('');
+    expect(editorOf(fixture).componentInstance.uiDisabled()).toBe(false);
+    expect(host.querySelector('ui-rich-text-editor')).not.toBeNull();
+  });
+
+  it('saves the description beside the role, whole, in both languages', async () => {
+    const { fixture, host, world } = await openStored({ positions: [stored] });
+
+    typeBody(fixture, '## Ново');
+    click(host, 'admin-language-en');
+    fixture.detectChanges();
+    typeBody(fixture, '## New');
+    click(host, 'admin-save');
+    await settle(fixture);
+
+    expect(world.positionBodies.get(stored.id)).toEqual({
+      id: stored.id,
+      body: { bg: '## Ново', en: '## New' },
+    });
+    expect(formOpen(fixture)).toBe(false);
+  });
+
+  it('owes the other language once the description is written in one, and writes nothing', async () => {
+    const { fixture, host, world } = await openStored({ positions: [stored] });
+
+    typeBody(fixture, '## Ново');
+    click(host, 'admin-save');
+    await settle(fixture);
+
+    expect(world.positionBodies.size).toBe(0);
+    expect(formOpen(fixture)).toBe(true);
+    // The sheet turns to the language that owes it and marks the editor.
+    const editor = editorOf(fixture);
+    expect(editor.nativeElement.getAttribute('lang')).toBe('en');
+    expect(editor.componentInstance.uiInvalid()).toBe(true);
+    expect(editor.nativeElement.hasAttribute('data-owed')).toBe(true);
+  });
+
+  it('removes the stored description when it is cleared in every language', async () => {
+    const { fixture, host, world } = await openStored({
+      positions: [stored],
+      positionBodies: [{ id: stored.id, body: text }],
+    });
+
+    typeBody(fixture, '');
+    click(host, 'admin-language-en');
+    fixture.detectChanges();
+    typeBody(fixture, '');
+    click(host, 'admin-save');
+    await settle(fixture);
+
+    expect(world.positionBodies.has(stored.id)).toBe(false);
+    expect(formOpen(fixture)).toBe(false);
+  });
+
+  it('leaves a description it could not read alone: the editor is locked and a save writes the role only', async () => {
+    const { fixture, host, world } = await openStored(
+      {
+        positions: [stored],
+        positionBodies: [{ id: stored.id, body: text }],
+      },
+      () => ({
+        loadPositionBody: async () => Result.err(RepositoryError.unavailable()),
+      }),
+    );
+
+    expect(editorOf(fixture).componentInstance.uiDisabled()).toBe(true);
+    click(host, 'admin-save');
+    await settle(fixture);
+
+    expect(world.positionBodies.get(stored.id)).toEqual({
+      id: stored.id,
+      body: text,
+    });
+    expect(formOpen(fixture)).toBe(false);
+  });
+
+  it('refuses a description over the size limit before anything is sent', async () => {
+    const { fixture, host, world } = await openStored({ positions: [stored] });
+    const tooLong = 'я'.repeat(RichText.BODY_MAX_CHARS + 1);
+
+    typeBody(fixture, tooLong);
+    click(host, 'admin-language-en');
+    fixture.detectChanges();
+    typeBody(fixture, 'Words.');
+    click(host, 'admin-save');
+    await settle(fixture);
+
+    expect(world.positionBodies.size).toBe(0);
+    expect(world.positions.get(stored.id)).toEqual(stored);
+    expect(formOpen(fixture)).toBe(true);
+    expect(textOf(host, 'admin-save-error')).toBe(
+      'The description is too long. Shorten it.',
+    );
+  });
+
+  it('keeps the sheet on the stored role when its description fails to save, so a second save does not create it twice', async () => {
+    const page = await configure({}, () => ({
+      savePositionBody: async () => Result.err(RepositoryError.unavailable()),
+    }));
+    const { fixture, host, world } = page;
+    click(host, 'admin-new');
+    await settle(fixture);
+    fillInput(host, 'admin-position-title-bg', 'Бръснар');
+    fillInput(host, 'admin-position-summary-bg', 'Пет дни.');
+    typeBody(fixture, '## Ново');
+    click(host, 'admin-language-en');
+    fixture.detectChanges();
+    fillInput(host, 'admin-position-title-en', 'Barber');
+    fillInput(host, 'admin-position-summary-en', 'Five days.');
+    typeBody(fixture, '## New');
+
+    click(host, 'admin-save');
+    await settle(fixture);
+    expect(world.positions.size).toBe(1);
+    expect(formOpen(fixture)).toBe(true);
+
+    click(host, 'admin-save');
+    await settle(fixture);
+    expect(world.positions.size).toBe(1);
   });
 });

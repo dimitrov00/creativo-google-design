@@ -26,7 +26,7 @@
  *   @uiPartOf   the parent's name, e.g. `ui-menu`
  *   @uiPurpose  one sentence
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import prettier from 'prettier';
@@ -301,8 +301,23 @@ export function render(libraries) {
 export function collect(root = WORKSPACE_ROOT) {
   return LIBRARIES.map((name) => {
     const source = join(root, 'libs/ui', name, 'src');
-    const barrel = readFileSync(join(source, 'index.ts'), 'utf8');
-    const elements = exportedFiles(barrel).flatMap((specifier) => {
+    // The barrel, and every entry of its own beside it (an element kept
+    // out of the barrel so only the screens that mount it load it —
+    // `rich-text-editor.ts`).
+    const entries = readdirSync(source)
+      .filter(
+        (file) =>
+          file.endsWith('.ts') &&
+          !file.endsWith('.spec.ts') &&
+          file !== 'test-setup.ts',
+      )
+      .sort((a, b) =>
+        a === 'index.ts' ? -1 : b === 'index.ts' ? 1 : a.localeCompare(b),
+      );
+    const specifiers = entries.flatMap((entry) =>
+      exportedFiles(readFileSync(join(source, entry), 'utf8')),
+    );
+    const elements = specifiers.flatMap((specifier) => {
       const file = join(source, `${specifier}.ts`);
       if (!existsSync(file)) return [];
       return parseElements(readFileSync(file, 'utf8'), relative(root, file));
