@@ -14,6 +14,7 @@ export * from './lib/detent-sheet/detent-sheet';
 export * from './lib/gauge/gauge';
 export * from './lib/list-group/list-group';
 export * from './lib/list-row/list-row';
+export * from './lib/check-list/check-list';
 export * from './lib/swipe-actions/swipe-actions';
 export * from './lib/mark-scale/mark-scale';
 export * from './lib/marked-text/marked-text';

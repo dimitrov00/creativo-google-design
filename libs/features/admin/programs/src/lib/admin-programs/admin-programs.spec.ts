@@ -186,10 +186,15 @@ function shopChipsOf(host: HTMLElement): string[] {
     host.querySelectorAll<HTMLButtonElement>(
       '[data-testid="admin-position-shops-all"], [data-testid^="admin-position-shop-"]',
     ),
-    // The switch is named by its label; a shop row by its words. Either
-    // is «✓» while it is on.
-    (control) =>
-      `${control.textContent?.trim() || control.getAttribute('aria-label')}${control.getAttribute('aria-checked') === 'true' ? ' ✓' : ''}`,
+    // The head and each shop, by their words; «✓» when chosen, «–» when
+    // only some of what the head stands for is.
+    (control) => {
+      const words = control
+        .querySelector('.ui-check-list__label')
+        ?.textContent?.trim();
+      const state = control.getAttribute('aria-checked');
+      return `${words}${state === 'true' ? ' ✓' : state === 'mixed' ? ' –' : ''}`;
+    },
   );
 }
 
@@ -842,9 +847,9 @@ describe('AdminPrograms', () => {
 
       rowsOf(host, 'admin-positions-list')[0]?.click();
       fixture.detectChanges();
-      // Prefilled from the stored scope — «Във всички салони» is off.
+      // Prefilled from the stored scope: both named, so the head is whole.
       expect(shopChipsOf(host)).toEqual([
-        'At every shop',
+        'All shops ✓',
         'Center ✓',
         'Mladost ✓',
       ]);
@@ -875,7 +880,7 @@ describe('AdminPrograms', () => {
       ]);
     });
 
-    it('edits the scope through the switch and the shop rows (OR-42)', async () => {
+    it('edits the scope through the check list (OR-42)', async () => {
       const { fixture, host, world } = await configure({
         locations: [CENTER, MLADOST],
         positions: [positionOf('pos_1')],
@@ -883,42 +888,78 @@ describe('AdminPrograms', () => {
 
       rowsOf(host, 'admin-positions-list')[0]?.click();
       fixture.detectChanges();
-      // Open at every shop: the switch is on and no shop is listed.
-      expect(shopChipsOf(host)).toEqual(['At every shop ✓']);
-
-      click(host, 'admin-position-shops-all');
-      fixture.detectChanges();
-      expect(shopChipsOf(host)).toEqual(['At every shop', 'Center', 'Mladost']);
-      expect(textOf(host, 'admin-position-shops-hint')).toBe(
-        'Choose the shops. With none chosen the role stays open at every shop.',
-      );
-
-      click(host, 'admin-position-shop-loc-mladost');
-      fixture.detectChanges();
+      // Open at every shop: the head and every shop are checked.
       expect(shopChipsOf(host)).toEqual([
-        'At every shop',
-        'Center',
+        'All shops ✓',
+        'Center ✓',
         'Mladost ✓',
       ]);
-      expect(
-        host.querySelector('[data-testid="admin-position-shops-hint"]'),
-      ).toBeNull();
-      click(host, 'admin-save');
-      await settle(fixture);
-      expect(world.positions.get(PositionId.of('pos_1'))?.locationIds).toEqual([
-        MLADOST.id,
-      ]);
 
-      // The switch back on clears the scope: every shop again, written `[]`.
-      rowsOf(host, 'admin-positions-list')[0]?.click();
+      click(host, 'admin-position-shop-loc-center');
       fixture.detectChanges();
+      expect(shopChipsOf(host)).toEqual(['All shops –', 'Center', 'Mladost ✓']);
+      expect(textOf(host, 'admin-position-shops-all')).toContain('1 of 2');
+
+      // From «some», the head chooses every shop — "every shop", written `[]`.
       click(host, 'admin-position-shops-all');
       fixture.detectChanges();
+      expect(shopChipsOf(host)).toEqual([
+        'All shops ✓',
+        'Center ✓',
+        'Mladost ✓',
+      ]);
       click(host, 'admin-save');
       await settle(fixture);
       expect(world.positions.get(PositionId.of('pos_1'))?.locationIds).toEqual(
         [],
       );
+
+      // One shop taken off names the rest.
+      rowsOf(host, 'admin-positions-list')[0]?.click();
+      fixture.detectChanges();
+      click(host, 'admin-position-shop-loc-center');
+      fixture.detectChanges();
+      click(host, 'admin-save');
+      await settle(fixture);
+      expect(world.positions.get(PositionId.of('pos_1'))?.locationIds).toEqual([
+        MLADOST.id,
+      ]);
+    });
+
+    it('refuses a role limited to no shop, and says so on the list', async () => {
+      const stored = positionOf('pos_1', { locationIds: [MLADOST.id] });
+      const { fixture, host, world } = await configure({
+        locations: [CENTER, MLADOST],
+        positions: [stored],
+      });
+
+      rowsOf(host, 'admin-positions-list')[0]?.click();
+      fixture.detectChanges();
+      click(host, 'admin-position-shop-loc-mladost');
+      fixture.detectChanges();
+      expect(shopChipsOf(host)).toEqual(['All shops', 'Center', 'Mladost']);
+      expect(
+        host.querySelector('[data-testid="admin-position-shops-hint"]'),
+      ).toBeNull();
+
+      click(host, 'admin-save');
+      await settle(fixture);
+
+      expect(world.positions.get(stored.id)).toEqual(stored);
+      expect(formOpen(fixture)).toBe(true);
+      expect(textOf(host, 'admin-position-shops-hint')).toBe(
+        'Choose at least one shop.',
+      );
+      expect(
+        host.querySelector('ui-check-list')?.hasAttribute('data-invalid'),
+      ).toBe(true);
+
+      // Choosing one takes the refusal away.
+      click(host, 'admin-position-shop-loc-center');
+      fixture.detectChanges();
+      expect(
+        host.querySelector('[data-testid="admin-position-shops-hint"]'),
+      ).toBeNull();
     });
 
     it('shows a stored shop the list does not hold as a hidden or deleted chip, kept on save', async () => {
@@ -931,7 +972,7 @@ describe('AdminPrograms', () => {
       rowsOf(host, 'admin-positions-list')[0]?.click();
       await settle(fixture);
       expect(shopChipsOf(host)).toEqual([
-        'At every shop',
+        'All shops –',
         'Center ✓',
         'Mladost',
         'Old Town (hidden) ✓',
@@ -940,7 +981,7 @@ describe('AdminPrograms', () => {
 
       await inBulgarian(fixture);
       expect(shopChipsOf(host)).toEqual([
-        'Във всички салони',
+        'Всички салони –',
         'Център ✓',
         'Младост',
         'Стария град (скрит) ✓',

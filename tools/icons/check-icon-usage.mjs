@@ -91,6 +91,8 @@ export const INLINE_SVG_ALLOWED = [
   'libs/ui/controls/src/lib/progress-ring/progress-ring.ts',
   'libs/ui/patterns/src/lib/toast/toast.ts',
   'libs/ui/patterns/src/lib/progress-disc/progress-disc.ts',
+  // The check list's mark: a check and a dash that draw themselves.
+  'libs/ui/patterns/src/lib/check-list/check-list.ts',
   'libs/ui/patterns/src/lib/gauge/gauge.ts',
   // The chart kit's drawings (staff-analytics-v2 «Chart kit»): hand-drawn
   // SVG over the DS tokens, chosen by the chart-library survey.

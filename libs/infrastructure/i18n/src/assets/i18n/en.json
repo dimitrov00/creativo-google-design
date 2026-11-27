@@ -3014,8 +3014,9 @@
       "position": {
         "summary": "Summary",
         "shops": "Shops",
-        "shopsAll": "At every shop",
-        "shopsHint": "Choose the shops. With none chosen the role stays open at every shop."
+        "shopsAll": "All shops",
+        "shopsCount": "{{count}} of {{total}}",
+        "shopsHint": "Choose at least one shop."
       },
       "course": {
         "startsLabel": "When it starts — e.g. “Spring 2026”"

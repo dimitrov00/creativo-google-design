@@ -1,0 +1,203 @@
+@layer sys-components {
+  .ui-check-list {
+    --ui-check-size: 1.375rem;
+    --ui-check-trace: var(--sys-color-separator);
+    display: block;
+  }
+
+  /* ── THE MARK ────────────────────────────────────────────────────────────
+     A ring at rest. Chosen, a disc in the house's one orange grows from its
+     centre on the snappy spring and the check draws itself across it — the
+     accent as a SHAPE, its glyph in the on-accent ink (the accent law, as
+     the date picker's chosen day and the person tile's check). */
+  .ui-check-list__mark {
+    position: relative;
+    flex: none;
+    display: grid;
+    place-items: center;
+    inline-size: var(--ui-check-size);
+    block-size: var(--ui-check-size);
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1.5px var(--sys-color-tertiary-label);
+    transition: box-shadow var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-standard);
+  }
+
+  .ui-check-list__mark::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--sys-color-accent);
+    scale: 0.4;
+    opacity: 0;
+    transition:
+      scale var(--sys-motion-spring-snappy),
+      opacity var(--sys-motion-duration-instant) var(--sys-motion-ease-standard);
+  }
+
+  .ui-check-list__mark:not([data-state='OFF']) {
+    box-shadow: inset 0 0 0 1.5px transparent;
+  }
+
+  .ui-check-list__mark:not([data-state='OFF'])::before {
+    scale: 1;
+    opacity: 1;
+  }
+
+  .ui-check-list__mark > svg {
+    position: relative;
+    inline-size: 100%;
+    block-size: 100%;
+    fill: none;
+    stroke: var(--sys-color-on-accent);
+    stroke-width: 2.2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  /* Each glyph is one stroke of length 1 (`pathLength`), hidden by an
+     offset of its whole length and DRAWN by taking the offset away. A check
+     and a dash trade places by one drawing as the other is taken back. */
+  .ui-check-list__check,
+  .ui-check-list__dash {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    transition: stroke-dashoffset var(--sys-motion-duration-regular)
+      var(--sys-motion-ease-emphasized);
+  }
+
+  .ui-check-list__mark[data-state='ON'] .ui-check-list__check,
+  .ui-check-list__mark[data-state='MIXED'] .ui-check-list__dash {
+    stroke-dashoffset: 0;
+    /* The stroke follows the disc: it starts once there is something to
+       draw on. */
+    transition-delay: 80ms;
+  }
+
+  /* THE HEAD CHOSE EVERYTHING: the rows answer one after another, a beat
+     apart. Only on the way IN — a row cleared answers at once. */
+  .ui-check-list__item .ui-check-list__mark:not([data-state='OFF'])::before {
+    transition-delay: calc(var(--ui-check-order, 0) * 40ms);
+  }
+  .ui-check-list__item
+    .ui-check-list__mark[data-state='ON']
+    .ui-check-list__check {
+    transition-delay: calc(80ms + var(--ui-check-order, 0) * 40ms);
+  }
+
+  /* Nothing chosen where something must be: the rings take the red. */
+  .ui-check-list[data-invalid] .ui-check-list__mark[data-state='OFF'] {
+    box-shadow: inset 0 0 0 1.5px var(--sys-color-destructive);
+  }
+
+  /* ── THE SURFACE AND ITS ROWS ────────────────────────────────────────────
+     One card on the grouped-list fill at the group's own corner. The rows
+     carry no fill of their own and nothing divides them: the trace is the
+     only line, so the tree reads as one thing. The surface clips, so a
+     row's hover and press wash takes the card's corners at its ends. */
+  .ui-check-list__surface {
+    display: flex;
+    flex-direction: column;
+    overflow: clip;
+    border-radius: var(--control-radius-prominent);
+    background: var(--sys-color-surface-secondary);
+    padding-block: var(--sys-space-tight);
+  }
+
+  .ui-check-list__row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--sys-space-compact);
+    box-sizing: border-box;
+    inline-size: 100%;
+    min-block-size: var(--control-size-regular);
+    padding-block: 0;
+    padding-inline: var(--sys-space-regular);
+    border: 0;
+    background: transparent;
+    color: var(--sys-color-foreground);
+    font: var(--sys-font-body);
+    text-align: start;
+  }
+
+  .ui-check-list__row:disabled {
+    opacity: var(--sys-opacity-disabled);
+    cursor: default;
+  }
+
+  /* A row answers a press with the wash alone: a branch that shrank would
+     pull its piece of the trace out of line. */
+  .ui-check-list__row.ui-check-list__row:active {
+    transform: none;
+  }
+
+  .ui-check-list__row:focus-visible {
+    outline-offset: calc(-1 * var(--sys-focus-ring-width));
+  }
+
+  .ui-check-list__label {
+    flex: 1 1 auto;
+    min-inline-size: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* The head speaks for the rest, a weight heavier. Each row under it is
+     set in by one mark and a gap, and hung from the head by the trace. */
+  .ui-check-list__head {
+    font-weight: 600;
+  }
+
+  .ui-check-list__item {
+    --ui-check-inset: calc(var(--ui-check-size) + var(--sys-space-compact));
+    padding-inline-start: calc(
+      var(--sys-space-regular) + var(--ui-check-inset)
+    );
+  }
+
+  /* THE TRACE: a hairline dropping from under the head's mark and turning
+     into each row with a rounded elbow. ONE pseudo-element per row (the
+     row's ::after is the shared state layer's): it reaches back up to the
+     middle of the row above, so the line runs unbroken from row to row —
+     the rows are one height, which is what lets a percentage of this row
+     stand for the one above. Under the head it starts just below the
+     head's mark instead. */
+  .ui-check-list__item::before {
+    content: '';
+    position: absolute;
+    inset-inline-start: calc(
+      var(--sys-space-regular) + var(--ui-check-size) / 2 - 0.75px
+    );
+    inset-block-start: -50%;
+    block-size: 100%;
+    inline-size: calc(var(--ui-check-inset) - var(--ui-check-size) / 2 - 4px);
+    border-inline-start: 1.5px solid var(--ui-check-trace);
+    border-block-end: 1.5px solid var(--ui-check-trace);
+    border-end-start-radius: var(--sys-space-compact);
+    pointer-events: none;
+  }
+
+  .ui-check-list__head + .ui-check-list__item::before {
+    --ui-check-drop: calc(var(--ui-check-size) / 2 + 3px);
+    inset-block-start: calc(-50% + var(--ui-check-drop));
+    block-size: calc(100% - var(--ui-check-drop));
+  }
+
+  .ui-check-list__detail {
+    flex: none;
+    color: var(--sys-color-secondary-label);
+    font: var(--sys-font-callout);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ui-check-list__mark,
+    .ui-check-list__mark::before,
+    .ui-check-list__check,
+    .ui-check-list__dash {
+      transition: none;
+    }
+  }
+}

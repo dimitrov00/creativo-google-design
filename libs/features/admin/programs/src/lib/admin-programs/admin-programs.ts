@@ -46,11 +46,12 @@ import {
   UiModalSheet,
   type UiSegment,
   UiSegmentedControl,
-  UiSwitch,
   UiTextField,
 } from '@creativo/ui/controls';
 import { UiStack } from '@creativo/ui/layout';
 import {
+  type UiCheckOption,
+  UiCheckList,
   UiListGroup,
   UiListRow,
   UiMenu,
@@ -221,6 +222,7 @@ const NO_SHOP = '';
     SiteHeaderComponent,
     TranslocoDirective,
     UiButton,
+    UiCheckList,
     UiChoiceMenu,
     UiForegroundStyleDirective,
     UiFrameDirective,
@@ -242,7 +244,6 @@ const NO_SHOP = '';
     UiStack,
     UiSwipeAction,
     UiSwipeActions,
-    UiSwitch,
     UiTextDirective,
     UiTextField,
     UiVisuallyHiddenDirective,
@@ -382,7 +383,9 @@ export class AdminPrograms {
    * the ids, because the switch may be off with no shop chosen yet.
    */
   protected readonly shopsLimited = signal(false);
-  /** The shops the rows name, in the order they were chosen; empty = every shop. */
+  /** A save was refused because no shop is chosen: the list says so. */
+  protected readonly shopsOwedShown = signal(false);
+  /** The shops the role names; empty with the list unlimited = every shop. */
   protected readonly positionShopIds = signal<readonly LocationId[]>([]);
   protected readonly positionApplyUrl = signal('');
 
@@ -584,6 +587,34 @@ export class AdminPrograms {
           ? 'admin.programs.editor.newCourse'
           : 'admin.programs.editor.newEvent';
     return this.transloco.translate(key, {}, lang);
+  });
+
+  /** The role's shops as the check list offers them. */
+  protected readonly shopOptions = computed((): readonly UiCheckOption[] =>
+    this.shopChoices().map((choice) => ({
+      id: choice.id,
+      label: choice.label,
+      testId: `admin-position-shop-${choice.id}`,
+    })),
+  );
+
+  /** What the list shows chosen: the shops named, or — open at every shop — all of them. */
+  protected readonly shopsSelected = computed((): readonly string[] =>
+    this.shopsLimited()
+      ? this.positionShopIds()
+      : this.shopChoices().map((choice) => choice.id),
+  );
+
+  /** «1 от 2» beside the head while only some shops are chosen. */
+  protected readonly shopsSummary = computed((): string | null => {
+    const lang = this.loadedLang();
+    const count = this.positionShopIds().length;
+    if (!this.shopsLimited() || count === 0 || lang === null) return null;
+    return this.transloco.translate(
+      'admin.programs.position.shopsCount',
+      { count, total: this.shopChoices().length },
+      lang,
+    );
   });
 
   /** The translated fields of the kind of program in the sheet, in form order. */
@@ -925,13 +956,20 @@ export class AdminPrograms {
   }
 
   /**
-   * «Във всички салони» flipped. On: the role names no shop of its own —
-   * open at every one, the ones opened later too. Off: the shops appear to
-   * be chosen from, none chosen yet.
+   * The check list answered. Every shop chosen is stored as "every shop"
+   * (`[]`, OR-42) — the ones opened later too; anything less is the shops
+   * named, in the list's order. None chosen is kept as typed and refused
+   * at the save.
    */
-  protected setEveryShop(every: boolean): void {
+  protected pickShops(ids: readonly string[]): void {
+    const choices = this.shopChoices();
+    const picked = choices
+      .filter((choice) => ids.includes(choice.id))
+      .map((choice) => choice.id);
+    const every = picked.length === choices.length;
     this.shopsLimited.set(!every);
-    if (every) this.positionShopIds.set([]);
+    this.positionShopIds.set(every ? [] : picked);
+    if (picked.length > 0) this.shopsOwedShown.set(false);
   }
 
   /** The switcher picked a language: the translated fields show it. */
@@ -972,20 +1010,6 @@ export class AdminPrograms {
     }
   }
 
-  /** A shop row toggled: off when chosen, else appended — the chosen order is kept. */
-  protected toggleShop(id: LocationId): void {
-    const chosen = this.positionShopIds();
-    this.positionShopIds.set(
-      chosen.includes(id)
-        ? chosen.filter((entry) => entry !== id)
-        : [...chosen, id],
-    );
-  }
-
-  protected shopChosen(id: LocationId): boolean {
-    return this.positionShopIds().includes(id);
-  }
-
   protected async save(): Promise<void> {
     const editing = this.editing();
     if (!editing) return;
@@ -1002,6 +1026,24 @@ export class AdminPrograms {
         () =>
           this.host.nativeElement
             .querySelector<HTMLElement>('[data-owed]')
+            ?.focus(),
+        { injector: this.injector },
+      );
+      return;
+    }
+    // A role limited to no shop at all: nothing is sent, the list says so.
+    if (
+      editing.programEditing === ProgramEditing.Position &&
+      this.shopsShown() &&
+      this.shopsLimited() &&
+      this.positionShopIds().length === 0
+    ) {
+      this.shopsOwedShown.set(true);
+      this.saveRefusals.set(null);
+      afterNextRender(
+        () =>
+          this.host.nativeElement
+            .querySelector<HTMLElement>('ui-check-list [role="checkbox"]')
             ?.focus(),
         { injector: this.injector },
       );
@@ -1075,6 +1117,7 @@ export class AdminPrograms {
   private openOn(): void {
     this.language.set(DEFAULT_LOCALE);
     this.owedShown.set(false);
+    this.shopsOwedShown.set(false);
   }
 
   /**
