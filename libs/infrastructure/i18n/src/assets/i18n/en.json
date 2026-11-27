@@ -3014,8 +3014,7 @@
         "where": "Where",
         "when": "When and where",
         "apply": "Applying",
-        "enrollment": "Enrolment",
-        "visibility": "Visibility"
+        "enrollment": "Enrolment"
       },
       "saveFailed": "Couldn't save. Check the required fields and try again.",
       "field": {
@@ -3026,8 +3025,8 @@
         "linkHint": "Optional. Without a link the button opens Instagram."
       },
       "position": {
-        "open": "Open for applications",
-        "openHint": "A closed role is not shown on the careers page.",
+        "open": "Active",
+        "openHint": "An inactive role is not shown on the careers page.",
         "workplace": "Workplace",
         "summary": "Summary",
         "shops": "Shops",

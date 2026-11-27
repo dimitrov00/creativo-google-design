@@ -866,7 +866,7 @@ describe('AdminPrograms', () => {
       );
     });
 
-    it('names each section of the sheet for what it asks', async () => {
+    it('names each section of the sheet for what it asks, the «Active» switch standing alone', async () => {
       const { fixture, host } = await configure({
         positions: [positionOf('pos_1')],
       });
@@ -878,7 +878,7 @@ describe('AdminPrograms', () => {
         [...host.querySelectorAll('.lib-admin-programs__section h3')].map(
           (heading) => heading.textContent?.trim(),
         ),
-      ).toEqual(['About the role', 'Where', 'Applying', 'Visibility']);
+      ).toEqual(['About the role', 'Where', 'Applying']);
     });
 
     it('keeps the stored scope on an edit (OR-42)', async () => {

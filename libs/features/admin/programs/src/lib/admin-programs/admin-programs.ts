@@ -873,7 +873,7 @@ export class AdminPrograms {
     if (next !== undefined) this.setTab(next);
   }
 
-  /** The switch «Приема кандидати»: on is open, off is closed. */
+  /** The switch «Активна»: on is open, off is closed. */
   protected setPositionOpen(open: boolean): void {
     this.positionStatus.set(open ? PositionStatus.Open : PositionStatus.Closed);
   }
