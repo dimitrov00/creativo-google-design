@@ -19,6 +19,7 @@
   "// routes 2026-11-27, later": "Client profile given a ceiling of its own, 1.58 MB (built 1.5500, 4 bytes over the 1.55 default it stood just under): the programs editor's work adds about 1 kB to the chunks every route loads — two selection glyphs, the segmented control's attention dot, and the translated-text helpers (blank, with, owedLocales). About 2% above the build.",
   "// routes 2026-11-27, check list": "Client booking to 1.84 MB (built 1.8056, 5.6 kB over the 1.80) and support to 1.61 MB (built 1.5827, 2.7 kB over the 1.58): `ui-check-list` (the tri-state head, its rows, the trace and the drawn check, about 6.7 kB with its styles) lands in the shared design-system chunk every feature route loads, because the builder keeps the `@creativo/ui/patterns` barrel whole. About 2% above the builds. Staff analytics (1.1 kB) and client appointments (4.3 kB) now stand just under theirs.",
   "// routes 2026-11-27, contacts": "Staff analytics to 1.97 MB, client appointments to 1.72 MB and client onboarding to 1.67 MB, each about 2% above its build and each a few kB over a ceiling it already stood just under. The cause is the programs' ways to answer (phone, e-mail, Instagram, link): the contact parsing and links in `ProgramsSystem`, which rides the systems chunk every route loads, and the sheet's first-focus mark — a few kB together.",
+  "// routes 2026-11-27, role sheet": "The team member page to 1.63 MB, about 2% above its build (1.5902, a few hundred bytes over the 1.59): the shared contact sheet now also prints a role's words and where it is worked, and it rides the shared catalogue chunk this route loads.",
   "defaultRouteBytes": 1550000,
   "routes": {
     "libs/features/staff/dashboard/src/index.ts": 2180000,
@@ -28,7 +29,7 @@
     "libs/features/client/appointments/src/index.ts": 1720000,
     "libs/features/client/onboarding/src/index.ts": 1670000,
     "libs/features/client/account/src/index.ts": 1630000,
-    "libs/features/admin/team/src/member.route.ts": 1590000,
+    "libs/features/admin/team/src/member.route.ts": 1630000,
     "libs/features/client/profile/src/index.ts": 1580000,
     "libs/features/admin/team/src/support.route.ts": 1610000
   },

@@ -11,8 +11,6 @@ import type { ContactRowVm } from '@creativo/features/shared/catalog';
 /** One role as its row prints it. */
 export type PositionRowVm = {
   readonly id: PositionId;
-  /** «01» — the role's place in the list, two figures wide. */
-  readonly ordinal: string;
   /** «Бръснар — пълно работно време» — the title in the active language. */
   readonly title: string;
   /** The summary in the active language. */

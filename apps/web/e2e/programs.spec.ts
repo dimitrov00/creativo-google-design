@@ -208,7 +208,9 @@ test.describe('programs — a content manager publishes, the public pages show i
     await expect(careersRole.getByTestId('careers-row-workplace')).toHaveText(
       'От вкъщи',
     );
-    await expect(careersRole.getByTestId('careers-apply')).toHaveAttribute(
+    // The row is the door to the role: its sheet lists the way to answer.
+    await careersRole.click();
+    await expect(page.getByTestId('contact-link-EMAIL')).toHaveAttribute(
       'href',
       'mailto:jobs@example.test',
     );

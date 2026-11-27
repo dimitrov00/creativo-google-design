@@ -18,11 +18,12 @@ import { opensNewTab } from './program-contact.presenter';
 import { CONTACT_ICON, type ContactSheetVm } from './program-contact.vm';
 
 /**
- * The ways to answer a role, a course or an event that has more than one:
- * a short sheet under the thing's name, each way a row that opens it — a
- * call, a mail, the Instagram profile, the link. `/careers`, `/courses` and
- * `/events` mount it once and hand it the row that was tapped; a thing with
- * a single way never opens it (its row is the link).
+ * A role, a course or an event, opened: its name, where it is worked and
+ * its words in full when the page hands them over, then the ways to answer
+ * it — each a row that opens a call, a mail, the Instagram profile or the
+ * link. `/careers` opens it for every role (the row is the door to the
+ * role); `/courses` and `/events` open it for a thing answered several
+ * ways, and link a thing answered one way straight from its row.
  *
  * It closes itself: a dismissal plays the sheet's exit, then `uiClosed`
  * tells the page to let go of the row.
@@ -61,14 +62,42 @@ import { CONTACT_ICON, type ContactSheetVm } from './program-contact.vm';
                 id="contact-sheet-title"
                 uiSheetLargeTitle
                 uiText
-                uiFont="title2"
+                uiFont="largeTitle"
               >
                 {{ contact.title }}
               </h2>
-              <p uiText uiFont="subheadline" uiForegroundStyle="secondary">
-                {{ t('programs.contact.choose') }}
-              </p>
+              @if (contact.workplaceTag || contact.shopsLine) {
+                <p
+                  uiText
+                  uiFont="subheadline"
+                  uiForegroundStyle="secondary"
+                  class="cr-contact-sheet__where"
+                  data-testid="contact-sheet-where"
+                >
+                  <ui-icon uiName="location.place" aria-hidden="true" />
+                  <span>
+                    @if (contact.workplaceTag; as tag) {
+                      {{ t('programs.workplace.' + tag) }}
+                    }
+                    @if (contact.workplaceTag && contact.shopsLine) {
+                      ·
+                    }
+                    {{ contact.shopsLine }}</span
+                  >
+                </p>
+              }
             </ui-sheet-headline>
+            @if (contact.summary; as summary) {
+              <p
+                class="cr-contact-sheet__summary"
+                data-testid="contact-sheet-summary"
+              >
+                {{ summary }}
+              </p>
+            }
+            <h3 uiText uiFont="headline" class="cr-contact-sheet__ways">
+              {{ t('programs.contact.choose') }}
+            </h3>
             <ui-list-group>
               @for (link of contact.contacts; track link.contactMethod) {
                 <a
@@ -103,6 +132,23 @@ import { CONTACT_ICON, type ContactSheetVm } from './program-contact.vm';
       min-inline-size: 0;
       padding-inline: var(--modal-sheet-safe);
       padding-block: var(--sys-space-comfortable) var(--sys-space-loose);
+    }
+
+    .cr-contact-sheet__where {
+      display: flex;
+      align-items: center;
+      gap: var(--sys-space-tight);
+      margin: 0;
+    }
+
+    .cr-contact-sheet__summary,
+    .cr-contact-sheet__ways {
+      margin: 0;
+    }
+
+    .cr-contact-sheet__summary {
+      white-space: pre-line;
+      text-wrap: pretty;
     }
   `,
   encapsulation: ViewEncapsulation.None,

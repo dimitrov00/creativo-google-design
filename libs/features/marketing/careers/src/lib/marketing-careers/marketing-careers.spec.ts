@@ -218,117 +218,111 @@ describe('MarketingCareers', () => {
     expect(host.querySelector('[data-testid="careers-list"]')).toBeNull();
   });
 
-  it('hands a call to the device: a role answered by phone alone links to it, in no new tab', async () => {
-    const fixture = await configure([
-      positionOf('pos_1', {
-        contacts: [{ contactMethod: 'PHONE', contactValue: '+359888123456' }],
-      }),
-    ]);
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    const row = (fixture.nativeElement as HTMLElement).querySelector(
-      '[data-testid="careers-list"] a[data-testid="careers-apply"]',
-    );
-    expect(row?.getAttribute('href')).toBe('tel:+359888123456');
-    expect(row?.getAttribute('target')).toBeNull();
-  });
-
-  it('opens the contact sheet for a role answered several ways, each way a link', async () => {
-    const fixture = await configure([
-      positionOf('pos_1', {
-        contacts: [
-          { contactMethod: 'PHONE', contactValue: '+359888123456' },
-          { contactMethod: 'EMAIL', contactValue: 'jobs@example.test' },
-          { contactMethod: 'INSTAGRAM', contactValue: 'creativo' },
-        ],
-      }),
-    ]);
+  /** The page with its first role tapped: the role's sheet is up. */
+  async function openFirstRole(
+    fixture: Awaited<ReturnType<typeof configure>>,
+  ): Promise<HTMLElement> {
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
     const host: HTMLElement = fixture.nativeElement;
-    expect(host.querySelector('[data-testid="contact-sheet"]')).toBeNull();
-
-    host
-      .querySelector<HTMLElement>(
-        '[data-testid="careers-list"] button[data-testid="careers-apply"]',
-      )
-      ?.click();
+    host.querySelector<HTMLElement>('[data-testid="careers-role"]')?.click();
     fixture.detectChanges();
+    return host;
+  }
+  /** The sheet's ways to answer, each as `[href, target]`. */
+  const waysOf = (host: HTMLElement) =>
+    Array.from(
+      host.querySelectorAll('[data-testid^="contact-link-"]'),
+      (link) => [link.getAttribute('href'), link.getAttribute('target')],
+    );
 
-    expect(
-      Array.from(
-        host.querySelectorAll('[data-testid^="contact-link-"]'),
-        (link) => [link.getAttribute('href'), link.getAttribute('target')],
-      ),
-    ).toEqual([
-      ['tel:+359888123456', null],
-      ['mailto:jobs@example.test', null],
-      ['https://www.instagram.com/creativo', '_blank'],
-    ]);
-  });
-
-  it('draws one role per open position, its button linking to its apply URL', async () => {
+  it('lists one row per open role, each a door to the role and none a status capsule', async () => {
     const asked: (PositionStatus | null)[] = [];
-    const fixture = await configure(
-      [
-        positionOf('pos_1', {
-          contacts: [
-            {
-              contactMethod: 'LINK',
-              contactValue: 'https://example.com/apply',
-            },
-          ],
-        }),
-      ],
-      asked,
-    );
+    const fixture = await configure([positionOf('pos_1')], asked);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
 
     const host: HTMLElement = fixture.nativeElement;
-    const list = host.querySelector('[data-testid="careers-list"]');
-    expect(list).not.toBeNull();
-    const apply = list?.querySelector('a[data-testid="careers-apply"]');
-    expect(apply?.getAttribute('href')).toBe('https://example.com/apply');
-    expect(apply?.getAttribute('target')).toBe('_blank');
-    expect(apply?.getAttribute('aria-label')).toBe('Apply for “Barber”');
-    // Every role here is open, so none says so: no status capsule.
-    expect(list?.querySelector('[uibadge]')).toBeNull();
+    const rows = host.querySelectorAll(
+      '[data-testid="careers-list"] button[data-testid="careers-role"]',
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.getAttribute('aria-haspopup')).toBe('dialog');
+    expect(
+      host.querySelector('[data-testid="careers-list"] [uibadge]'),
+    ).toBeNull();
+    expect(host.querySelector('[data-testid="contact-sheet"]')).toBeNull();
     // The page asks for open roles only — once.
     expect(asked).toEqual([PositionStatus.Open]);
   });
 
-  it('falls back to the Instagram link when a position has no contact of its own', async () => {
-    const fixture = await configure([positionOf('pos_1')]);
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
+  it('opens the role: its name, where it is worked, its words in full, and every way to answer', async () => {
+    const host = await openFirstRole(
+      await configure(
+        [
+          positionOf('pos_1', {
+            summary: textFixture('Five days a week.', 'Пет дни в седмицата.'),
+            locationIds: [CENTER.id],
+            contacts: [
+              { contactMethod: 'PHONE', contactValue: '+359888123456' },
+              { contactMethod: 'EMAIL', contactValue: 'jobs@example.test' },
+              { contactMethod: 'INSTAGRAM', contactValue: 'creativo' },
+              {
+                contactMethod: 'LINK',
+                contactValue: 'https://example.com/apply',
+              },
+            ],
+          }),
+        ],
+        [],
+        [CENTER, MLADOST],
+      ),
+    );
 
-    const host: HTMLElement = fixture.nativeElement;
-    const row = host.querySelector(
-      '[data-testid="careers-list"] a[data-testid="careers-apply"]',
-    );
-    expect(row?.getAttribute('href')).toBe(
-      'https://instagram.com/creativo.barbershop',
-    );
+    const sheet = host.querySelector('[data-testid="contact-sheet"]');
+    expect(sheet?.querySelector('h2')?.textContent?.trim()).toBe('Barber');
+    expect(
+      sheet
+        ?.querySelector('[data-testid="contact-sheet-where"]')
+        ?.textContent?.replace(/\s+/g, ' ')
+        .trim(),
+    ).toBe('Center');
+    expect(
+      sheet
+        ?.querySelector('[data-testid="contact-sheet-summary"]')
+        ?.textContent?.trim(),
+    ).toBe('Five days a week.');
+    // A call or a mail is handed to the device; a web address opens beside.
+    expect(waysOf(host)).toEqual([
+      ['tel:+359888123456', null],
+      ['mailto:jobs@example.test', null],
+      ['https://www.instagram.com/creativo', '_blank'],
+      ['https://example.com/apply', '_blank'],
+    ]);
   });
 
-  it('opens on the invitation alone — one heading in the display face, no eyebrow over it', async () => {
+  it("answers a role with no way of its own through the shop's Instagram", async () => {
+    const host = await openFirstRole(await configure([positionOf('pos_1')]));
+
+    expect(waysOf(host)).toEqual([
+      ['https://instagram.com/creativo.barbershop', '_blank'],
+    ]);
+  });
+
+  it("opens on the site's own heading — the title and the lede, no eyebrow over them", async () => {
     const host = await render(await configure([positionOf('pos_1')]));
 
-    const heading = host.querySelector('h1');
-    expect(heading?.textContent?.trim()).toBe(
-      'Come work the other side of the chair',
+    const header = host.querySelector('ui-section-header');
+    expect(header?.querySelector('h1[uititle]')?.textContent?.trim()).toBe(
+      'Come work the other side of the chair.',
     );
-    expect(heading?.getAttribute('data-font')).toBe('display');
+    expect(header?.querySelector('[uilede]')).not.toBeNull();
     expect(host.querySelector('[uieyebrow]')).toBeNull();
   });
 
-  it('counts the open roles beside their heading and numbers each, two figures wide', async () => {
+  it('numbers nothing: a role is its words, not a figure', async () => {
     const host = await render(
       await configure([
         positionOf('pos_1'),
@@ -337,13 +331,10 @@ describe('MarketingCareers', () => {
     );
 
     expect(
-      host.querySelector('[data-testid="careers-count"]')?.textContent?.trim(),
-    ).toBe('2');
-    expect(
-      Array.from(host.querySelectorAll('.cr-careers__ordinal'), (figure) =>
-        figure.textContent?.trim(),
+      Array.from(host.querySelectorAll('[data-testid="careers-role"]'), (row) =>
+        /\d/.test(row.textContent ?? ''),
       ),
-    ).toEqual(['01', '02']);
+    ).toEqual([false, false]);
   });
 
   it("closes on the way in for whoever found no role: the shop's Instagram", async () => {

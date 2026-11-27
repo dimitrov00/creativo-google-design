@@ -1,7 +1,6 @@
 import {
   ContactSheetComponent,
   type ContactSheetVm,
-  opensNewTab,
 } from '@creativo/features/shared/catalog';
 import {
   ChangeDetectionStrategy,
@@ -24,7 +23,13 @@ import {
 } from '@creativo/features/shared/shell';
 import { UiButton, UiIcon, UiSkeleton } from '@creativo/ui/controls';
 import { UiStack } from '@creativo/ui/layout';
-import { UiCard, UiEmptyState } from '@creativo/ui/patterns';
+import {
+  UiCard,
+  UiEmptyState,
+  UiListGroup,
+  UiListRow,
+  UiSectionHeader,
+} from '@creativo/ui/patterns';
 import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
 import { LoadSlice, LoadState } from '@creativo/shared/view-state';
 import { positionRowsVm } from './marketing-careers.presenter';
@@ -58,6 +63,9 @@ const INSTAGRAM_URL = 'https://instagram.com/creativo.barbershop';
     UiEmptyState,
     UiFrameDirective,
     UiIcon,
+    UiListGroup,
+    UiListRow,
+    UiSectionHeader,
     UiSkeleton,
     UiStack,
     UiTextDirective,
@@ -75,7 +83,6 @@ export class MarketingCareers {
   protected readonly instagramUrl = INSTAGRAM_URL;
   /** The row whose ways to answer the sheet lists; `null` while it is shut. */
   protected readonly contactFor = signal<ContactSheetVm | null>(null);
-  protected readonly opensNewTab = opensNewTab;
   /** The dictionary, for the template's `@case`s (never bare literals). */
   protected readonly LoadState = LoadState;
 
@@ -109,6 +116,17 @@ export class MarketingCareers {
       );
     },
   );
+
+  /** A role tapped: its sheet opens on its words and the ways to answer. */
+  protected open(row: PositionRowVm): void {
+    this.contactFor.set({
+      title: row.title,
+      summary: row.summary,
+      workplaceTag: row.workplaceTag,
+      shopsLine: row.shopsLine,
+      contacts: row.contact.contacts,
+    });
+  }
 
   constructor() {
     this.title.setTitle('Careers · Creativo');

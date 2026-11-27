@@ -843,10 +843,7 @@
   "programs": {
     "careers": {
       "back": "Creativo",
-      "title": "Come work the other side of the chair",
-      "open": "Open roles",
-      "apply": "Apply",
-      "applyFor": "Apply for “{{role}}”",
+      "title": "Come work the other side of the chair.",
       "closer": {
         "title": "Don't see your role?",
         "body": "Write to us. There is always a chair for good hands.",
@@ -891,7 +888,7 @@
     },
     "contact": {
       "close": "Close",
-      "choose": "Choose how to get in touch",
+      "choose": "Get in touch",
       "name": {
         "PHONE": "Phone",
         "EMAIL": "Email",

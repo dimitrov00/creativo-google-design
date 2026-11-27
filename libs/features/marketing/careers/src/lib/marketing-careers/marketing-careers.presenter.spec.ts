@@ -73,7 +73,6 @@ describe('positionRowsVm', () => {
     expect(positionRowsVm(input())).toEqual([
       {
         id: SCOPED.id,
-        ordinal: '01',
         title: 'Barber — full time',
         summary: 'Five days a week.',
         shopsLine: 'Center · Creativo · Mladost',
@@ -84,7 +83,6 @@ describe('positionRowsVm', () => {
       // answers: no shops line.
       {
         id: EVERYWHERE.id,
-        ordinal: '02',
         title: 'Barber',
         summary: 'Full-time chair',
         shopsLine: null,
@@ -93,7 +91,6 @@ describe('positionRowsVm', () => {
       },
       {
         id: AT_GONE_SHOP.id,
-        ordinal: '03',
         title: 'Barber',
         summary: 'Full-time chair',
         shopsLine: null,

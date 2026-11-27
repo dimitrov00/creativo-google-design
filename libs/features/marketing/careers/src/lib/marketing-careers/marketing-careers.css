@@ -2,9 +2,9 @@
   display: block;
 }
 
-/* THE CAREERS PAGE — an editorial column: the invitation, the roles, the
-   closer, a section's step apart. Layout only; every face, colour and
-   radius is a token, every control a design-system element. */
+/* THE CAREERS PAGE — the heading, the roles, the closer, a loose step
+   apart in the site's column. Layout only: every face, colour and radius
+   is the design system's, every control one of its elements. */
 .cr-careers {
   display: flex;
   flex-direction: column;
@@ -12,122 +12,17 @@
   /* Clears the fixed, always-solid site header (--landing-header-offset is
      the same app-wide clearance value landing's own anchors scroll-margin
      to). */
-  padding-block: calc(var(--landing-header-offset) + var(--sys-space-loose))
-    var(--sys-space-spacious);
+  padding-block: var(--landing-header-offset) var(--sys-space-spacious);
   /* The site's own side gutter — the header's and the footer's. Without it
      the words ran to the screen's edge on a phone. */
   padding-inline: var(--landing-gutter);
 }
 
-/* The invitation: the display face, held to a few words a line so it
-   breaks where it reads, never mid-thought. */
-.cr-careers__hero {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sys-space-comfortable);
-}
-
-.cr-careers__headline {
-  margin: 0;
-  max-inline-size: 12ch;
-  text-wrap: balance;
-}
-
-.cr-careers__lede {
-  margin: 0;
-  max-inline-size: 34ch;
-  text-wrap: pretty;
-}
-
-.cr-careers__open {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sys-space-regular);
-}
-
-.cr-careers__open-title {
-  display: flex;
-  align-items: center;
-  gap: var(--sys-space-compact);
-  margin: 0;
-}
-
-/* THE FIGURES — how many roles, and each one's number — sit on the accent
-   as a WASH (the header's own capsules): colour is the shape, the figure
-   stays ink, so it reads at any size in both themes. */
-.cr-careers__count,
-.cr-careers__ordinal {
-  display: inline-grid;
-  place-items: center;
-  justify-self: start;
-  box-sizing: border-box;
-  min-inline-size: 2.25rem;
-  block-size: 2.25rem;
-  padding-inline: var(--sys-space-compact);
-  border-radius: var(--control-radius-capsule);
-  background: color-mix(
-    in srgb,
-    var(--sys-color-accent) var(--sys-alpha-tint),
-    transparent
-  );
-  color: var(--sys-color-foreground);
-  font: var(--sys-font-headline);
-  font-variant-numeric: tabular-nums;
-}
-
-.cr-careers__roles {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sys-space-compact);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-/* A ROLE: a set piece on the grouped fill. On a phone it reads top to
-   bottom — number, words, where, the way in across the full width. */
-.cr-careers__role {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--sys-space-comfortable);
-  padding: var(--sys-space-comfortable);
-  border-radius: var(--control-radius-hero);
-  background: var(--sys-color-surface-secondary);
-}
-
-.cr-careers__body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sys-space-compact);
-  min-inline-size: 0;
-}
-
-.cr-careers__role-title,
-.cr-careers__summary,
-.cr-careers__closer-title,
-.cr-careers__closer-body {
-  margin: 0;
-  text-wrap: pretty;
-}
-
-.cr-careers__summary {
-  max-inline-size: 56ch;
-}
-
+/* Where a role is worked: the place glyph and its words on one line. */
 .cr-careers__where {
   display: flex;
   align-items: center;
   gap: var(--sys-space-tight);
-  margin: 0;
-  padding-block-start: var(--sys-space-tight);
-}
-
-.cr-careers__action {
-  display: flex;
-}
-
-.cr-careers__action > * {
-  flex: 1 1 auto;
 }
 
 /* THE CLOSER: one band of the accent's wash, its words ink (the accent
@@ -136,9 +31,9 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--sys-space-regular);
-  padding: var(--sys-space-loose) var(--sys-space-comfortable);
-  border-radius: var(--control-radius-hero);
+  gap: var(--sys-space-compact);
+  padding: var(--sys-space-comfortable);
+  border-radius: var(--control-radius-prominent);
   background: color-mix(
     in srgb,
     var(--sys-color-accent) var(--sys-alpha-tint),
@@ -146,38 +41,12 @@
   );
 }
 
-.cr-careers__closer-title {
-  max-inline-size: 16ch;
+.cr-careers__closer-title,
+.cr-careers__closer-body {
+  margin: 0;
+  text-wrap: pretty;
 }
 
 .cr-careers__closer-body {
-  max-inline-size: 40ch;
-}
-
-/* From a tablet up the number stands beside the words, in the site's own
-   column (the header's and the footer's), and the way in hugs its label
-   under them. */
-@media (width >= 48rem) {
-  .cr-careers {
-    gap: var(--sys-space-section);
-    padding-block-end: var(--sys-space-section);
-  }
-
-  .cr-careers__role {
-    grid-template-columns: 4rem minmax(0, 1fr);
-    column-gap: var(--sys-space-regular);
-    padding: var(--sys-space-loose);
-  }
-
-  .cr-careers__action {
-    grid-column: 2;
-  }
-
-  .cr-careers__action > * {
-    flex: none;
-  }
-
-  .cr-careers__closer {
-    padding: var(--sys-space-spacious);
-  }
+  padding-block-end: var(--sys-space-tight);
 }

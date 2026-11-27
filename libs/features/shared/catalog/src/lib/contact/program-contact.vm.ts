@@ -1,4 +1,8 @@
-import { ContactMethod, type ContactLink } from '@core/components';
+import {
+  ContactMethod,
+  type ContactLink,
+  type WorkplaceMode,
+} from '@core/components';
 import type { UiIconName } from '@creativo/ui/controls';
 
 /*
@@ -16,9 +20,19 @@ export type ContactRowVm = {
   readonly only: ContactLink | null;
 };
 
-/** What the contact sheet is opened for: the thing's name and its ways. */
+/**
+ * What the contact sheet is opened for: the thing's name and the ways to
+ * answer it — and, when the page has them, its words in full and where it
+ * is worked, which make the sheet the thing's own page.
+ */
 export type ContactSheetVm = {
   readonly title: string;
+  /** The thing's description, whole; absent or `null` prints none. */
+  readonly summary?: string | null;
+  /** The workplace tag the sheet words (`programs.workplace.<tag>`). */
+  readonly workplaceTag?: WorkplaceMode | null;
+  /** «Център · Младост» — the shops, already worded. */
+  readonly shopsLine?: string | null;
   readonly contacts: readonly ContactLink[];
 };
 
