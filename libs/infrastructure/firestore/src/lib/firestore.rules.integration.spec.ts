@@ -1236,12 +1236,47 @@ describe('firestore.rules', () => {
     });
 
     it.each(BODIES)(
-      'lets no client delete a %s document, the admin pair included',
+      'lets the thing’s writers remove a %s document, and nobody else',
       async (collectionName, parent, parentBody) => {
         await seed(`${parent}/doc-1`, parentBody);
-        await seed(`${collectionName}/doc-1`, BODY);
-        for (const role of ['content_manager', 'admin', 'sysadmin']) {
+        for (const role of ['client', 'barber', 'receptionist']) {
+          await seed(`${collectionName}/doc-1`, BODY);
           await assertFails(
+            deleteDoc(
+              doc(
+                signedIn(`actor-${role}`, role).firestore(),
+                collectionName,
+                'doc-1',
+              ),
+            ),
+          );
+        }
+        await assertFails(
+          deleteDoc(
+            doc(
+              testEnv.unauthenticatedContext().firestore(),
+              collectionName,
+              'doc-1',
+            ),
+          ),
+        );
+        await assertFails(
+          deleteDoc(
+            doc(
+              testEnv
+                .authenticatedContext('support-1', {
+                  roles: ['admin'],
+                  imp: 'imp-1',
+                })
+                .firestore(),
+              collectionName,
+              'doc-1',
+            ),
+          ),
+        );
+        for (const role of ['content_manager', 'admin', 'sysadmin']) {
+          await seed(`${collectionName}/doc-1`, BODY);
+          await assertSucceeds(
             deleteDoc(
               doc(
                 signedIn(`actor-${role}`, role).firestore(),

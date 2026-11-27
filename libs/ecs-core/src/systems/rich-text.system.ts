@@ -1,4 +1,4 @@
-import { RichSpanStyle, RichText } from '@core/components';
+import { RichBlockKind, RichSpanStyle, RichText } from '@core/components';
 import { ProgramImageId } from '@core/primitives';
 
 /**
@@ -212,8 +212,14 @@ function push(
   out.push(RichText.span(text, style, href));
 }
 
-/** The `**` that ends a bold begun before `from`, or `-1`. */
+/**
+ * The `**` that ends a bold begun before `from`, or `-1`. An italic opened
+ * inside the bold and still open is closed by the first star of a longer
+ * run (`***both***`); with none open, the first two of the run close the
+ * bold and the rest begins what follows (`**a***b*`).
+ */
 function boldCloser(text: string, from: number, end: number): number {
+  let italicOpen = false;
   let at = from;
   while (at < end) {
     const code = text.charCodeAt(at);
@@ -221,10 +227,14 @@ function boldCloser(text: string, from: number, end: number): number {
       at += 2;
     } else if (code === Code.Star) {
       const run = runLength(text, at, end, Code.Star);
-      // The LAST two of a run close it: `***both***` is an italic in a bold.
-      const close = at + run - 2;
-      if (run >= 2 && close > from && !isSpace(text.charCodeAt(close - 1))) {
-        return close;
+      if (run === 1) {
+        const closes = italicOpen && !isSpace(text.charCodeAt(at - 1));
+        const opens =
+          !italicOpen && at + 1 < end && !isSpace(text.charCodeAt(at + 1));
+        if (closes || opens) italicOpen = !italicOpen;
+      } else {
+        const close = italicOpen && run >= 3 ? at + 1 : at;
+        if (close > from && !isSpace(text.charCodeAt(close - 1))) return close;
       }
       at += run;
     } else {
@@ -234,8 +244,14 @@ function boldCloser(text: string, from: number, end: number): number {
   return -1;
 }
 
-/** The single `*` that ends an italic begun before `from`, or `-1`. */
+/**
+ * The single `*` that ends an italic begun before `from`, or `-1`. Two
+ * stars are a bold's mark and are passed over; of a longer run, the star
+ * after a bold still open inside (`*a **b***`), else the first
+ * (`*a***b**`).
+ */
 function starCloser(text: string, from: number, end: number): number {
+  let boldOpen = false;
   let at = from;
   while (at < end) {
     const code = text.charCodeAt(at);
@@ -243,10 +259,14 @@ function starCloser(text: string, from: number, end: number): number {
       at += 2;
     } else if (code === Code.Star) {
       const run = runLength(text, at, end, Code.Star);
-      // Two are a bold's mark and are passed over; of three, the last.
-      const close = at + run - 1;
-      if (run !== 2 && close > from && !isSpace(text.charCodeAt(close - 1))) {
-        return close;
+      if (run === 2) {
+        const closes = boldOpen && !isSpace(text.charCodeAt(at - 1));
+        const opens =
+          !boldOpen && at + 2 < end && !isSpace(text.charCodeAt(at + 2));
+        if (closes || opens) boldOpen = !boldOpen;
+      } else {
+        const close = boldOpen && run >= 3 ? at + 2 : at;
+        if (close > from && !isSpace(text.charCodeAt(close - 1))) return close;
       }
       at += run;
     } else {
@@ -320,6 +340,11 @@ function isLinkHref(href: string): boolean {
   return false;
 }
 
+/** A phone number as typed: digits with spaces, brackets and dashes, a `+` in front. */
+const PHONE_TYPED = /^\+?[\d\s()-]+$/;
+const NOT_DIALLED = /[^\d+]/g;
+const PHONE_MIN_DIGITS = 6;
+
 /**
  * Reads `text[start, end)` into `out` as runs set in the style it is handed.
  * A mark that opens a style already on, or whose partner is not ahead, is
@@ -341,6 +366,8 @@ function scan(
   let noUnderscore = italic;
   let noLabel = href !== null;
   let pending = '';
+  // Where the last `\\`-escaped character stands: it is text, never a mark.
+  let escapedAt = -1;
   let from = start;
   let at = start;
 
@@ -351,6 +378,7 @@ function scan(
       if (at + 1 < end && ESCAPABLE.includes(text.charAt(at + 1))) {
         pending += text.slice(from, at);
         from = at + 1;
+        escapedAt = at + 1;
         at += 2;
       } else {
         at++;
@@ -410,7 +438,10 @@ function scan(
     }
 
     // `![alt](…)` inside a line is a picture out of place, never a link.
-    const afterBang = at > start && text.charCodeAt(at - 1) === Code.Bang;
+    const afterBang =
+      at > start &&
+      escapedAt !== at - 1 &&
+      text.charCodeAt(at - 1) === Code.Bang;
     if (code === Code.BracketOpen && !noLabel && !afterBang) {
       const labelEnd = labelCloser(text, at + 1, end);
       if (labelEnd === -1) noLabel = true;
@@ -443,6 +474,92 @@ function spansOf(text: string): readonly RichText.Span[] {
   const out: RichText.Span[] = [];
   scan(text, 0, text.length, false, false, null, out);
   return out;
+}
+
+// ── Writing ───────────────────────────────────────────────────────────────
+
+/** The marks a run's text is written with a `\` before, so they stay text. */
+const INLINE_MARKS = /[\\*_[\]`]/g;
+/** A line break, with the spaces around it. */
+const BREAKS = /[^\S\n]*\n[\s]*/g;
+const LEADING_SPACE = /^\s+/;
+const TRAILING_SPACE = /\s+$/;
+
+/** A line's first mark written so it does not begin a block. */
+function escapeLineStart(line: string): string {
+  const first = line.charCodeAt(0);
+  if (first === Code.Hash || first === Code.Greater || first === Code.Dash) {
+    return '\\' + line;
+  }
+  if (isDigit(first)) {
+    let at = 0;
+    while (at < line.length && isDigit(line.charCodeAt(at))) at++;
+    if (line.charCodeAt(at) === Code.Dot) {
+      return line.slice(0, at) + '\\' + line.slice(at);
+    }
+  }
+  return line;
+}
+
+/** The marks a style is written between. */
+function marksOf(style: RichSpanStyle): string {
+  switch (style) {
+    case RichSpanStyle.Bold:
+      return '**';
+    case RichSpanStyle.Italic:
+      return '*';
+    case RichSpanStyle.BoldItalic:
+      return '***';
+    default:
+      return '';
+  }
+}
+
+/** One run's words between its marks, the spaces at its edges left outside them. */
+function writeRun(span: RichText.Span, singleLine: boolean): string {
+  const text = span.text.replace(BREAKS, singleLine ? ' ' : '\n');
+  const marks = marksOf(span.richSpanStyle);
+  if (marks === '') return text.replace(INLINE_MARKS, '\\$&');
+  const lead = LEADING_SPACE.exec(text)?.[0] ?? '';
+  if (lead.length === text.length) return text;
+  const trail = TRAILING_SPACE.exec(text)?.[0] ?? '';
+  const words = text.slice(lead.length, text.length - trail.length);
+  return lead + marks + words.replace(INLINE_MARKS, '\\$&') + marks + trail;
+}
+
+/**
+ * A block's runs as one text: each between its marks, the runs of one
+ * address inside one `[label](address)`.
+ */
+function writeSpans(
+  spans: readonly RichText.Span[],
+  singleLine: boolean,
+): string {
+  let out = '';
+  let at = 0;
+  while (at < spans.length) {
+    const href = (spans[at] as RichText.Span).linkHref;
+    let label = '';
+    while (
+      at < spans.length &&
+      (spans[at] as RichText.Span).linkHref === href
+    ) {
+      label += writeRun(spans[at] as RichText.Span, singleLine);
+      at++;
+    }
+    if (href === null || !isLinkHref(href) || label.trim().length === 0) {
+      out += label;
+    } else {
+      // A `!` right before a link would read as a picture out of place.
+      if (out.endsWith('!')) out = out.slice(0, -1) + '\\!';
+      out += `[${label}](${href.replace(/\(/g, '%28').replace(/\)/g, '%29')})`;
+    }
+  }
+  const lines = out.trim().split('\n');
+  for (let line = 0; line < lines.length; line++) {
+    lines[line] = escapeLineStart((lines[line] as string).trim());
+  }
+  return lines.join('\n');
 }
 
 export const RichTextSystem = {
@@ -519,5 +636,83 @@ export const RichTextSystem = {
       at = next;
     }
     return blocks;
+  },
+
+  /**
+   * An address as somebody typed it into a link field, made one a link
+   * may carry — or `null` when it cannot be: a web, mail or phone address
+   * or a site path is kept as typed; `creativo.example` gains `https://`,
+   * `jobs@creativo.example` gains `mailto:`, `+359 888 123 456` becomes
+   * `tel:+359888123456`.
+   */
+  linkHref(typed: string): string | null {
+    const raw = typed.trim();
+    if (isLinkHref(raw)) return raw;
+    if (raw.length === 0 || raw.includes(':') || raw.startsWith('/')) {
+      return null;
+    }
+    for (let at = 0; at < raw.length; at++) {
+      const code = raw.charCodeAt(at);
+      if (isSpace(code) && !PHONE_TYPED.test(raw)) return null;
+    }
+    if (PHONE_TYPED.test(raw)) {
+      const digits = raw.replace(NOT_DIALLED, '');
+      return digits.length >= PHONE_MIN_DIGITS ? `tel:${digits}` : null;
+    }
+    if (raw.includes('@')) {
+      const mail = `mailto:${raw}`;
+      return raw.indexOf('@') > 0 && isLinkHref(mail) ? mail : null;
+    }
+    const web = `https://${raw}`;
+    return raw.includes('.') && isLinkHref(web) ? web : null;
+  },
+
+  /**
+   * The Markdown `parse` reads back as `blocks` — what an editor saves. A
+   * mark typed as text is written with a `\` before it, so nothing typed
+   * turns into formatting. A heading and a list item are one line each; a
+   * block with no words is not written; an empty list is `''`.
+   */
+  write(blocks: RichText): string {
+    const out: string[] = [];
+    for (const block of blocks) {
+      switch (block.richBlockKind) {
+        case RichBlockKind.Heading: {
+          const text = writeSpans(block.spans, true);
+          if (text.length > 0) {
+            out.push((block.headingLevel === 1 ? '# ' : '## ') + text);
+          }
+          break;
+        }
+        case RichBlockKind.Paragraph: {
+          const text = writeSpans(block.spans, false);
+          if (text.length > 0) out.push(text);
+          break;
+        }
+        case RichBlockKind.Quote: {
+          const text = writeSpans(block.spans, false);
+          if (text.length > 0) out.push('> ' + text.split('\n').join('\n> '));
+          break;
+        }
+        case RichBlockKind.List: {
+          const lines: string[] = [];
+          for (const item of block.listItems) {
+            const text = writeSpans(item, true);
+            if (text.length === 0) continue;
+            lines.push(
+              (block.listOrdered ? `${lines.length + 1}. ` : '- ') + text,
+            );
+          }
+          if (lines.length > 0) out.push(lines.join('\n'));
+          break;
+        }
+        case RichBlockKind.Image:
+          out.push(
+            `![${block.imageAlt.replace(/[[\]\n]/g, ' ').trim()}](${block.imageId})`,
+          );
+          break;
+      }
+    }
+    return out.join('\n\n');
   },
 } as const;

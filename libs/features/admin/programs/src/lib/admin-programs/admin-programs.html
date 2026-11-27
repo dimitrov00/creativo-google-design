@@ -412,7 +412,26 @@
               />
             </div>
             } @for (input of translatedInputs(); track input.id; let first =
-            $first) {
+            $first) { @if (input.rich) {
+            <div class="lib-admin-programs__field">
+              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                >{{ t(input.labelKey) }}</span
+              >
+              <ui-rich-text-editor
+                [uiMarkdown]="input.text()[language()]"
+                [uiWords]="editorWords()"
+                [uiLabel]="t(input.labelKey)"
+                [uiPlaceholder]="t('admin.programs.position.bodyHint')"
+                [uiHeadingLevel]="3"
+                [uiInvalid]="owes(input)"
+                [uiDisabled]="saving() || !positionBodyReady()"
+                [attr.lang]="language()"
+                [attr.data-owed]="owes(input) ? '' : null"
+                [attr.data-testid]="'admin-' + input.id + '-' + language()"
+                (uiMarkdownChange)="typeRich(input, $event)"
+              />
+            </div>
+            } @else {
             <label
               class="lib-admin-programs__field"
               [htmlFor]="'admin-field-' + input.id"
@@ -447,7 +466,7 @@
                 (input)="typeText(input, $event)"
               />}
             </label>
-            } @if (language() !== defaultLanguage) {
+            } } @if (language() !== defaultLanguage) {
             <div
               class="lib-admin-programs__field lib-admin-programs__field--hug"
             >

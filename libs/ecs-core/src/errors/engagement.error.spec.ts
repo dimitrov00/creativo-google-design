@@ -278,10 +278,13 @@ describe('EngagementError factories', () => {
     expect(Object.keys(refusal)).toEqual(['errorCode', 'locationId']);
   });
 
-  it('keeps the five programs save codes after the six field codes', () => {
+  it('keeps the five programs save codes after the seven field codes', () => {
     const codes = ENGAGEMENT_ERROR_CODES;
     const at = (code: EngagementErrorCode) => codes.indexOf(code);
     expect(at(EngagementErrorCode.PositionNotFound)).toBe(
+      at(EngagementErrorCode.ProgramBodyTooLong) + 1,
+    );
+    expect(at(EngagementErrorCode.ProgramBodyTooLong)).toBe(
       at(EngagementErrorCode.ShopEventContactInvalid) + 1,
     );
     expect(codes.slice(at(EngagementErrorCode.PositionNotFound))).toEqual([

@@ -1805,19 +1805,22 @@ describe('memoryProgramsWorld — the one state the programs doubles share', () 
     ).toEqual([positionOf('p')]);
   });
 
-  it('binds the admin suite over the one world — every member of the six bundles', () => {
+  it('binds the admin suite over the one world — every member of the eight bundles', () => {
     expect(
       Object.keys(memoryProgramsPorts(memoryProgramsWorld())).sort(),
     ).toEqual([
+      'clearPositionBody',
       'loadCourse',
       'loadEvent',
       'loadPosition',
+      'loadPositionBody',
       'observeCourses',
       'observeEvents',
       'observePositions',
       'saveCourse',
       'saveEvent',
       'savePosition',
+      'savePositionBody',
     ]);
   });
 

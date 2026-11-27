@@ -1561,6 +1561,10 @@ export function memoryPositionBodyWritePorts(
       world.positionBodies.set(body.id, body);
       return Result.ok(undefined);
     },
+    clearPositionBody: async (id) => {
+      world.positionBodies.delete(id);
+      return Result.ok(undefined);
+    },
   };
 }
 
@@ -1580,6 +1584,10 @@ export function memoryCourseBodyWritePorts(
   return {
     saveCourseBody: async (body) => {
       world.courseBodies.set(body.id, body);
+      return Result.ok(undefined);
+    },
+    clearCourseBody: async (id) => {
+      world.courseBodies.delete(id);
       return Result.ok(undefined);
     },
   };
@@ -1603,14 +1611,20 @@ export function memoryShopEventBodyWritePorts(
       world.eventBodies.set(body.id, body);
       return Result.ok(undefined);
     },
+    clearEventBody: async (id) => {
+      world.eventBodies.delete(id);
+      return Result.ok(undefined);
+    },
   };
 }
 
-/** `PROGRAMS_PORTS` — the admin page's suite: the six bundles over one world. */
+/** `PROGRAMS_PORTS` — the admin page's suite: the eight bundles (a role's description among them) over one world. */
 export function memoryProgramsPorts(world: ProgramsWorld): ProgramsPorts {
   return {
     ...memoryPositionReadPorts(world),
     ...memoryPositionWritePorts(world),
+    ...memoryPositionBodyReadPorts(world),
+    ...memoryPositionBodyWritePorts(world),
     ...memoryCourseReadPorts(world),
     ...memoryCourseWritePorts(world),
     ...memoryShopEventReadPorts(world),

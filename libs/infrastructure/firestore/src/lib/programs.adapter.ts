@@ -1,6 +1,7 @@
 import {
   type Firestore,
   collection,
+  deleteDoc,
   doc,
   limit,
   orderBy,
@@ -76,6 +77,16 @@ function saveBody(
   const { id, ...body } = entity;
   const ref = doc(db, path, id);
   return attemptWrite(ref.path, () => setDoc(ref, body));
+}
+
+/** Removes `path/{id}` — removing a document that is not stored is no failure. */
+function clearBody(
+  db: Firestore,
+  path: string,
+  id: string,
+): Promise<Result<void, RepositoryError>> {
+  const ref = doc(db, path, id);
+  return attemptWrite(ref.path, () => deleteDoc(ref));
 }
 
 /** The careers page's roles, live: one status (index #12) or, `null`, every role. */
@@ -178,6 +189,7 @@ export const positionBodyWritePorts = (
   db: Firestore,
 ): PositionBodyWritePorts => ({
   savePositionBody: (body) => saveBody(db, Collections.PositionBodies, body),
+  clearPositionBody: (id) => clearBody(db, Collections.PositionBodies, id),
 });
 
 /** A course's description (`null` when it has none). */
@@ -189,6 +201,7 @@ export const courseBodyReadPorts = (db: Firestore): CourseBodyReadPorts => ({
 /** A course's description, saved whole. */
 export const courseBodyWritePorts = (db: Firestore): CourseBodyWritePorts => ({
   saveCourseBody: (body) => saveBody(db, Collections.CourseBodies, body),
+  clearCourseBody: (id) => clearBody(db, Collections.CourseBodies, id),
 });
 
 /** An event's description (`null` when it has none). */
@@ -204,12 +217,15 @@ export const shopEventBodyWritePorts = (
   db: Firestore,
 ): ShopEventBodyWritePorts => ({
   saveEventBody: (body) => saveBody(db, Collections.EventBodies, body),
+  clearEventBody: (id) => clearBody(db, Collections.EventBodies, id),
 });
 
-/** `PROGRAMS_PORTS` — the admin page's suite: the six bundles over one instance. */
+/** `PROGRAMS_PORTS` — the admin page's suite: the eight bundles (a role's description among them) over one instance. */
 export const programsPorts = (db: Firestore): ProgramsPorts => ({
   ...positionReadPorts(db),
   ...positionWritePorts(db),
+  ...positionBodyReadPorts(db),
+  ...positionBodyWritePorts(db),
   ...courseReadPorts(db),
   ...courseWritePorts(db),
   ...shopEventReadPorts(db),

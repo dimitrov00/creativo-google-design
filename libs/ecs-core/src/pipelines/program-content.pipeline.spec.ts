@@ -49,6 +49,7 @@ import {
   togglePositionStatus,
   writeCourse,
   writePosition,
+  writePositionBody,
   writeShopEvent,
 } from './program-content.pipeline';
 
@@ -697,5 +698,73 @@ describe('toggleCourseEnrollment', () => {
 
     expect(unwrapErr(await toggle(open))).toEqual(failedWrite);
     expect(world.courses.get(open.id)).toEqual(open);
+  });
+});
+
+describe('writePositionBody', () => {
+  const role = positionOf('pos-1');
+  const text = textFixture('# Role\n\nWords.', '# Роля\n\nДуми.');
+
+  it('saves the description whole under the role’s id, trimmed', async () => {
+    const world = memoryProgramsWorld({ positions: [role] });
+
+    const saved = await writePositionBody(memoryProgramsPorts(world))({
+      id: role.id,
+      body: { bg: ` ${text.bg}\n`, en: text.en },
+    });
+
+    expect(saved).toEqual(Result.ok(undefined));
+    expect([...world.positionBodies.values()]).toEqual([
+      { id: role.id, body: text },
+    ]);
+  });
+
+  it('removes the document when every language is blank — stored or not', async () => {
+    const world = memoryProgramsWorld({
+      positions: [role],
+      positionBodies: [{ id: role.id, body: text }],
+    });
+    const write = writePositionBody(memoryProgramsPorts(world));
+
+    expect(await write({ id: role.id, body: { bg: ' ', en: '' } })).toEqual(
+      Result.ok(undefined),
+    );
+    expect(world.positionBodies.size).toBe(0);
+    expect(await write({ id: role.id, body: { bg: '', en: '' } })).toEqual(
+      Result.ok(undefined),
+    );
+  });
+
+  it('refuses a description written in one language only, and writes nothing', async () => {
+    const world = memoryProgramsWorld({
+      positions: [role],
+      positionBodies: [{ id: role.id, body: text }],
+    });
+
+    const refused = await writePositionBody(memoryProgramsPorts(world))({
+      id: role.id,
+      body: { bg: 'Думи.', en: '' },
+    });
+
+    expect(unwrapErr(refused)).toHaveLength(1);
+    expect([...world.positionBodies.values()]).toEqual([
+      { id: role.id, body: text },
+    ]);
+  });
+
+  it('answers the store’s failure to save or to remove', async () => {
+    const world = memoryProgramsWorld({ positions: [role] });
+    const failing = writePositionBody({
+      savePositionBody: async () => Result.err(failedWrite),
+      clearPositionBody: async () => Result.err(failedWrite),
+    });
+
+    expect(unwrapErr(await failing({ id: role.id, body: text }))).toEqual([
+      failedWrite,
+    ]);
+    expect(
+      unwrapErr(await failing({ id: role.id, body: { bg: '', en: '' } })),
+    ).toEqual([failedWrite]);
+    expect(world.positionBodies.size).toBe(0);
   });
 });

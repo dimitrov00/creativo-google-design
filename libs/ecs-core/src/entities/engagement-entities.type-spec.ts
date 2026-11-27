@@ -61,6 +61,8 @@ import type {
 import type {
   CourseReadPorts,
   CourseWritePorts,
+  PositionBodyReadPorts,
+  PositionBodyWritePorts,
   PositionReadPorts,
   PositionWritePorts,
   ProgramsPorts,
@@ -389,7 +391,7 @@ declare const shopEvent: ShopEvent;
 // @ts-expect-error — the zone is the location's, never an event field (Law 7.2)
 void shopEvent.timeZone;
 
-/* ── ProgramsPorts = six focused bundles, nine ports (Law 9) ────────────── */
+/* ── ProgramsPorts = eight focused bundles, twelve ports (Law 9) ────────────── */
 
 export const programBundlesNotNever: [
   IsNever<PositionReadPorts>,
@@ -400,11 +402,14 @@ export const programBundlesNotNever: [
   IsNever<ShopEventWritePorts>,
   IsNever<ProgramsPorts>,
 ] = [false, false, false, false, false, false, false];
-export const programsPortsAreTheNine: Equals<
+export const programsPortsAreTheTwelve: Equals<
   keyof ProgramsPorts,
   | 'observePositions'
   | 'loadPosition'
   | 'savePosition'
+  | 'loadPositionBody'
+  | 'savePositionBody'
+  | 'clearPositionBody'
   | 'observeCourses'
   | 'loadCourse'
   | 'saveCourse'
@@ -416,6 +421,8 @@ export const programsPortsAreTheBundles: Equals<
   keyof ProgramsPorts,
   | keyof PositionReadPorts
   | keyof PositionWritePorts
+  | keyof PositionBodyReadPorts
+  | keyof PositionBodyWritePorts
   | keyof CourseReadPorts
   | keyof CourseWritePorts
   | keyof ShopEventReadPorts

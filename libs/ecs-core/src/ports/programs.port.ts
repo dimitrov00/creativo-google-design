@@ -109,6 +109,11 @@ export type LoadPositionBody = (
   id: PositionId,
 ) => Promise<Result<PositionBody | null, RepositoryError>>;
 
+/** Removes `positionBodies/{id}` — the thing has no description any more; removing none is no failure. */
+export type ClearPositionBody = (
+  id: PositionId,
+) => Promise<Result<void, RepositoryError>>;
+
 /** A full-document set of `{ body }`, never a merge. */
 export type SavePositionBody = (
   body: PositionBody,
@@ -119,6 +124,11 @@ export type LoadCourseBody = (
   id: CourseId,
 ) => Promise<Result<CourseBody | null, RepositoryError>>;
 
+/** Removes `courseBodies/{id}` — the thing has no description any more; removing none is no failure. */
+export type ClearCourseBody = (
+  id: CourseId,
+) => Promise<Result<void, RepositoryError>>;
+
 /** A full-document set of `{ body }`, never a merge. */
 export type SaveCourseBody = (
   body: CourseBody,
@@ -128,6 +138,11 @@ export type SaveCourseBody = (
 export type LoadEventBody = (
   id: EventId,
 ) => Promise<Result<ShopEventBody | null, RepositoryError>>;
+
+/** Removes `eventBodies/{id}` — the thing has no description any more; removing none is no failure. */
+export type ClearEventBody = (
+  id: EventId,
+) => Promise<Result<void, RepositoryError>>;
 
 /** A full-document set of `{ body }`, never a merge. */
 export type SaveEventBody = (
@@ -174,9 +189,10 @@ export type PositionBodyReadPorts = {
   readonly loadPositionBody: LoadPositionBody;
 };
 
-/** A role's description, saved whole. */
+/** A role's description, saved whole or removed. */
 export type PositionBodyWritePorts = {
   readonly savePositionBody: SavePositionBody;
+  readonly clearPositionBody: ClearPositionBody;
 };
 
 /** A course's description, read when the course is opened. */
@@ -184,9 +200,10 @@ export type CourseBodyReadPorts = {
   readonly loadCourseBody: LoadCourseBody;
 };
 
-/** A course's description, saved whole. */
+/** A course's description, saved whole or removed. */
 export type CourseBodyWritePorts = {
   readonly saveCourseBody: SaveCourseBody;
+  readonly clearCourseBody: ClearCourseBody;
 };
 
 /** An event's description, read when the event is opened. */
@@ -194,14 +211,17 @@ export type ShopEventBodyReadPorts = {
   readonly loadEventBody: LoadEventBody;
 };
 
-/** An event's description, saved whole. */
+/** An event's description, saved whole or removed. */
 export type ShopEventBodyWritePorts = {
   readonly saveEventBody: SaveEventBody;
+  readonly clearEventBody: ClearEventBody;
 };
 
 /** The programs suite the admin page binds — `PROGRAMS_PORTS`. */
 export type ProgramsPorts = PositionReadPorts &
   PositionWritePorts &
+  PositionBodyReadPorts &
+  PositionBodyWritePorts &
   CourseReadPorts &
   CourseWritePorts &
   ShopEventReadPorts &

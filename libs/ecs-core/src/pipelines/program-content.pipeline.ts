@@ -2,6 +2,7 @@ import type {
   CourseInput,
   PositionInput,
   ShopEventInput,
+  LocalizedText,
 } from '@core/components';
 import type { Course, Position, ShopEvent } from '@core/entities';
 import { CourseId, EventId, PositionId, Result } from '@core/primitives';
@@ -16,6 +17,7 @@ import type {
   DefaultLocationPorts,
   IdPorts,
   LocationLoadPorts,
+  PositionBodyWritePorts,
   PositionWritePorts,
   ShopEventWritePorts,
 } from '@core/ports';
@@ -91,6 +93,33 @@ export const writePosition =
     if (!position.ok) return position;
     const saved = await ports.savePosition(position.value);
     return saved.ok ? Result.ok(position.value) : Result.err([saved.error]);
+  };
+
+/** A role's description as the editor holds it: Markdown per language, blank for none. */
+export type WritePositionBodyCommand = {
+  readonly id: PositionId;
+  readonly body: LocalizedText;
+};
+
+/**
+ * Saves a role's description from the editor — after the role itself is
+ * saved, so the document it sits beside exists (the rules ask). No read:
+ * `ProgramsSystem.body` judges what was typed, then ONE write — the body
+ * set whole, or, when every language is blank, the document removed.
+ * Nothing is written after a refusal.
+ */
+export const writePositionBody =
+  (ports: PositionBodyWritePorts) =>
+  async (
+    cmd: WritePositionBodyCommand,
+  ): Promise<Result<void, readonly ProgramSaveError[]>> => {
+    const body = ProgramsSystem.body(cmd.body);
+    if (!body.ok) return body;
+    const written =
+      body.value === null
+        ? await ports.clearPositionBody(cmd.id)
+        : await ports.savePositionBody({ id: cmd.id, body: body.value });
+    return written.ok ? written : Result.err([written.error]);
   };
 
 /** Creates or updates a course listing from the admin form. */

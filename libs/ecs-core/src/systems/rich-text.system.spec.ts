@@ -1,3 +1,4 @@
+import fc from 'fast-check';
 import { RichBlockKind, RichSpanStyle, RichText } from '@core/components';
 import { ProgramImageId } from '@core/primitives';
 import { deepFreeze } from '@core/testing';
@@ -323,5 +324,233 @@ describe('RichTextSystem.parse — purity and cost', () => {
       const blocks = RichTextSystem.parse(markdown);
       expect(printed(blocks).join(''), mark).toHaveLength(markdown.length);
     }
+  });
+});
+
+describe('RichTextSystem.write', () => {
+  const round = (blocks: RichText) =>
+    RichTextSystem.parse(RichTextSystem.write(blocks));
+
+  it('writes nothing for no blocks, and for blocks with no words', () => {
+    expect(RichTextSystem.write([])).toBe('');
+    expect(
+      RichTextSystem.write([
+        paragraph(plain('  ')),
+        RichText.heading(1, []),
+        RichText.list(false, [[], [plain(' ')]]),
+        RichText.quote([plain('\n')]),
+      ]),
+    ).toBe('');
+  });
+
+  it('writes every block of the subset as the Markdown the parser reads', () => {
+    const blocks: RichText = [
+      RichText.heading(1, [plain('What you do')]),
+      paragraph(
+        plain('A chair at '),
+        RichText.span('Center', Bold),
+        plain(', see '),
+        RichText.span('the shop', Plain, '/locations'),
+        plain('.\nFive days.'),
+      ),
+      RichText.heading(2, [plain('What you bring')]),
+      RichText.list(false, [
+        [plain('A '), RichText.span('steady', Italic), plain(' hand')],
+        [RichText.span('Both', BoldItalic)],
+      ]),
+      RichText.list(true, [[plain('Write')], [plain('Come by')]]),
+      RichText.quote([plain('Show us.\nWe build the rest.')]),
+      RichText.image(ProgramImageId.of('pic-1'), 'The chair'),
+    ];
+
+    expect(RichTextSystem.write(blocks)).toBe(
+      [
+        '# What you do',
+        'A chair at **Center**, see [the shop](/locations).\nFive days.',
+        '## What you bring',
+        '- A *steady* hand\n- ***Both***',
+        '1. Write\n2. Come by',
+        '> Show us.\n> We build the rest.',
+        '![The chair](pic-1)',
+      ].join('\n\n'),
+    );
+    expect(round(blocks)).toEqual(blocks);
+  });
+
+  it('writes a mark typed as text so that it stays text', () => {
+    const typed = [
+      '# not a heading',
+      '- not a list',
+      '> not a quote',
+      '1. not a list',
+      '![not](a-picture)',
+      '**not bold** *nor slanted* _nor this_ [nor a](/link) back\\slash `tick`',
+    ];
+    const blocks = typed.map((text) => paragraph(plain(text)));
+    expect(round(blocks)).toEqual(blocks);
+    expect(
+      round([
+        RichText.list(
+          false,
+          typed.map((text) => [plain(text)]),
+        ),
+      ]),
+    ).toEqual([
+      RichText.list(
+        false,
+        typed.map((text) => [plain(text)]),
+      ),
+    ]);
+  });
+
+  it('keeps runs set differently apart when they touch', () => {
+    const styles = [Plain, Bold, Italic, BoldItalic] as const;
+    for (const a of styles) {
+      for (const b of styles) {
+        for (const c of styles) {
+          if (a === b || b === c) continue;
+          const blocks = [
+            paragraph(
+              RichText.span('a', a),
+              RichText.span('b', b),
+              RichText.span('c', c),
+            ),
+          ];
+          expect(round(blocks), `${a} ${b} ${c}`).toEqual(blocks);
+        }
+      }
+    }
+  });
+
+  it('leaves the spaces at a run’s edges outside its marks', () => {
+    expect(
+      RichTextSystem.write([
+        paragraph(plain('a'), RichText.span(' bold ', Bold), plain('b')),
+      ]),
+    ).toBe('a **bold** b');
+  });
+
+  it('writes a heading and a list item on one line, and one address in one link', () => {
+    expect(
+      RichTextSystem.write([
+        RichText.heading(2, [plain('Two\nlines')]),
+        RichText.list(false, [[plain('Two\nlines')]]),
+        paragraph(
+          RichText.span('a ', Plain, 'https://x.example/(1)'),
+          RichText.span('b', Bold, 'https://x.example/(1)'),
+        ),
+      ]),
+    ).toBe(
+      '## Two lines\n\n- Two lines\n\n[a **b**](https://x.example/%281%29)',
+    );
+  });
+
+  it('writes a link whose address the parser would refuse as its words alone', () => {
+    expect(
+      RichTextSystem.write([
+        paragraph(RichText.span('tap', Plain, 'javascript:alert(1)')),
+      ]),
+    ).toBe('tap');
+  });
+
+  it('reads back what it wrote, whatever was typed (property)', () => {
+    const word = fc
+      .array(fc.constantFrom(...'abяж09*_[]()#>-!.\\`'.split('')), {
+        minLength: 1,
+        maxLength: 6,
+      })
+      .map((chars) => chars.join(''));
+    const text = (breaks: boolean) =>
+      fc
+        .array(fc.tuple(word, fc.constantFrom(' ', breaks ? '\n' : ' ')), {
+          minLength: 1,
+          maxLength: 4,
+        })
+        .map((parts) =>
+          parts
+            .map(([w, joiner], index) =>
+              index === parts.length - 1 ? w : w + joiner,
+            )
+            .join(''),
+        );
+    const spans = (breaks: boolean) =>
+      fc
+        .array(
+          fc.record({
+            text: text(breaks),
+            richSpanStyle: fc.constantFrom(Plain, Bold, Italic, BoldItalic),
+            linkHref: fc.constantFrom(null, '/a', 'https://x.example/b'),
+          }),
+          { minLength: 1, maxLength: 5 },
+        )
+        .filter((list) =>
+          list.every(
+            (span, index) =>
+              index === 0 ||
+              span.richSpanStyle !== list[index - 1]?.richSpanStyle ||
+              span.linkHref !== list[index - 1]?.linkHref,
+          ),
+        );
+    const block = fc.oneof(
+      spans(true).map((s) => RichText.paragraph(s)),
+      spans(true).map((s) => RichText.quote(s)),
+      fc
+        .tuple(fc.constantFrom<1 | 2>(1, 2), spans(false))
+        .map(([level, s]) => RichText.heading(level, s)),
+      fc
+        .tuple(
+          fc.boolean(),
+          fc.array(spans(false), { minLength: 1, maxLength: 3 }),
+        )
+        .map(([ordered, items]) => RichText.list(ordered, items)),
+    );
+
+    fc.assert(
+      fc.property(fc.array(block, { maxLength: 5 }), (blocks) => {
+        // Two paragraphs, or two quotes, in a row are told apart by the
+        // blank line the writer puts between blocks.
+        expect(round(blocks)).toEqual(blocks);
+      }),
+      { numRuns: 500 },
+    );
+  });
+
+  it('is pure: same input → same output, inputs untouched', () => {
+    const blocks = deepFreeze(
+      RichTextSystem.parse('# A\n\nB **c** [d](/e)\n- f\n> g\n![h](i)'),
+    );
+    expect(RichTextSystem.write(blocks)).toBe(RichTextSystem.write(blocks));
+  });
+});
+
+describe('RichTextSystem.linkHref', () => {
+  it.each([
+    ['https://creativo.example/work', 'https://creativo.example/work'],
+    ['  /courses ', '/courses'],
+    ['mailto:jobs@creativo.example', 'mailto:jobs@creativo.example'],
+    ['tel:+359888123456', 'tel:+359888123456'],
+    ['creativo.example', 'https://creativo.example'],
+    ['www.creativo.example/a?b=1', 'https://www.creativo.example/a?b=1'],
+    ['jobs@creativo.example', 'mailto:jobs@creativo.example'],
+    ['+359 888 123 456', 'tel:+359888123456'],
+    ['(02) 987-65-43', 'tel:029876543'],
+  ])('reads «%s» as %s', (typed, href) => {
+    expect(RichTextSystem.linkHref(typed)).toBe(href);
+  });
+
+  it.each([
+    '',
+    '   ',
+    'javascript:alert(1)',
+    'data:text/html,x',
+    'ftp://x.example',
+    '//evil.example',
+    'just words',
+    'two words.example',
+    'word',
+    '@nobody',
+    '12345',
+  ])('refuses «%s»', (typed) => {
+    expect(RichTextSystem.linkHref(typed)).toBeNull();
   });
 });

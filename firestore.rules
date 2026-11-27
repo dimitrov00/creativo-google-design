@@ -776,13 +776,14 @@ service cloud.firestore {
     // The descriptions (rich text, 2026-11-27): a sibling document under
     // the thing's own id, `{ body }` — Markdown per language. Read by
     // anyone, as the thing is; written whole by whoever may write the
-    // thing, and only for a thing that exists; never deleted by a client.
+    // thing, and only for a thing that exists; removed by the same writers
+    // (a description cleared in the editor is a document removed).
     match /positionBodies/{positionId} {
       allow read: if true;
       allow create, update: if isCatalogManager() && notReadAs()
         && validProgramBody(request.resource.data)
         && exists(/databases/$(database)/documents/positions/$(positionId));
-      allow delete: if false;
+      allow delete: if isCatalogManager() && notReadAs();
     }
 
     match /courseBodies/{courseId} {
@@ -790,7 +791,7 @@ service cloud.firestore {
       allow create, update: if isCatalogManager() && notReadAs()
         && validProgramBody(request.resource.data)
         && exists(/databases/$(database)/documents/courses/$(courseId));
-      allow delete: if false;
+      allow delete: if isCatalogManager() && notReadAs();
     }
 
     match /eventBodies/{eventId} {
@@ -798,7 +799,7 @@ service cloud.firestore {
       allow create, update: if isCatalogManager() && notReadAs()
         && validProgramBody(request.resource.data)
         && exists(/databases/$(database)/documents/events/$(eventId));
-      allow delete: if false;
+      allow delete: if isCatalogManager() && notReadAs();
     }
 
     // ── engagement ──────────────────────────────────────────────────────
