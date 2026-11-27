@@ -30,6 +30,7 @@ styles a native control or builds its own; a new element is added to
 | animation               | `uiReveal`                                                         |
 | app bar                 | `ui-sheet-header`, `ui-toolbar`                                    |
 | area chart              | `ui-line-chart`                                                    |
+| article                 | `ui-rich-text`                                                     |
 | auto-fill               | `ui-grid`                                                          |
 | autocomplete            | `ui-search-field`                                                  |
 | autoplay                | `ui-ambient-video`                                                 |
@@ -51,6 +52,7 @@ styles a native control or builds its own; a new element is added to
 | birthday                | `ui-date-field`, `ui-occasion-band`                                |
 | blank slate             | `ui-empty-state`                                                   |
 | blur                    | `uiMaterial`                                                       |
+| body copy               | `ui-rich-text`                                                     |
 | bold                    | `uiWeight`                                                         |
 | border                  | `ui-divider`                                                       |
 | border-radius           | `uiRadius`                                                         |
@@ -138,6 +140,7 @@ styles a native control or builds its own; a new element is added to
 | day toggles             | `ui-weekday-picker`                                                |
 | days of week            | `ui-weekday-picker`                                                |
 | density grid            | `ui-heatmap`                                                       |
+| description             | `ui-rich-text`                                                     |
 | detail sheet            | `ui-detail-sheet`                                                  |
 | dialog                  | `ui-alert`, `ui-modal-sheet`, `ui-sheet`                           |
 | discount                | `uiCouponCard`                                                     |
@@ -182,6 +185,7 @@ styles a native control or builds its own; a new element is added to
 | foreground              | `uiForegroundStyle`                                                |
 | form date               | `ui-date-row`                                                      |
 | form field              | `uiTextField`                                                      |
+| formatted text          | `ui-rich-text`                                                     |
 | frosted                 | `uiMaterial`                                                       |
 | full width              | `uiFrame`                                                          |
 | gallery                 | `ui-grid`                                                          |
@@ -261,6 +265,7 @@ styles a native control or builds its own; a new element is added to
 | maplibre                | `ui-map`                                                           |
 | margin auto             | `ui-spacer`                                                        |
 | mark                    | `ui-marked-text`                                                   |
+| markdown                | `ui-rich-text`                                                     |
 | markers                 | `ui-map`                                                           |
 | marks                   | `ui-mark-scale`                                                    |
 | matched text            | `ui-marked-text`                                                   |
@@ -358,6 +363,7 @@ styles a native control or builds its own; a new element is added to
 | progress ring           | `ui-progress-ring`                                                 |
 | progress steps          | `ui-stepper`                                                       |
 | promo code              | `ui-code-field`, `uiCouponCard`                                    |
+| prose                   | `ui-rich-text`                                                     |
 | qr                      | `ui-code-scanner`                                                  |
 | qr code                 | `ui-code-scanner`                                                  |
 | quantity                | `ui-count-stepper`                                                 |
@@ -381,6 +387,7 @@ styles a native control or builds its own; a new element is added to
 | repeat on               | `ui-weekday-picker`                                                |
 | retry                   | `ui-notice`                                                        |
 | review score            | `ui-rating`                                                        |
+| rich text               | `ui-rich-text`                                                     |
 | ring                    | `ui-gauge`                                                         |
 | ring chart              | `ui-ring-chart`                                                    |
 | ripple                  | `uiInteractive`                                                    |
@@ -549,6 +556,7 @@ styles a native control or builds its own; a new element is added to
 | wizard steps            | `ui-stepper`                                                       |
 | wordmark                | `ui-logo`                                                          |
 | wrap                    | `ui-flow`                                                          |
+| wysiwyg                 | `ui-rich-text`                                                     |
 | zero state              | `ui-empty-state`                                                   |
 
 ## controls
@@ -650,6 +658,7 @@ Import from `@creativo/ui/patterns`.
 | `ui-rating`                                                   | Shows a rating as a filled star beside its number, with room for a trailing detail such as the review count; display only.                                    | `Label("4.9", systemImage: "star.fill")`                                                                          |                                                                                                                                                                      |
 | `ui-reference`                                                | The line a failed call leaves for a support report: a reference id printed in full and copied to the clipboard on a tap.                                      | App pattern                                                                                                       |                                                                                                                                                                      |
 | `ui-reward-moment`                                            | The success mark at the end of a flow: an accent disc with a check that draws itself and one burst of confetti.                                               | App pattern                                                                                                       | The particles alone, without the disc and the check, are `ui-confetti`.                                                                                              |
+| `ui-rich-text`                                                | Draws a staff-written description (headings, paragraphs, lists, quotes, links, pictures) from its parsed block list.                                          | `Text` drawn from a Markdown `AttributedString`                                                                   | A search match inside one line is `ui-marked-text`.                                                                                                                  |
 | `ui-section-header`                                           | Opens a section: an eyebrow, title and lede on a landing, or inside a sheet a heading with one trailing action or detail.                                     | a `Section` header (`Section { … } header: { … }`)                                                                | The large title that heads a whole sheet page is `ui-sheet-headline`.                                                                                                |
 | `ui-sheet-action-bar`                                         | The bottom action row docked to a sheet's bottom edge, the primary action at the trailing edge, floating over the scrolling body.                             | `.safeAreaInset(edge: .bottom) { HStack { … } }` on a sheet                                                       | On a full-height page the bottom row is `ui-page-action-bar`.                                                                                                        |
 | `ui-sheet-header`                                             | The top bar of a sheet or a page: the grabber, a compact title that lands when the large title scrolls under it, and trailing actions.                        | a navigation bar whose large title collapses to `.navigationBarTitleDisplayMode(.inline)` on scroll               | The large title in the content, with the lines under it, is `ui-sheet-headline`; a plain bar of controls is `ui-toolbar`.                                            |
@@ -663,6 +672,7 @@ Import from `@creativo/ui/patterns`.
 
 | Part                                                                 | Belongs to          | What it is for                                                                                                                |
 | -------------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `ui-rich-text-runs`                                                  | `ui-rich-text`      | Prints one block's runs: plain, bold, italic, and links.                                                                      |
 | `[uiHeadlineMedia]`                                                  | `ui-sheet-headline` | Marks the one projected avatar or medal as the headline's face.                                                               |
 | `[uiHeadlinePlate]`                                                  | `ui-sheet-headline` | Marks the badge that stands on the lower rim of a hero headline's face, such as a client's tier.                              |
 | `button[uiMenuItem], a[uiMenuItem], label[uiMenuItem], [uiMenuItem]` | `ui-menu`           | One action of the menu, on a button, a link or a file-picker label; an option or a tick box when the menu expresses a choice. |

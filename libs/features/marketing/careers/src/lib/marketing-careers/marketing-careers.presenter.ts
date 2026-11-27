@@ -1,10 +1,11 @@
 import { LocalizedText, WorkplaceMode } from '@core/components';
-import type { Position, ShopLocation } from '@core/entities';
+import type { Position, PositionBody, ShopLocation } from '@core/entities';
 import type { RepositoryError } from '@core/errors';
 import { type Result } from '@core/primitives';
-import { ProgramsSystem } from '@core/systems';
+import { ProgramsSystem, RichTextSystem } from '@core/systems';
 import {
   contactRowVm,
+  type ContactSheetVm,
   type NamedShop,
   namedShopsOf,
 } from '@creativo/features/shared/catalog';
@@ -73,4 +74,36 @@ export function positionRowsVm(
     });
   }
   return rows;
+}
+
+/** What an opened role's sheet is worded from. */
+export type PositionSheetInput = {
+  /** The row that was tapped. */
+  readonly row: PositionRowVm;
+  /** The role's description as read — `null` for none, or until it answers. */
+  readonly body: PositionBody | null;
+  /** The active UI language. */
+  readonly lang: string;
+};
+
+/**
+ * An opened role as its sheet prints it: the row's own words, and its
+ * description in the active language as the blocks `RichTextSystem` reads
+ * from it — `null` for a role with none.
+ */
+export function positionSheetVm(input: PositionSheetInput): ContactSheetVm {
+  const { row, body } = input;
+  return {
+    title: row.title,
+    summary: row.summary,
+    workplaceTag: row.workplaceTag,
+    shopsLine: row.shopsLine,
+    body:
+      body === null
+        ? null
+        : RichTextSystem.parse(
+            LocalizedText.pick(body.body, localeFor(input.lang)),
+          ),
+    contacts: row.contact.contacts,
+  };
 }

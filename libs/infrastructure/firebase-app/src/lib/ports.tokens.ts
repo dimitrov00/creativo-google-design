@@ -32,6 +32,7 @@ import type {
   LoyaltyCatalogReadPorts,
   MediaResolvePorts,
   OtpChallengePorts,
+  PositionBodyReadPorts,
   PositionReadPorts,
   ProfilePorts,
   ProgramsPorts,
@@ -183,6 +184,10 @@ export const PROGRAMS_PORTS = new InjectionToken<ProgramsPorts>(
 export const POSITION_READ_PORTS = new InjectionToken<PositionReadPorts>(
   'POSITION_READ_PORTS',
 );
+
+/** A role's description, read when the role is opened (`PositionBodyReadPorts`). */
+export const POSITION_BODY_READ_PORTS =
+  new InjectionToken<PositionBodyReadPorts>('POSITION_BODY_READ_PORTS');
 
 /** The courses page's courses, live (`CourseReadPorts`). */
 export const COURSE_READ_PORTS = new InjectionToken<CourseReadPorts>(

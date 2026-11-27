@@ -114,10 +114,7 @@
       </aside>
     </main>
 
-    <cr-contact-sheet
-      [uiContact]="contactFor()"
-      (uiClosed)="contactFor.set(null)"
-    />
+    <cr-contact-sheet [uiContact]="contactFor()" (uiClosed)="close()" />
 
     <cr-site-footer />
   </div>

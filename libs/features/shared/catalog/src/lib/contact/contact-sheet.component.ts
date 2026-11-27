@@ -13,13 +13,19 @@ import {
   UiForegroundStyleDirective,
   UiTextDirective,
 } from '@creativo/ui/modifiers';
-import { UiListGroup, UiListRow, UiSheetHeadline } from '@creativo/ui/patterns';
+import {
+  UiListGroup,
+  UiListRow,
+  UiRichText,
+  UiSheetHeadline,
+} from '@creativo/ui/patterns';
 import { opensNewTab } from './program-contact.presenter';
 import { CONTACT_ICON, type ContactSheetVm } from './program-contact.vm';
 
 /**
- * A role, a course or an event, opened: its name, where it is worked and
- * its words in full when the page hands them over, then the ways to answer
+ * A role, a course or an event, opened: its name, where it is worked, its
+ * words in full and its description (`ui-rich-text`) when the page hands
+ * them over, then the ways to answer
  * it — each a row that opens a call, a mail, the Instagram profile or the
  * link. `/careers` opens it for every role (the row is the door to the
  * role); `/courses` and `/events` open it for a thing answered several
@@ -37,6 +43,7 @@ import { CONTACT_ICON, type ContactSheetVm } from './program-contact.vm';
     UiListGroup,
     UiListRow,
     UiModalSheet,
+    UiRichText,
     UiSheetHeadline,
     UiTextDirective,
   ],
@@ -94,6 +101,13 @@ import { CONTACT_ICON, type ContactSheetVm } from './program-contact.vm';
               >
                 {{ summary }}
               </p>
+            }
+            @if (contact.body?.length) {
+              <ui-rich-text
+                [uiBlocks]="contact.body ?? []"
+                [uiHeadingLevel]="3"
+                data-testid="contact-sheet-body"
+              />
             }
             <h3 uiText uiFont="headline" class="cr-contact-sheet__ways">
               {{ t('programs.contact.choose') }}

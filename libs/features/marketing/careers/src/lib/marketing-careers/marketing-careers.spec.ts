@@ -19,11 +19,12 @@ import {
   DEFAULT_LOCATION_PORTS,
   INBOX_PORTS,
   LOCATION_LOAD_PORTS,
+  POSITION_BODY_READ_PORTS,
   POSITION_READ_PORTS,
   PROFILE_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import { PositionStatus, WorkplaceMode } from '@core/components';
-import type { Position, ShopLocation } from '@core/entities';
+import type { Position, PositionBody, ShopLocation } from '@core/entities';
 import type { PositionReadPorts } from '@core/ports';
 import { LocationId } from '@core/primitives';
 import {
@@ -36,6 +37,7 @@ import {
   memoryDefaultLocationPorts,
   memoryInboxPorts,
   memoryLocationLoadPorts,
+  memoryPositionBodyReadPorts,
   memoryPositionReadPorts,
   memoryProfilePorts,
   memoryProgramsWorld,
@@ -122,6 +124,7 @@ async function configure(
   open: readonly Position[],
   asked: (PositionStatus | null)[] = [],
   shops: readonly ShopLocation[] = [locationFixture()],
+  positionBodies: readonly PositionBody[] = [],
 ): Promise<ComponentFixture<MarketingCareers>> {
   document.documentElement.setAttribute('data-theme', 'light');
   await TestBed.configureTestingModule({
@@ -132,6 +135,13 @@ async function configure(
       {
         provide: POSITION_READ_PORTS,
         useValue: recordedPositionReads(open, asked),
+      },
+      // The descriptions, read when a role is opened.
+      {
+        provide: POSITION_BODY_READ_PORTS,
+        useValue: memoryPositionBodyReadPorts(
+          memoryProgramsWorld({ positionBodies }),
+        ),
       },
       // The catalogue's ACTIVE shops, which a scoped role names at a
       // multi-shop tenant.
@@ -301,6 +311,56 @@ describe('MarketingCareers', () => {
       ['https://www.instagram.com/creativo', '_blank'],
       ['https://example.com/apply', '_blank'],
     ]);
+  });
+
+  it('draws the role’s description under its summary once it is read, in the visitor’s language', async () => {
+    const role = positionOf('pos_1');
+    const fixture = await configure(
+      [role],
+      [],
+      [locationFixture()],
+      [
+        {
+          id: role.id,
+          body: textFixture(
+            '# What you do\n\n- **Fades**\n- Beards',
+            '# Какво правиш\n\n- **Фейд**\n- Бради',
+          ),
+        },
+      ],
+    );
+    const host = await openFirstRole(fixture);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const body = host.querySelector('[data-testid="contact-sheet-body"]');
+    const heading = body?.querySelector('[role="heading"]');
+    expect(heading?.textContent?.trim()).toBe('What you do');
+    // Under the sheet's own h2.
+    expect(heading?.getAttribute('aria-level')).toBe('3');
+    expect(
+      Array.from(
+        body?.querySelectorAll('li') ?? [],
+        (item) => item.textContent,
+      ),
+    ).toEqual(['Fades', 'Beards']);
+    expect(body?.querySelector('strong')?.textContent).toBe('Fades');
+    // Between the summary and the ways to answer.
+    const summary = host.querySelector('[data-testid="contact-sheet-summary"]');
+    const ways = host.querySelector('.cr-contact-sheet__ways');
+    expect(summary?.nextElementSibling).toBe(body);
+    expect(body?.nextElementSibling).toBe(ways);
+  });
+
+  it('opens a role with no description as it always did: no body is drawn', async () => {
+    const fixture = await configure([positionOf('pos_1')]);
+    const host = await openFirstRole(fixture);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(host.querySelector('[data-testid="contact-sheet"]')).not.toBeNull();
+    expect(host.querySelector('[data-testid="contact-sheet-body"]')).toBeNull();
+    expect(host.querySelector('ui-rich-text')).toBeNull();
   });
 
   it("answers a role with no way of its own through the shop's Instagram", async () => {

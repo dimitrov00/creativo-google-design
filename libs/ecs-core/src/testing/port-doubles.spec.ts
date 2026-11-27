@@ -158,8 +158,14 @@ import {
   memoryLoyaltyCatalogReadPorts,
   memoryLoyaltyWorld,
   memoryOtpStorePorts,
+  memoryCourseBodyReadPorts,
+  memoryCourseBodyWritePorts,
+  memoryPositionBodyReadPorts,
+  memoryPositionBodyWritePorts,
   memoryPositionReadPorts,
   memoryPositionWritePorts,
+  memoryShopEventBodyReadPorts,
+  memoryShopEventBodyWritePorts,
   memoryProfilePorts,
   memoryProgramsPorts,
   memoryProgramsWorld,
@@ -1712,6 +1718,60 @@ describe('memoryProgramsWorld — the one state the programs doubles share', () 
     expect(rows[22]?.id).toBe('p-23');
     expect(rows[23]?.id).toBe('p-tie-b');
     expect(rows.some((row) => row.id === 'p-tie-a')).toBe(false);
+  });
+
+  it('loads a description by its thing’s id (null for none) and saves a full replace, seen by the next read', async () => {
+    const text = textFixture('# Role', '# Роля');
+    const world = memoryProgramsWorld({
+      positionBodies: [{ id: PositionId.of('p'), body: text }],
+    });
+    const position = PositionId.of('p');
+    const course = CourseId.of('c');
+    const event = EventId.of('e');
+
+    expect(
+      unwrapOk(
+        await memoryPositionBodyReadPorts(world).loadPositionBody(position),
+      ),
+    ).toEqual({ id: position, body: text });
+    expect(
+      unwrapOk(await memoryCourseBodyReadPorts(world).loadCourseBody(course)),
+    ).toBeNull();
+    expect(
+      unwrapOk(await memoryShopEventBodyReadPorts(world).loadEventBody(event)),
+    ).toBeNull();
+
+    const next = textFixture('Words.', 'Думи.');
+    unwrapOk(
+      await memoryPositionBodyWritePorts(world).savePositionBody({
+        id: position,
+        body: next,
+      }),
+    );
+    unwrapOk(
+      await memoryCourseBodyWritePorts(world).saveCourseBody({
+        id: course,
+        body: next,
+      }),
+    );
+    unwrapOk(
+      await memoryShopEventBodyWritePorts(world).saveEventBody({
+        id: event,
+        body: next,
+      }),
+    );
+
+    expect(
+      unwrapOk(
+        await memoryPositionBodyReadPorts(world).loadPositionBody(position),
+      ),
+    ).toEqual({ id: position, body: next });
+    expect(
+      unwrapOk(await memoryCourseBodyReadPorts(world).loadCourseBody(course)),
+    ).toEqual({ id: course, body: next });
+    expect(
+      unwrapOk(await memoryShopEventBodyReadPorts(world).loadEventBody(event)),
+    ).toEqual({ id: event, body: next });
   });
 
   it('loads by id (null when absent) and saves a full replace, seen by the next read', async () => {

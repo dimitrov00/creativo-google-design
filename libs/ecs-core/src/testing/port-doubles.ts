@@ -62,6 +62,7 @@ import {
   type ClientStatsRecord,
   type Coupon,
   type Course,
+  type CourseBody,
   type CouponGrant,
   type Customer,
   type GiftVoucher,
@@ -71,11 +72,13 @@ import {
   type LoyaltyCatalogParts,
   type Otp,
   type Position,
+  type PositionBody,
   type ScheduleException,
   type SeasonProgress,
   type ServiceCategory,
   type Service,
   type ShopEvent,
+  type ShopEventBody,
   type ShopLocation,
   type StreakDefinition,
   type StreakDefinitionVersion,
@@ -101,6 +104,8 @@ import type {
   ClientStatsReadPorts,
   ClockPorts,
   CouponVoucherPorts,
+  CourseBodyReadPorts,
+  CourseBodyWritePorts,
   CourseReadPorts,
   CourseWritePorts,
   CustomerReadPorts,
@@ -118,6 +123,8 @@ import type {
   OtpCryptoPorts,
   OtpDeliveryPorts,
   OtpStorePorts,
+  PositionBodyReadPorts,
+  PositionBodyWritePorts,
   PositionReadPorts,
   PositionWritePorts,
   ProfilePorts,
@@ -126,6 +133,8 @@ import type {
   ScheduleExceptionPorts,
   SchedulingReadPorts,
   StaffPermissionsStreamPorts,
+  ShopEventBodyReadPorts,
+  ShopEventBodyWritePorts,
   ShopEventReadPorts,
   ShopEventWritePorts,
   StoredFile,
@@ -1365,6 +1374,10 @@ export type ProgramsWorld = {
   readonly courses: Map<CourseId, Course>;
   readonly events: Map<EventId, ShopEvent>;
   readonly locations: Map<LocationId, ShopLocation>;
+  /** The descriptions, each under its thing's id — absent for a thing with none. */
+  readonly positionBodies: Map<PositionId, PositionBody>;
+  readonly courseBodies: Map<CourseId, CourseBody>;
+  readonly eventBodies: Map<EventId, ShopEventBody>;
 };
 
 /** What a {@link ProgramsWorld} starts with — every collection empty when omitted. */
@@ -1373,6 +1386,9 @@ export type ProgramsWorldSeed = {
   readonly courses?: readonly Course[];
   readonly events?: readonly ShopEvent[];
   readonly locations?: readonly ShopLocation[];
+  readonly positionBodies?: readonly PositionBody[];
+  readonly courseBodies?: readonly CourseBody[];
+  readonly eventBodies?: readonly ShopEventBody[];
 };
 
 /** A world seeded with programs content and shops. */
@@ -1384,6 +1400,9 @@ export function memoryProgramsWorld(
     courses: new Map(),
     events: new Map(),
     locations: new Map(),
+    positionBodies: new Map(),
+    courseBodies: new Map(),
+    eventBodies: new Map(),
   };
   for (const position of seed.positions ?? []) {
     world.positions.set(position.id, position);
@@ -1392,6 +1411,15 @@ export function memoryProgramsWorld(
   for (const event of seed.events ?? []) world.events.set(event.id, event);
   for (const location of seed.locations ?? []) {
     world.locations.set(location.id, location);
+  }
+  for (const body of seed.positionBodies ?? []) {
+    world.positionBodies.set(body.id, body);
+  }
+  for (const body of seed.courseBodies ?? []) {
+    world.courseBodies.set(body.id, body);
+  }
+  for (const body of seed.eventBodies ?? []) {
+    world.eventBodies.set(body.id, body);
   }
   return world;
 }
@@ -1509,6 +1537,70 @@ export function memoryShopEventWritePorts(
     loadEvent: async (id) => Result.ok(world.events.get(id) ?? null),
     saveEvent: async (event) => {
       world.events.set(event.id, event);
+      return Result.ok(undefined);
+    },
+  };
+}
+
+/** `POSITION_BODY_READ_PORTS` over a {@link ProgramsWorld}: a role's description, `null` for none. */
+export function memoryPositionBodyReadPorts(
+  world: ProgramsWorld,
+): PositionBodyReadPorts {
+  return {
+    loadPositionBody: async (id) =>
+      Result.ok(world.positionBodies.get(id) ?? null),
+  };
+}
+
+/** A role's description, saved whole. */
+export function memoryPositionBodyWritePorts(
+  world: ProgramsWorld,
+): PositionBodyWritePorts {
+  return {
+    savePositionBody: async (body) => {
+      world.positionBodies.set(body.id, body);
+      return Result.ok(undefined);
+    },
+  };
+}
+
+/** A course's description, `null` for none. */
+export function memoryCourseBodyReadPorts(
+  world: ProgramsWorld,
+): CourseBodyReadPorts {
+  return {
+    loadCourseBody: async (id) => Result.ok(world.courseBodies.get(id) ?? null),
+  };
+}
+
+/** A course's description, saved whole. */
+export function memoryCourseBodyWritePorts(
+  world: ProgramsWorld,
+): CourseBodyWritePorts {
+  return {
+    saveCourseBody: async (body) => {
+      world.courseBodies.set(body.id, body);
+      return Result.ok(undefined);
+    },
+  };
+}
+
+/** An event's description, `null` for none. */
+export function memoryShopEventBodyReadPorts(
+  world: ProgramsWorld,
+): ShopEventBodyReadPorts {
+  return {
+    loadEventBody: async (id) => Result.ok(world.eventBodies.get(id) ?? null),
+  };
+}
+
+/** An event's description, saved whole. */
+export function memoryShopEventBodyWritePorts(
+  world: ProgramsWorld,
+): ShopEventBodyWritePorts {
+  return {
+    saveEventBody: async (body) => {
+      world.eventBodies.set(body.id, body);
       return Result.ok(undefined);
     },
   };

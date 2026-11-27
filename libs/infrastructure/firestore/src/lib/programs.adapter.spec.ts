@@ -2,7 +2,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { type Firestore, setDoc } from 'firebase/firestore';
 import { firstValueFrom } from 'rxjs';
 import { EnrollmentStatus, PositionStatus } from '@core/components';
-import type { Course, Position, ShopEvent } from '@core/entities';
+import type {
+  Course,
+  CourseBody,
+  Position,
+  PositionBody,
+  ShopEvent,
+  ShopEventBody,
+} from '@core/entities';
 import type { EventsQuery } from '@core/ports';
 import {
   CourseId,
@@ -39,6 +46,12 @@ vi.mock('firebase/firestore', async () => {
 });
 
 const {
+  courseBodyReadPorts,
+  courseBodyWritePorts,
+  positionBodyReadPorts,
+  positionBodyWritePorts,
+  shopEventBodyReadPorts,
+  shopEventBodyWritePorts,
   courseReadPorts,
   courseWritePorts,
   positionReadPorts,
@@ -553,5 +566,72 @@ describe('programsPorts — PROGRAMS_PORTS, the admin page’s suite', () => {
     expect(recorded(suite.observeEvents(UPCOMING)).seen).toEqual([
       Result.ok([event]),
     ]);
+  });
+});
+
+describe('the body ports — positionBodies, courseBodies, eventBodies /{id}', () => {
+  const text = textFixture('# Role\n\nWords.', '# Роля\n\nДуми.');
+  const roleBody: PositionBody = { id: PositionId.of('p-1'), body: text };
+  const courseBody: CourseBody = { id: CourseId.of('c-1'), body: text };
+  const eventBody: ShopEventBody = { id: EventId.of('e-1'), body: text };
+
+  it('saves { body } under the thing’s own id with ONE full set, and loads it back', async () => {
+    const fake = new FakeFirestore();
+    const db = asDb(fake);
+
+    expect(await positionBodyWritePorts(db).savePositionBody(roleBody)).toEqual(
+      Result.ok(undefined),
+    );
+    expect(await courseBodyWritePorts(db).saveCourseBody(courseBody)).toEqual(
+      Result.ok(undefined),
+    );
+    expect(await shopEventBodyWritePorts(db).saveEventBody(eventBody)).toEqual(
+      Result.ok(undefined),
+    );
+
+    expect(fake.writes).toEqual([
+      { kind: 'set', path: 'positionBodies/p-1', data: { body: text } },
+      { kind: 'set', path: 'courseBodies/c-1', data: { body: text } },
+      { kind: 'set', path: 'eventBodies/e-1', data: { body: text } },
+    ]);
+    expect(vi.mocked(setDoc).mock.lastCall).toHaveLength(2);
+    expect(
+      await positionBodyReadPorts(db).loadPositionBody(roleBody.id),
+    ).toEqual(Result.ok(roleBody));
+    expect(await courseBodyReadPorts(db).loadCourseBody(courseBody.id)).toEqual(
+      Result.ok(courseBody),
+    );
+    expect(
+      await shopEventBodyReadPorts(db).loadEventBody(eventBody.id),
+    ).toEqual(Result.ok(eventBody));
+  });
+
+  it('answers null for a thing with no description', async () => {
+    const db = asDb(new FakeFirestore());
+
+    expect(
+      await positionBodyReadPorts(db).loadPositionBody(PositionId.of('p-none')),
+    ).toEqual(Result.ok(null));
+    expect(
+      await courseBodyReadPorts(db).loadCourseBody(CourseId.of('c-none')),
+    ).toEqual(Result.ok(null));
+    expect(
+      await shopEventBodyReadPorts(db).loadEventBody(EventId.of('e-none')),
+    ).toEqual(Result.ok(null));
+  });
+
+  it('answers a refused save as the port’s RepositoryError, naming the document', async () => {
+    const fake = new FakeFirestore().failWith({ code: 'permission-denied' });
+
+    const saved = await positionBodyWritePorts(asDb(fake)).savePositionBody(
+      roleBody,
+    );
+
+    expect(saved).toEqual(
+      Result.err(
+        RepositoryError.writeFailed('positionBodies/p-1', 'permission-denied'),
+      ),
+    );
+    expect(fake.documentAt('positionBodies/p-1')).toBeUndefined();
   });
 });

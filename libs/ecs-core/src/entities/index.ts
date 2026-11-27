@@ -35,6 +35,7 @@ export * from './notification.entity';
 export * from './otp.entity';
 export * from './policy-recompute-job.entity';
 export * from './position.entity';
+export * from './program-body.entity';
 export * from './reward-catalog-item.entity';
 export * from './schedule-exception.entity';
 export * from './season-progress.entity';

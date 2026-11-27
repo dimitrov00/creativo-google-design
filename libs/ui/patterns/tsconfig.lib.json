@@ -29,10 +29,13 @@
   ],
   "references": [
     {
-      "path": "../icons/tsconfig.lib.json"
+      "path": "../layout/tsconfig.lib.json"
     },
     {
-      "path": "../layout/tsconfig.lib.json"
+      "path": "../../ecs-core/tsconfig.lib.json"
+    },
+    {
+      "path": "../icons/tsconfig.lib.json"
     },
     {
       "path": "../modifiers/tsconfig.lib.json"

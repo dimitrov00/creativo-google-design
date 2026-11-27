@@ -57,6 +57,7 @@ import {
   type CourseId,
   type EventId,
   type PositionId,
+  type ProgramImageId,
   type BadgeCategoryId,
   type BadgeSeriesId,
   type SeasonId,
@@ -161,6 +162,7 @@ type Brands = {
   readonly CourseId: CourseId;
   readonly EventId: EventId;
   readonly PositionId: PositionId;
+  readonly ProgramImageId: ProgramImageId;
   readonly BadgeCategoryId: BadgeCategoryId;
   readonly BadgeSeriesId: BadgeSeriesId;
   readonly SeasonId: SeasonId;

@@ -1,6 +1,7 @@
 import {
   ContactMethod,
   type ContactLink,
+  type RichText,
   type WorkplaceMode,
 } from '@core/components';
 import type { UiIconName } from '@creativo/ui/controls';
@@ -33,6 +34,8 @@ export type ContactSheetVm = {
   readonly workplaceTag?: WorkplaceMode | null;
   /** «Център · Младост» — the shops, already worded. */
   readonly shopsLine?: string | null;
+  /** The thing's description, parsed; absent, `null` or empty draws none. */
+  readonly body?: RichText | null;
   readonly contacts: readonly ContactLink[];
 };
 

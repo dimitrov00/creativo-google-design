@@ -58,6 +58,7 @@ import {
   LazyMethod,
   MEDIA_RESOLVE_PORTS,
   OTP_CHALLENGE_PORTS,
+  POSITION_BODY_READ_PORTS,
   POSITION_READ_PORTS,
   PROFILE_PORTS,
   PROGRAMS_PORTS,
@@ -758,6 +759,12 @@ export const appConfig: ApplicationConfig = {
       factory: (m) => (inj) =>
         m.firestore.positionReadPorts(inj.get(FIREBASE_FIRESTORE)),
       methods: { observePositions: LazyMethod.Observable },
+      onLoadError: dataUnavailable,
+    }),
+    provideLazyPort(POSITION_BODY_READ_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.firestore.positionBodyReadPorts(inj.get(FIREBASE_FIRESTORE)),
+      methods: { loadPositionBody: LazyMethod.Promise },
       onLoadError: dataUnavailable,
     }),
     provideLazyPort(COURSE_READ_PORTS, firebaseData, {

@@ -3,7 +3,8 @@
  * courses and the shop events `/careers`, `/courses`, `/events` and
  * `/admin/programs` show — three roles (two open — one of them remote — and one closed), three courses
  * (open, upcoming, closed) and two events (one two weeks ahead, one a
- * month behind). The BODIES are engine output (`fixtures/programs.fixtures.ts`:
+ * month behind) — and the open barber role's description
+ * (`positionBodies/pos-barber`). The BODIES are engine output (`fixtures/programs.fixtures.ts`:
  * the admin form judged by `ProgramsSystem`, an event's instant converted
  * once by `ZonedTimeSystem` on its shop's zone); this module decides WHEN,
  * as plain `{ path, data }` writes, every day from the shop's calendar
@@ -14,8 +15,10 @@ import {
   COURSE_FORMS,
   CRAFT_NIGHT,
   OPEN_STUDIO,
+  POSITION_BODIES,
   POSITION_FORMS,
   courseDocument,
+  positionBodyDocument,
   positionDocument,
   shopEventDocument,
 } from './fixtures/programs.fixtures.ts';
@@ -25,6 +28,7 @@ import {
 export const POSITIONS_COLLECTION = 'positions';
 export const COURSES_COLLECTION = 'courses';
 export const EVENTS_COLLECTION = 'events';
+export const POSITION_BODIES_COLLECTION = 'positionBodies';
 
 /** Each event and its day, in days from the shop's today: one ahead, one behind. */
 export const EVENT_PLANS = Object.freeze([
@@ -38,8 +42,8 @@ const writeOf =
 
 /**
  * Every programs document the seed writes, on `calendar`
- * (`createShopCalendar`): the roles, the courses, then the events on their
- * planned shop days.
+ * (`createShopCalendar`): the roles, the courses, the events on their
+ * planned shop days, then the descriptions.
  */
 export function programWritesOf(calendar) {
   return [
@@ -48,5 +52,8 @@ export function programWritesOf(calendar) {
     ...EVENT_PLANS.map(({ form, dayOffset }) =>
       shopEventDocument(form, calendar.dayKeyAt(dayOffset)),
     ).map(writeOf(EVENTS_COLLECTION)),
+    ...POSITION_BODIES.map(positionBodyDocument).map(
+      writeOf(POSITION_BODIES_COLLECTION),
+    ),
   ];
 }

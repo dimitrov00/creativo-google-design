@@ -556,6 +556,15 @@ export const EventId = idCompanion('EventId');
 export type PositionId = Brand<string, 'PositionId'>;
 export const PositionId = idCompanion('PositionId');
 
+/**
+ * A picture a program's body names (`![alt](imageId)`) — the Storage
+ * object's name under the program's media folder, never an address. Minted
+ * by the upload; a body's parser admits one only as letters, digits, `_`
+ * and `-` (`RichTextSystem`).
+ */
+export type ProgramImageId = Brand<string, 'ProgramImageId'>;
+export const ProgramImageId = idCompanion('ProgramImageId');
+
 /** A badge category (`badgeCategories/{id}`). */
 export type BadgeCategoryId = Brand<string, 'BadgeCategoryId'>;
 export const BadgeCategoryId = idCompanion('BadgeCategoryId');
