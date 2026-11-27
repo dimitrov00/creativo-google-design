@@ -2966,6 +2966,16 @@
       "save": "Save",
       "close": "Close",
       "add": "Add",
+      "language": {
+        "label": "Language",
+        "name": {
+          "bg": "Bulgarian",
+          "en": "English"
+        },
+        "copy": "Copy from {{from}}",
+        "owed": "A translation is missing: {{languages}}.",
+        "owedMark": "translation missing"
+      },
       "quick": {
         "close": "Close",
         "open": "Open",
@@ -2991,7 +3001,7 @@
         "newEvent": "New event"
       },
       "section": {
-        "translation": "English translation"
+        "shared": "For every language"
       },
       "saveFailed": "Couldn't save. Check the required fields and try again.",
       "field": {
@@ -3004,7 +3014,8 @@
       "position": {
         "summary": "Summary",
         "shops": "Shops",
-        "shopsAll": "Any shop"
+        "shopsAll": "At every shop",
+        "shopsHint": "Choose the shops. With none chosen the role stays open at every shop."
       },
       "course": {
         "startsLabel": "When it starts — e.g. “Spring 2026”"

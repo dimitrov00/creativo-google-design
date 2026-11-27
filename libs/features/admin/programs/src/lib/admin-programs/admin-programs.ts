@@ -1,11 +1,15 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  ElementRef,
+  Injector,
+  afterNextRender,
   computed,
   inject,
   resource,
   signal,
   viewChild,
+  type WritableSignal,
 } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { Title } from '@angular/platform-browser';
@@ -13,6 +17,7 @@ import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
   type CourseInput,
   EnrollmentStatus,
+  LocalizedText,
   type PositionInput,
   PositionStatus,
   ProgramInput,
@@ -21,28 +26,30 @@ import {
 } from '@core/components';
 import type { Course, Position, ShopEvent, ShopLocation } from '@core/entities';
 import type { ProgramSaveError } from '@core/errors';
-import { type LocationId } from '@core/primitives';
+import { type LocationId, Locale, Tag } from '@core/primitives';
 import { LocationScopeSystem, ProgramsSystem } from '@core/systems';
 import { shopNameOf } from '@creativo/features/shared/catalog';
 import { SiteHeaderComponent } from '@creativo/features/shared/shell';
 import { sameLocationIds } from '@creativo/infrastructure/firebase-app';
 import {
+  DEFAULT_LOCALE,
   loadedLanguage,
   localeFor,
   translateCodedError,
 } from '@creativo/infrastructure/i18n';
 import {
   UiButton,
-  UiChip,
   UiChoiceMenu,
   type UiChoiceOption,
   UiIcon,
   type UiIconName,
   UiModalSheet,
+  type UiSegment,
   UiSegmentedControl,
+  UiSwitch,
   UiTextField,
 } from '@creativo/ui/controls';
-import { UiFlow, UiStack } from '@creativo/ui/layout';
+import { UiStack } from '@creativo/ui/layout';
 import {
   UiListGroup,
   UiListRow,
@@ -143,6 +150,32 @@ const QUICK_DUPLICATE: QuickAction = {
   icon: 'program.duplicate',
 };
 
+/**
+ * One translated field of the sheet: the form draws these in a loop, for
+ * the language in view, so a kind of program with another translated field
+ * — or a shop with another language — adds a row here and no markup.
+ */
+type TranslatedInput = {
+  /** Names the field in test ids: `admin-<id>-<locale>`. */
+  readonly id: string;
+  readonly labelKey: string;
+  readonly multiline: boolean;
+  /** May the thing be saved without it (in every language). */
+  readonly required: boolean;
+  readonly text: WritableSignal<LocalizedText>;
+};
+
+/**
+ * Each language under its OWN name — what its segment prints, whatever
+ * language the page is read in: a translator looks for «English», not for
+ * «английски». Keyed by the dictionary, so a new locale will not compile
+ * without its name.
+ */
+const ENDONYM: Readonly<Record<Locale, string>> = {
+  bg: 'Български',
+  en: 'English',
+};
+
 /** One shop chip of the role form: the shop's id and the word it prints. */
 type ShopChip = {
   readonly id: LocationId;
@@ -188,9 +221,7 @@ const NO_SHOP = '';
     SiteHeaderComponent,
     TranslocoDirective,
     UiButton,
-    UiChip,
     UiChoiceMenu,
-    UiFlow,
     UiForegroundStyleDirective,
     UiFrameDirective,
     UiIcon,
@@ -211,6 +242,7 @@ const NO_SHOP = '';
     UiStack,
     UiSwipeAction,
     UiSwipeActions,
+    UiSwitch,
     UiTextDirective,
     UiTextField,
     UiVisuallyHiddenDirective,
@@ -247,6 +279,8 @@ export class AdminPrograms {
   /** A row's quick change was refused: said under the list's tabs. */
   protected readonly quickFailed = signal(false);
   private readonly reorderList = viewChild(UiReorderList);
+  private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
   /** The last move could not be saved. */
   protected readonly orderFailed = signal(false);
   /** The last move in words, for a screen reader: «„Бръснар“ — място 2 от 5». */
@@ -325,35 +359,45 @@ export class AdminPrograms {
     null,
   );
 
+  // ── The sheet's languages ───────────────────────────────────────────────
+
+  /**
+   * The language the sheet's translated fields are shown in — ONE at a
+   * time, so the form is as long with five languages as with one. Every
+   * sheet opens on the shop's own.
+   */
+  protected readonly language = signal<Locale>(DEFAULT_LOCALE);
+  protected readonly defaultLanguage = DEFAULT_LOCALE;
+  /** A save was refused here for a missing translation: the fields say so. */
+  protected readonly owedShown = signal(false);
+
   // Position fields
-  protected readonly positionTitleEn = signal('');
-  protected readonly positionTitleBg = signal('');
-  protected readonly positionSummaryEn = signal('');
-  protected readonly positionSummaryBg = signal('');
+  protected readonly positionTitle = signal(LocalizedText.blank());
+  protected readonly positionSummary = signal(LocalizedText.blank());
   protected readonly positionStatus = signal<PositionStatus>(
     PositionStatus.Open,
   );
-  /** The shops the chips name, in the order they were chosen; empty = every shop. */
+  /**
+   * «Във всички салони» is off: the role names its shops. Kept apart from
+   * the ids, because the switch may be off with no shop chosen yet.
+   */
+  protected readonly shopsLimited = signal(false);
+  /** The shops the rows name, in the order they were chosen; empty = every shop. */
   protected readonly positionShopIds = signal<readonly LocationId[]>([]);
   protected readonly positionApplyUrl = signal('');
 
   // Course fields
-  protected readonly courseTitleEn = signal('');
-  protected readonly courseTitleBg = signal('');
-  protected readonly courseDescriptionEn = signal('');
-  protected readonly courseDescriptionBg = signal('');
+  protected readonly courseTitle = signal(LocalizedText.blank());
+  protected readonly courseDescription = signal(LocalizedText.blank());
   protected readonly courseEnrollmentStatus = signal<EnrollmentStatus>(
     EnrollmentStatus.Open,
   );
-  protected readonly courseStartsLabelEn = signal('');
-  protected readonly courseStartsLabelBg = signal('');
+  protected readonly courseStartsLabel = signal(LocalizedText.blank());
   protected readonly courseApplyUrl = signal('');
 
   // Event fields
-  protected readonly eventTitleEn = signal('');
-  protected readonly eventTitleBg = signal('');
-  protected readonly eventDescriptionEn = signal('');
-  protected readonly eventDescriptionBg = signal('');
+  protected readonly eventTitle = signal(LocalizedText.blank());
+  protected readonly eventDescription = signal(LocalizedText.blank());
   /** The shop wall clock as typed, `YYYY-MM-DDTHH:mm`. */
   protected readonly eventStartsAt = signal('');
   /** The menu's pick — a shop's id, or {@link NO_SHOP}. */
@@ -542,6 +586,132 @@ export class AdminPrograms {
     return this.transloco.translate(key, {}, lang);
   });
 
+  /** The translated fields of the kind of program in the sheet, in form order. */
+  protected readonly translatedInputs = computed(
+    (): readonly TranslatedInput[] => {
+      switch (this.editing()?.programEditing) {
+        case ProgramEditing.Position:
+          return [
+            {
+              id: 'position-title',
+              labelKey: 'admin.programs.field.title',
+              multiline: false,
+              required: true,
+              text: this.positionTitle,
+            },
+            {
+              id: 'position-summary',
+              labelKey: 'admin.programs.position.summary',
+              multiline: true,
+              required: true,
+              text: this.positionSummary,
+            },
+          ];
+        case ProgramEditing.Course:
+          return [
+            {
+              id: 'course-title',
+              labelKey: 'admin.programs.field.title',
+              multiline: false,
+              required: true,
+              text: this.courseTitle,
+            },
+            {
+              id: 'course-description',
+              labelKey: 'admin.programs.field.description',
+              multiline: true,
+              required: true,
+              text: this.courseDescription,
+            },
+            {
+              id: 'course-starts-label',
+              labelKey: 'admin.programs.course.startsLabel',
+              multiline: false,
+              required: false,
+              text: this.courseStartsLabel,
+            },
+          ];
+        case ProgramEditing.Event:
+          return [
+            {
+              id: 'event-title',
+              labelKey: 'admin.programs.field.title',
+              multiline: false,
+              required: true,
+              text: this.eventTitle,
+            },
+            {
+              id: 'event-description',
+              labelKey: 'admin.programs.field.description',
+              multiline: true,
+              required: true,
+              text: this.eventDescription,
+            },
+          ];
+        default:
+          return [];
+      }
+    },
+  );
+
+  /** The languages the sheet still owes a translation in (`LocalizedText.owedLocales`). */
+  protected readonly owedLanguages = computed((): readonly Locale[] =>
+    LocalizedText.owedLocales(
+      this.translatedInputs().map((input) => ({
+        text: input.text(),
+        required: input.required,
+      })),
+    ),
+  );
+
+  /**
+   * The switcher's segments: every language of the dictionary under its own
+   * name, a dot on each one still owed — once a save has been tried, so a
+   * new sheet does not open covered in marks.
+   */
+  protected readonly languageSegments = computed((): readonly UiSegment[] => {
+    const lang = this.loadedLang();
+    const owed = this.owedShown() ? this.owedLanguages() : [];
+    return Tag.values(Locale).map((locale) => ({
+      id: locale,
+      label: ENDONYM[locale],
+      testId: `admin-language-${locale}`,
+      ...(owed.includes(locale) && lang !== null
+        ? {
+            attention: this.transloco.translate(
+              'admin.programs.language.owedMark',
+              {},
+              lang,
+            ),
+          }
+        : {}),
+    }));
+  });
+
+  /** More than one language to switch between: with one there is no switcher. */
+  protected readonly manyLanguages = Tag.values(Locale).length > 1;
+
+  /** «Липсва превод на: английски, …» — the languages owed, in the reader's words. */
+  protected readonly owedNotice = computed((): string | null => {
+    const lang = this.loadedLang();
+    const owed = this.owedLanguages();
+    if (!this.owedShown() || owed.length === 0 || lang === null) return null;
+    const names = owed
+      .map((locale) =>
+        this.transloco.translate(
+          `admin.programs.language.name.${locale}`,
+          {},
+          lang,
+        ),
+      )
+      .join(', ');
+    return this.transloco.translate(
+      'admin.programs.language.owed',
+      { languages: names },
+      lang,
+    );
+  });
+
   constructor() {
     this.transloco
       .selectTranslate('admin.programs.documentTitle')
@@ -674,6 +844,7 @@ export class AdminPrograms {
     if (tab === ProgramsTab.Positions) {
       this.fillPosition(ProgramInput.blankPosition());
       this.positionShopIds.set([]);
+      this.shopsLimited.set(false);
       this.editing.set({
         programEditing: ProgramEditing.Position,
         source: null,
@@ -707,6 +878,7 @@ export class AdminPrograms {
     this.fillPosition({ ...position, applyUrl: position.applyUrl ?? '' });
     // The stored scope, as stored — an edit never wipes it (OR-42).
     this.positionShopIds.set(position.locationIds);
+    this.shopsLimited.set(position.locationIds.length > 0);
     this.editing.set({
       programEditing: ProgramEditing.Position,
       source: position,
@@ -752,12 +924,55 @@ export class AdminPrograms {
     this.saveRefusals.set(null);
   }
 
-  /** «Всеки салон»: the role names no shop of its own — open at every one. */
-  protected chooseEveryShop(): void {
-    this.positionShopIds.set([]);
+  /**
+   * «Във всички салони» flipped. On: the role names no shop of its own —
+   * open at every one, the ones opened later too. Off: the shops appear to
+   * be chosen from, none chosen yet.
+   */
+  protected setEveryShop(every: boolean): void {
+    this.shopsLimited.set(!every);
+    if (every) this.positionShopIds.set([]);
   }
 
-  /** A shop chip toggled: off when chosen, else appended — the chosen order is kept. */
+  /** The switcher picked a language: the translated fields show it. */
+  protected pickLanguage(id: string): void {
+    const next = Tag.values(Locale).find((locale) => locale === id);
+    if (next !== undefined) this.language.set(next);
+  }
+
+  /** A translated field typed in: the language in view takes the words. */
+  protected typeText(input: TranslatedInput, event: Event): void {
+    const language = this.language();
+    const value = this.inputValue(event);
+    input.text.update((text) => LocalizedText.with(text, language, value));
+  }
+
+  /** Is this field what the language in view still owes, now that a save has asked. */
+  protected owes(input: TranslatedInput): boolean {
+    if (!this.owedShown()) return false;
+    const text = input.text();
+    if (text[this.language()].trim().length > 0) return false;
+    return (
+      input.required ||
+      Tag.values(Locale).some((locale) => text[locale].trim().length > 0)
+    );
+  }
+
+  /**
+   * «Копирай от български»: every field still blank in the language in
+   * view starts from the shop's own words — a draft to translate over,
+   * never over something already typed.
+   */
+  protected copyFromDefault(): void {
+    const language = this.language();
+    for (const input of this.translatedInputs()) {
+      const text = input.text();
+      if (text[language].trim().length > 0) continue;
+      input.text.set(LocalizedText.with(text, language, text[DEFAULT_LOCALE]));
+    }
+  }
+
+  /** A shop row toggled: off when chosen, else appended — the chosen order is kept. */
   protected toggleShop(id: LocationId): void {
     const chosen = this.positionShopIds();
     this.positionShopIds.set(
@@ -774,6 +989,24 @@ export class AdminPrograms {
   protected async save(): Promise<void> {
     const editing = this.editing();
     if (!editing) return;
+    // A translation is owed: nothing is sent. The sheet turns to the first
+    // language that owes one (staying put if this one does), marks what is
+    // missing and puts the caret in it.
+    const owed = this.owedLanguages();
+    const [firstOwed] = owed;
+    if (firstOwed !== undefined) {
+      this.owedShown.set(true);
+      this.saveRefusals.set(null);
+      if (!owed.includes(this.language())) this.language.set(firstOwed);
+      afterNextRender(
+        () =>
+          this.host.nativeElement
+            .querySelector<HTMLElement>('[data-owed]')
+            ?.focus(),
+        { injector: this.injector },
+      );
+      return;
+    }
     this.saving.set(true);
     this.saveRefusals.set(null);
 
@@ -812,34 +1045,36 @@ export class AdminPrograms {
 
   /** Loads a form — a blank one to create, a stored one (absent optionals blank) to edit. */
   private fillPosition(input: PositionInput): void {
-    this.positionTitleEn.set(input.title.en);
-    this.positionTitleBg.set(input.title.bg);
-    this.positionSummaryEn.set(input.summary.en);
-    this.positionSummaryBg.set(input.summary.bg);
+    this.openOn();
+    this.positionTitle.set(input.title);
+    this.positionSummary.set(input.summary);
     this.positionStatus.set(input.positionStatus);
     this.positionApplyUrl.set(input.applyUrl);
   }
 
   private fillCourse(input: CourseInput): void {
-    this.courseTitleEn.set(input.title.en);
-    this.courseTitleBg.set(input.title.bg);
-    this.courseDescriptionEn.set(input.description.en);
-    this.courseDescriptionBg.set(input.description.bg);
+    this.openOn();
+    this.courseTitle.set(input.title);
+    this.courseDescription.set(input.description);
     this.courseEnrollmentStatus.set(input.enrollmentStatus);
-    this.courseStartsLabelEn.set(input.startsLabel.en);
-    this.courseStartsLabelBg.set(input.startsLabel.bg);
+    this.courseStartsLabel.set(input.startsLabel);
     this.courseApplyUrl.set(input.applyUrl);
   }
 
   private fillEvent(input: ShopEventInput): void {
-    this.eventTitleEn.set(input.title.en);
-    this.eventTitleBg.set(input.title.bg);
-    this.eventDescriptionEn.set(input.description.en);
-    this.eventDescriptionBg.set(input.description.bg);
+    this.openOn();
+    this.eventTitle.set(input.title);
+    this.eventDescription.set(input.description);
     this.eventStartsAt.set(input.startsAt);
     this.eventLocationId.set(input.locationId);
     this.eventApplyUrl.set(input.applyUrl);
     this.eventShopMenu.set(false);
+  }
+
+  /** Every sheet opens on the shop's own language, with nothing marked owed. */
+  private openOn(): void {
+    this.language.set(DEFAULT_LOCALE);
+    this.owedShown.set(false);
   }
 
   /**
@@ -859,8 +1094,8 @@ export class AdminPrograms {
    */
   private positionInput(): PositionInput {
     return {
-      title: { en: this.positionTitleEn(), bg: this.positionTitleBg() },
-      summary: { en: this.positionSummaryEn(), bg: this.positionSummaryBg() },
+      title: this.positionTitle(),
+      summary: this.positionSummary(),
       locationIds: this.positionShopIds(),
       positionStatus: this.positionStatus(),
       applyUrl: this.positionApplyUrl(),
@@ -870,16 +1105,10 @@ export class AdminPrograms {
 
   private courseInput(): CourseInput {
     return {
-      title: { en: this.courseTitleEn(), bg: this.courseTitleBg() },
-      description: {
-        en: this.courseDescriptionEn(),
-        bg: this.courseDescriptionBg(),
-      },
+      title: this.courseTitle(),
+      description: this.courseDescription(),
       enrollmentStatus: this.courseEnrollmentStatus(),
-      startsLabel: {
-        en: this.courseStartsLabelEn(),
-        bg: this.courseStartsLabelBg(),
-      },
+      startsLabel: this.courseStartsLabel(),
       applyUrl: this.courseApplyUrl(),
       sortOrder: this.placeOf(this.store.courses()),
     };
@@ -887,11 +1116,8 @@ export class AdminPrograms {
 
   private eventInput(): ShopEventInput {
     return {
-      title: { en: this.eventTitleEn(), bg: this.eventTitleBg() },
-      description: {
-        en: this.eventDescriptionEn(),
-        bg: this.eventDescriptionBg(),
-      },
+      title: this.eventTitle(),
+      description: this.eventDescription(),
       startsAt: this.eventStartsAt(),
       locationId: this.eventLocationId(),
       applyUrl: this.eventApplyUrl(),
