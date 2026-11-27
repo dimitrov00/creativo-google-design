@@ -164,3 +164,36 @@ export const writeShopEvent =
     const saved = await ports.saveEvent(event);
     return saved.ok ? Result.ok(event) : Result.err([saved.error]);
   };
+
+/**
+ * The order of a list, as the admin just arranged it — a sandwich with no
+ * read: the page hands over the stored entities in their new order,
+ * `ProgramsSystem.resequenced` answers the ones whose place changed, and
+ * each is saved whole, one after another. It stops at the first failed
+ * write and answers it; the places written before it stay written, and the
+ * live list shows the order as stored.
+ */
+export const reorderPositions =
+  (ports: PositionWritePorts) =>
+  async (
+    arranged: readonly Position[],
+  ): Promise<Result<void, RepositoryError>> => {
+    for (const position of ProgramsSystem.resequenced(arranged)) {
+      const saved = await ports.savePosition(position);
+      if (!saved.ok) return saved;
+    }
+    return Result.ok(undefined);
+  };
+
+/** The courses' order, as {@link reorderPositions}. */
+export const reorderCourses =
+  (ports: CourseWritePorts) =>
+  async (
+    arranged: readonly Course[],
+  ): Promise<Result<void, RepositoryError>> => {
+    for (const course of ProgramsSystem.resequenced(arranged)) {
+      const saved = await ports.saveCourse(course);
+      if (!saved.ok) return saved;
+    }
+    return Result.ok(undefined);
+  };

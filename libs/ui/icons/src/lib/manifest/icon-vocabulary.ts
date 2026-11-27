@@ -217,6 +217,19 @@ export const UI_ICON_REGISTRY = {
   /** The search field's own clear — the circled ✕ of the platform's field. */
   'field.clear': 'cancel',
 
+  /* ── Lists ──────────────────────────────────────────────────────── */
+  /**
+   * THE REORDER HANDLE — the platform's three bars at a row's trailing
+   * edge while a list is being arranged (`List` in edit mode with
+   * `.onMove`). It means "drag me, or tap for where to put me"; never a
+   * menu on its own.
+   */
+  'list.reorder': 'drag_handle',
+  /** Enter a list's arrange mode — HIG's `arrow.up.arrow.down`: the mark on
+   *  the button that turns rows into movable ones, never on a row itself
+   *  (a row's grip is `list.reorder`). */
+  'list.arrange': 'swap_vert',
+
   /* ── The visit frame's resize handles ───────────────────────────── */
   /**
    * The two chevrons on the edges of a draggable time block.

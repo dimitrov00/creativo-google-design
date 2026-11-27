@@ -2,7 +2,13 @@ import { Injectable, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { combineLatest, map } from 'rxjs';
 import type { Course, Position, ShopEvent, ShopLocation } from '@core/entities';
-import { writeCourse, writePosition, writeShopEvent } from '@core/pipelines';
+import {
+  reorderCourses,
+  reorderPositions,
+  writeCourse,
+  writePosition,
+  writeShopEvent,
+} from '@core/pipelines';
 import type { LocationId } from '@core/primitives';
 import {
   CATALOG_PORTS,
@@ -65,6 +71,10 @@ export class AdminProgramsStore {
     ...this.defaultLocation,
     ...this.ids,
   });
+
+  /** A list's new order, as arranged: only the places that changed are written. */
+  readonly reorderPositions = reorderPositions(this.programs);
+  readonly reorderCourses = reorderCourses(this.programs);
 
   /** Every role, `sortOrder` order; empty until the first answer and on a failed read. */
   readonly positions = toSignal(

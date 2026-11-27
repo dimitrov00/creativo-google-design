@@ -856,3 +856,57 @@ describe('ProgramsSystem — purity', () => {
     expect(eventInput.locationId).toBe(' loc-x ');
   });
 });
+
+describe('ProgramsSystem — the order of a list', () => {
+  const list = deepFreeze([
+    positionOf('pos_a', { sortOrder: 0 }),
+    positionOf('pos_b', { sortOrder: 1 }),
+    positionOf('pos_c', { sortOrder: 5 }),
+  ]);
+
+  it('puts a new thing after the last place held, and first in an empty list', () => {
+    expect(ProgramsSystem.nextSortOrder(list)).toBe(6);
+    expect(ProgramsSystem.nextSortOrder([])).toBe(0);
+  });
+
+  it('moves one thing and keeps the rest in order, leaving the input as it was', () => {
+    expect(ProgramsSystem.moved(list, 2, 0).map((entry) => entry.id)).toEqual([
+      'pos_c',
+      'pos_a',
+      'pos_b',
+    ]);
+    expect(ProgramsSystem.moved(list, 0, 2).map((entry) => entry.id)).toEqual([
+      'pos_b',
+      'pos_c',
+      'pos_a',
+    ]);
+    expect(list.map((entry) => entry.id)).toEqual(['pos_a', 'pos_b', 'pos_c']);
+  });
+
+  it('answers the list itself for a move to its own place or outside the list', () => {
+    expect(ProgramsSystem.moved(list, 1, 1)).toBe(list);
+    expect(ProgramsSystem.moved(list, -1, 0)).toBe(list);
+    expect(ProgramsSystem.moved(list, 0, 3)).toBe(list);
+  });
+
+  it('answers only the things whose place changed, each at its index', () => {
+    const arranged = ProgramsSystem.moved(list, 2, 0);
+    expect(
+      ProgramsSystem.resequenced(arranged).map((entry) => [
+        entry.id,
+        entry.sortOrder,
+      ]),
+    ).toEqual([
+      ['pos_c', 0],
+      ['pos_a', 1],
+      ['pos_b', 2],
+    ]);
+    expect(
+      ProgramsSystem.resequenced(list).map((entry) => [
+        entry.id,
+        entry.sortOrder,
+      ]),
+    ).toEqual([['pos_c', 2]]);
+    expect(ProgramsSystem.resequenced(list.slice(0, 2))).toEqual([]);
+  });
+});

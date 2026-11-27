@@ -173,6 +173,53 @@ function wallStartOf(raw: string): FieldResult<WallStart> {
 
 export const ProgramsSystem = {
   /**
+   * The place a NEW thing takes in a list ordered by `sortOrder`: after the
+   * last one — one more than the highest place held, `0` in an empty list.
+   */
+  nextSortOrder(list: readonly { readonly sortOrder: number }[]): number {
+    let highest = -1;
+    for (const entry of list) {
+      if (entry.sortOrder > highest) highest = entry.sortOrder;
+    }
+    return highest + 1;
+  },
+
+  /**
+   * A list as it was just arranged, read as places: each thing takes its
+   * index as its `sortOrder`, and the answer holds ONLY the things whose
+   * place changed, in the new order — what a reorder has to write. Nothing
+   * moved, nothing answered.
+   */
+  resequenced<T extends { readonly sortOrder: number }>(
+    arranged: readonly T[],
+  ): readonly T[] {
+    const moved: T[] = [];
+    for (let index = 0; index < arranged.length; index += 1) {
+      const entry = arranged[index];
+      if (entry !== undefined && entry.sortOrder !== index) {
+        moved.push({ ...entry, sortOrder: index });
+      }
+    }
+    return moved;
+  },
+
+  /**
+   * A list with the thing at `from` moved to `to`, the rest keeping their
+   * order. An index outside the list, or a move to its own place, answers
+   * the list as it is.
+   */
+  moved<T>(list: readonly T[], from: number, to: number): readonly T[] {
+    const inside = (index: number) =>
+      Number.isInteger(index) && index >= 0 && index < list.length;
+    if (!inside(from) || !inside(to) || from === to) return list;
+    const next = [...list];
+    const [entry] = next.splice(from, 1);
+    if (entry === undefined) return list;
+    next.splice(to, 0, entry);
+    return next;
+  },
+
+  /**
    * Shown on the public page: a course open now, or opening — never a
    * closed one (`MarketingCourses`' `LISTED_STATUSES`, the values of index
    * #11's `in` filter). The rule's one home (pass D: was the components'

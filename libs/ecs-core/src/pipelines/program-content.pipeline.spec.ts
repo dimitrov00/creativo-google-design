@@ -43,6 +43,8 @@ import {
 } from '@core/testing';
 import {
   type WriteShopEventPorts,
+  reorderCourses,
+  reorderPositions,
   writeCourse,
   writePosition,
   writeShopEvent,
@@ -586,5 +588,48 @@ describe('writeShopEvent', () => {
       unwrapErr(await save({ id: null, input: shopEventInputOf() })),
     ).toEqual([failedWrite]);
     expect(world.events.size).toBe(0);
+  });
+});
+
+describe('reorderPositions, reorderCourses', () => {
+  it('writes only the places that changed, each thing whole', async () => {
+    const first = positionOf('pos-a', { sortOrder: 0 });
+    const second = positionOf('pos-b', { sortOrder: 1 });
+    const third = positionOf('pos-c', { sortOrder: 2 });
+    const world = memoryProgramsWorld({ positions: [first, second, third] });
+    const written: string[] = [];
+    const ports = memoryProgramsPorts(world);
+    const reorder = reorderPositions({
+      ...ports,
+      savePosition: async (position) => {
+        written.push(position.id);
+        return ports.savePosition(position);
+      },
+    });
+
+    unwrapOk(await reorder([first, third, second]));
+
+    expect(written).toEqual(['pos-c', 'pos-b']);
+    expect(world.positions.get(third.id)).toEqual({ ...third, sortOrder: 1 });
+    expect(world.positions.get(second.id)).toEqual({ ...second, sortOrder: 2 });
+    expect(world.positions.get(first.id)).toEqual(first);
+  });
+
+  it('stops at the first failed write and answers it', async () => {
+    const first = courseOf('course-a', { sortOrder: 0 });
+    const second = courseOf('course-b', { sortOrder: 1 });
+    const world = memoryProgramsWorld({ courses: [first, second] });
+    const attempts: string[] = [];
+    const reorder = reorderCourses({
+      ...memoryProgramsPorts(world),
+      saveCourse: async (course) => {
+        attempts.push(course.id);
+        return Result.err(failedWrite);
+      },
+    });
+
+    expect(unwrapErr(await reorder([second, first]))).toEqual(failedWrite);
+    expect(attempts).toEqual(['course-b']);
+    expect([...world.courses.values()]).toEqual([first, second]);
   });
 });
