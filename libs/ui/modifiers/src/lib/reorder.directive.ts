@@ -16,6 +16,25 @@ export interface UiReorderMove {
 /** A press becomes a drag once the pointer has travelled this far. */
 const DRAG_SLOP_PX = 6;
 
+/** What a row is seen to keep while it glides: its corners and its lift. */
+const GLIDED_PROPERTIES = [
+  'borderTopLeftRadius',
+  'borderTopRightRadius',
+  'borderBottomRightRadius',
+  'borderBottomLeftRadius',
+  'boxShadow',
+] as const;
+
+/** Long enough for the snappy spring to come to rest (700 ms). */
+const GLIDE_REST_MS = 800;
+
+/** Where an item was drawn, and how, just before the list changed. */
+interface Drawn {
+  readonly top: number;
+  readonly look: readonly string[];
+  readonly lifted: boolean;
+}
+
 /**
  * ≙ SwiftUI `List { … }.onMove(perform:)` in edit mode — a list whose items
  * are arranged by their handles. The list's items are its ELEMENT CHILDREN,
@@ -32,8 +51,19 @@ const DRAG_SLOP_PX = 6;
  *   house's snappy spring, and lifting the finger reports the move.
  * - ARROW UP / DOWN on a focused handle moves the item one place; focus
  *   stays on the handle.
- * - A TAP is left alone: it reaches the handle as a click, where the owner
- *   opens a menu of places («Най-горе», «Нагоре», «Надолу», «Най-долу»).
+ * - A TAP is left alone: it reaches the handle as a click. An owner that
+ *   offers a menu of places («Най-горе», «Нагоре», «Надолу», «Най-долу»)
+ *   reports the pick through {@link UiReorderList.move}.
+ *
+ * EVERY MOVE GLIDES. However a move is said, each item travels from where
+ * it was drawn to its new place on the house's snappy spring, and its
+ * corners and lift morph on the way — the item let go of settles out of the
+ * air into its slot, and a row that becomes the list's first or last takes
+ * that place's shape as it arrives. (The owner still re-renders in one
+ * step; the directive draws the items where they were and lets go.) While
+ * an item is dragged, each item carries `data-reorder-place` — `first`,
+ * `last`, both or neither — for the place it is SEEN in, so a list whose
+ * ends are shaped can shape them as the rows part.
  *
  * @uiPurpose Lets the items of a list be arranged: reports a drag of an
  *   item's handle, or an arrow key on it, as a move from one place to
@@ -52,6 +82,9 @@ export class UiReorderList {
   readonly uiMoved = output<UiReorderMove>();
 
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
+  private readonly injector = inject(Injector);
+  private glideRun = 0;
+  private reading = false;
 
   /** The list's items, in order. */
   items(): HTMLElement[] {
@@ -70,8 +103,98 @@ export class UiReorderList {
     const last = this.items().length - 1;
     const target = Math.min(Math.max(to, 0), last);
     if (from < 0 || from > last || target === from) return false;
-    this.uiMoved.emit({ from, to: target });
+    this.glide(() => this.uiMoved.emit({ from, to: target }));
     return true;
+  }
+
+  /**
+   * Runs a change to the list and glides every item from where it was drawn
+   * to where the change leaves it. A change that moves nothing still lands
+   * an item that was in the air.
+   */
+  glide(change: () => void): void {
+    // A change made inside a glide belongs to it: the items are read once,
+    // before the outermost change.
+    if (this.reading) {
+      change();
+      return;
+    }
+    const before = this.drawn();
+    this.reading = true;
+    try {
+      change();
+    } finally {
+      this.reading = false;
+    }
+    if (before.size === 0) return;
+    afterNextRender(() => this.play(before), { injector: this.injector });
+  }
+
+  /** Each item as it is drawn now; nothing when motion is to be reduced. */
+  private drawn(): Map<HTMLElement, Drawn> {
+    const drawn = new Map<HTMLElement, Drawn>();
+    const view = this.host.nativeElement.ownerDocument.defaultView;
+    if (
+      view === null ||
+      view.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
+    ) {
+      return drawn;
+    }
+    for (const item of this.items()) {
+      const style = view.getComputedStyle(item);
+      drawn.set(item, {
+        top: item.getBoundingClientRect().top,
+        look: GLIDED_PROPERTIES.map((property) => style[property]),
+        lifted: item.hasAttribute('data-reorder-lifted'),
+      });
+    }
+    return drawn;
+  }
+
+  /**
+   * First-last-invert-play: each item is drawn back where it was, with the
+   * corners and lift it had, and then released to its place on a transition.
+   */
+  private play(before: ReadonlyMap<HTMLElement, Drawn>): void {
+    const list = this.host.nativeElement;
+    const view = list.ownerDocument.defaultView;
+    if (view === null) return;
+    const gliding: HTMLElement[] = [];
+    for (const item of this.items()) {
+      const was = before.get(item);
+      if (was === undefined) continue;
+      const style = view.getComputedStyle(item);
+      const travel = was.top - item.getBoundingClientRect().top;
+      const reshaped = GLIDED_PROPERTIES.some(
+        (property, index) => style[property] !== was.look[index],
+      );
+      if (travel === 0 && !reshaped && !was.lifted) continue;
+      item.style.transition = 'none';
+      if (travel !== 0) item.style.translate = `0 ${travel}px`;
+      GLIDED_PROPERTIES.forEach((property, index) => {
+        item.style[property] = was.look[index] ?? '';
+      });
+      // What was in the air lands over its neighbours, not through them.
+      if (was.lifted) item.setAttribute('data-reorder-landing', '');
+      gliding.push(item);
+    }
+    if (gliding.length === 0) return;
+    // The inverted state is committed before it is released.
+    void list.offsetHeight;
+    list.setAttribute('data-reorder-settling', '');
+    for (const item of gliding) {
+      item.style.transition = '';
+      item.style.translate = '';
+      for (const property of GLIDED_PROPERTIES) item.style[property] = '';
+    }
+    const run = (this.glideRun += 1);
+    setTimeout(() => {
+      if (run !== this.glideRun) return;
+      list.removeAttribute('data-reorder-settling');
+      for (const item of this.items()) {
+        item.removeAttribute('data-reorder-landing');
+      }
+    }, GLIDE_REST_MS);
   }
 
   /** While an item is dragged the others move on a transition. */
@@ -201,26 +324,51 @@ export class UiReorderHandle {
       const item = press.items[index];
       if (item === undefined) continue;
       let shift = 0;
-      if (index === press.from) shift = offset;
-      else if (index > press.from && index <= to) shift = -press.step;
-      else if (index < press.from && index >= to) shift = press.step;
+      // The place the item is SEEN in, for a list that shapes its ends.
+      let seen = index;
+      if (index === press.from) {
+        shift = offset;
+        seen = to;
+      } else if (index > press.from && index <= to) {
+        shift = -press.step;
+        seen = index - 1;
+      } else if (index < press.from && index >= to) {
+        shift = press.step;
+        seen = index + 1;
+      }
       item.style.translate = shift === 0 ? '' : `0 ${shift}px`;
+      const place = [
+        ...(seen === 0 ? ['first'] : []),
+        ...(seen === lastIndex ? ['last'] : []),
+      ].join(' ');
+      if (item.getAttribute('data-reorder-place') !== place) {
+        item.setAttribute('data-reorder-place', place);
+      }
     }
   }
 
   protected released(event: PointerEvent): void {
     const press = this.press;
     if (press === null || event.pointerId !== press.pointerId) return;
-    this.settle();
-    if (!press.dragging) return;
+    if (!press.dragging) {
+      this.settle();
+      return;
+    }
     // The move was a drag: the click that follows the release is not a tap.
     this.swallowClick = true;
     setTimeout(() => (this.swallowClick = false));
-    this.list.move(press.from, press.to);
+    // The list reads every item where the drag left it BEFORE the drag's
+    // own marks come off, so the item in hand lands from the air. A drop
+    // on its own place is no move, and still lands.
+    this.list.glide(() => {
+      this.settle();
+      this.list.move(press.from, press.to);
+    });
   }
 
   protected cancelled(): void {
-    this.settle();
+    if (this.press?.dragging === true) this.list.glide(() => this.settle());
+    else this.settle();
   }
 
   private clicked(event: Event): void {
@@ -242,7 +390,7 @@ export class UiReorderHandle {
     afterNextRender(() => handle.focus(), { injector: this.injector });
   }
 
-  /** Every item back to rest, in one frame: the owner's order takes over. */
+  /** The drag's own marks come off every item: the owner's order takes over. */
   private settle(): void {
     const press = this.press;
     this.press = null;
@@ -251,6 +399,7 @@ export class UiReorderHandle {
     for (const item of press.items) {
       item.style.translate = '';
       item.removeAttribute('data-reorder-lifted');
+      item.removeAttribute('data-reorder-place');
     }
   }
 }

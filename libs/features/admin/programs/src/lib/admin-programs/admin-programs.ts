@@ -5,6 +5,7 @@ import {
   inject,
   resource,
   signal,
+  viewChild,
 } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { Title } from '@angular/platform-browser';
@@ -210,6 +211,7 @@ export class AdminPrograms {
   protected readonly arranging = signal(false);
   /** The row whose handle menu is open, by id. */
   protected readonly orderMenu = signal<string | null>(null);
+  private readonly reorderList = viewChild(UiReorderList);
   /** The last move could not be saved. */
   protected readonly orderFailed = signal(false);
   /** The last move in words, for a screen reader: «„Бръснар“ — място 2 от 5». */
@@ -530,7 +532,8 @@ export class AdminPrograms {
           : place === ProgramPlace.Down
             ? from + 1
             : count - 1;
-    void this.moveRow({ from, to });
+    // Through the list, so a pick from the menu glides as a drag does.
+    this.reorderList()?.move(from, to);
   }
 
   /**

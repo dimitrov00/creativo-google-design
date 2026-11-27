@@ -620,7 +620,9 @@
          house bottom bar, under the thumb and in place however long the
          list runs. The arrange mark leads; ＋ is the bar's primary on the
          trailing edge. While arranging, «Готово» stands where the mark
-         stood (Edit turns into Done in place) and ＋ keeps its place. -->
+         stood (Edit turns into Done in place) and ＋ keeps its place.
+         The controls are the schedule bar's: the large rung, medium
+         glyphs. -->
     <ui-page-action-bar data-testid="admin-programs-dock">
       @if (arranging()) {
       <button
@@ -628,7 +630,7 @@
         uiButton
         uiButtonStyle="bordered"
         uiTint="neutral"
-        uiControlSize="regular"
+        uiControlSize="large"
         data-testid="admin-order-done"
         (click)="stopArranging()"
       >
@@ -640,26 +642,26 @@
         uiButton
         uiButtonStyle="bordered"
         uiTint="neutral"
-        uiControlSize="regular"
+        uiControlSize="large"
         [uiIconOnly]="true"
         [attr.aria-label]="t('admin.programs.order.start')"
         data-testid="admin-order-start"
         (click)="startArranging()"
       >
-        <ui-icon uiName="list.arrange" />
+        <ui-icon uiName="list.arrange" uiScale="medium" />
       </button>
       }
       <button
         type="button"
         uiButton
         uiButtonStyle="borderedProminent"
-        uiControlSize="regular"
+        uiControlSize="large"
         [uiIconOnly]="true"
         [attr.aria-label]="t('admin.programs.add')"
         data-testid="admin-new"
         (click)="startCreate()"
       >
-        <ui-icon uiName="action.add" />
+        <ui-icon uiName="action.add" uiScale="medium" />
       </button>
     </ui-page-action-bar>
   </main>
