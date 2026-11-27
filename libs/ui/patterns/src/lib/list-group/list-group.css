@@ -77,6 +77,30 @@
     border-end-end-radius: var(--control-radius-prominent);
   }
 
+  /* WHILE A ROW IS DRAGGED (`uiReorderList`, 2026-11-27) the rows are not
+     yet re-ordered in the document, so `:first-child` and `:last-child`
+     name the wrong rows. The directive marks each row with the place it is
+     SEEN in, and the outer corners follow that mark instead: the row that
+     slides up into first place takes the group's top corners as it goes,
+     and the one it displaced gives them up (the radius transition draws
+     both). The row in the hand is a card of its own — the prominent rung
+     all round, the pressed shape — until it lands. After the rows that
+     shape the ends, so it wins at equal weight. */
+  .ui-list-group > .ui-list-row[data-reorder-place] {
+    border-radius: var(--control-radius-subtle);
+  }
+  .ui-list-group > .ui-list-row[data-reorder-place~='first'] {
+    border-start-start-radius: var(--control-radius-prominent);
+    border-start-end-radius: var(--control-radius-prominent);
+  }
+  .ui-list-group > .ui-list-row[data-reorder-place~='last'] {
+    border-end-start-radius: var(--control-radius-prominent);
+    border-end-end-radius: var(--control-radius-prominent);
+  }
+  .ui-list-group > .ui-list-row[data-reorder-lifted] {
+    border-radius: var(--control-radius-prominent);
+  }
+
   /* Shape morph (M3 expressive): a pressed segment rounds to the full
      prominent radius. The shared state layer and press scale compose from
      the [data-interactive] grammar — its overlay inherits border-radius,

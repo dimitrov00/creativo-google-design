@@ -596,6 +596,96 @@ describe('AdminPrograms', () => {
       ).not.toBeNull();
     });
 
+    it('turns a role’s status over from the action behind its row, without opening the editor', async () => {
+      const { fixture, host, world } = await configure({ positions: three() });
+      const before = world.positions.get(PositionId.of('pos_a'));
+
+      const action = host.querySelector<HTMLButtonElement>(
+        '[data-testid="admin-row-quick-pos_a"]',
+      );
+      expect(action?.textContent?.trim()).toBe(
+        before?.positionStatus === PositionStatus.Open ? 'Close' : 'Open',
+      );
+      action?.click();
+      await settle(fixture);
+
+      expect(world.positions.get(PositionId.of('pos_a'))).toEqual({
+        ...before,
+        positionStatus:
+          before?.positionStatus === PositionStatus.Open
+            ? PositionStatus.Closed
+            : PositionStatus.Open,
+      });
+      expect(formOpen(fixture)).toBe(false);
+      expect(
+        host.querySelector('[data-testid="admin-quick-error"]'),
+      ).toBeNull();
+    });
+
+    it.each([
+      [EnrollmentStatus.Upcoming, 'Open', EnrollmentStatus.Open],
+      [EnrollmentStatus.Closed, 'Open', EnrollmentStatus.Open],
+      [EnrollmentStatus.Open, 'Close', EnrollmentStatus.Closed],
+    ])(
+      'turns a %s course’s enrolment over from the action behind its row («%s»)',
+      async (stored, word, turned) => {
+        const { fixture, host, world } = await configure({
+          courses: [courseOf('course_a', { enrollmentStatus: stored })],
+        });
+        click(host, 'admin-tab-courses');
+        fixture.detectChanges();
+
+        const action = host.querySelector<HTMLButtonElement>(
+          '[data-testid="admin-row-quick-course_a"]',
+        );
+        expect(action?.textContent?.trim()).toBe(word);
+        action?.click();
+        await settle(fixture);
+
+        expect(
+          world.courses.get(CourseId.of('course_a'))?.enrollmentStatus,
+        ).toBe(turned);
+        expect(formOpen(fixture)).toBe(false);
+      },
+    );
+
+    it('starts a new event from a copy: the sheet opens filled, and saving it leaves the first as it was', async () => {
+      const stored = shopEventOf('ev_first');
+      const { fixture, host, world } = await configure({ events: [stored] });
+      click(host, 'admin-tab-events');
+      fixture.detectChanges();
+
+      const action = host.querySelector<HTMLButtonElement>(
+        '[data-testid="admin-row-quick-ev_first"]',
+      );
+      expect(action?.textContent?.trim()).toBe('Duplicate');
+      action?.click();
+      fixture.detectChanges();
+
+      expect(formOpen(fixture)).toBe(true);
+      expect(
+        host.querySelector<HTMLInputElement>(
+          '[data-testid="admin-event-title-en"]',
+        )?.value,
+      ).toBe(stored.title.en);
+      // Nothing is written until the sheet's own save.
+      expect(world.events.size).toBe(1);
+
+      click(host, 'admin-save');
+      await settle(fixture);
+
+      expect(world.events.size).toBe(2);
+      expect(world.events.get(stored.id)).toEqual(stored);
+      const copy = [...world.events.values()].find(
+        (event) => event.id !== stored.id,
+      );
+      expect(copy).toEqual({
+        ...stored,
+        id: copy?.id,
+        sortOrder: copy?.sortOrder,
+      });
+    });
+
     it('disables the places a row already holds', async () => {
       const { fixture, host } = await configure({ positions: three() });
 

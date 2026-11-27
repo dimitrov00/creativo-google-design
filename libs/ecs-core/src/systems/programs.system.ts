@@ -1,6 +1,7 @@
 import {
   EnrollmentStatus,
   LocalizedText,
+  PositionStatus,
   type CourseInput,
   type PositionInput,
   type ShopEventInput,
@@ -201,6 +202,34 @@ export const ProgramsSystem = {
       }
     }
     return moved;
+  },
+
+  /**
+   * A role with its status turned over: an open one closed, a closed one
+   * opened. Everything else it holds is kept.
+   */
+  positionToggled(position: Position): Position {
+    return {
+      ...position,
+      positionStatus:
+        position.positionStatus === PositionStatus.Open
+          ? PositionStatus.Closed
+          : PositionStatus.Open,
+    };
+  },
+
+  /**
+   * A course with its enrolment turned over: an open one closed, and one
+   * that is closed or still upcoming opened. Everything else is kept.
+   */
+  courseToggled(course: Course): Course {
+    return {
+      ...course,
+      enrollmentStatus:
+        course.enrollmentStatus === EnrollmentStatus.Open
+          ? EnrollmentStatus.Closed
+          : EnrollmentStatus.Open,
+    };
   },
 
   /**

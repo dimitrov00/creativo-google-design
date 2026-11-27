@@ -1,0 +1,154 @@
+/* The row's distance from rest is ONE length: the row's shift and both
+   edges' widths are computed from it, so they can never disagree
+   mid-flight. Registered, so the component's spring (a Web Animation, see
+   swipe-actions.ts) can interpolate it. */
+@property --ui-swipe-offset {
+  syntax: '<length>';
+  inherits: true;
+  initial-value: 0px;
+}
+
+@layer sys-components {
+  .ui-swipe-actions {
+    --ui-swipe-seam: calc(var(--sys-space-unit) / 2);
+    --ui-swipe-direction: 1;
+    position: relative;
+    display: grid;
+    /* Sideways is the row's; up and down stays the page's scroll. */
+    touch-action: pan-y;
+  }
+
+  .ui-swipe-actions:dir(rtl) {
+    --ui-swipe-direction: -1;
+  }
+
+  /* In a segmented group a wrapper is flattened (`display: contents`); this
+     one must stay a box — its edges are placed against it. The group's own
+     rules still shape the row inside it as a segment. */
+  .ui-list-group > .ui-swipe-actions.ui-swipe-actions {
+    display: grid;
+  }
+
+  /* WHILE THE ROW IS AWAY FROM REST its place clips it: the row slides
+     under the list's own edge instead of out over the page's gutter. The
+     clip is the segment's own shape — the group's outer corners on its end
+     rows — so the row keeps every corner it has while it slides, and the
+     outermost action is rounded by the same curve. At rest nothing is
+     clipped, so a focus ring and the press scale are whole. */
+  .ui-swipe-actions[data-swipe] {
+    overflow: clip;
+  }
+
+  .ui-list-group > .ui-swipe-actions[data-swipe] {
+    border-radius: var(--control-radius-subtle);
+  }
+  .ui-list-group > .ui-swipe-actions[data-swipe]:first-child {
+    border-start-start-radius: var(--control-radius-prominent);
+    border-start-end-radius: var(--control-radius-prominent);
+  }
+  .ui-list-group > .ui-swipe-actions[data-swipe]:last-child {
+    border-end-start-radius: var(--control-radius-prominent);
+    border-end-end-radius: var(--control-radius-prominent);
+  }
+
+  /* THE ROW: whatever was wrapped. It slides whole — its words are never
+     squeezed — by the offset. */
+  .ui-swipe-actions > :not(.ui-swipe-actions__edge) {
+    grid-area: 1 / 1;
+    min-inline-size: 0;
+    translate: calc(var(--ui-swipe-offset) * var(--ui-swipe-direction)) 0;
+  }
+
+  /* AN EDGE: exactly as wide as the row has left it, less the seam — the
+     actions share that room, so they grow out of the edge with the pull
+     and stretch with it past their rest width. */
+  .ui-swipe-actions__edge {
+    position: absolute;
+    inset-block: 0;
+    display: flex;
+    gap: var(--ui-swipe-seam);
+    overflow: clip;
+  }
+
+  .ui-swipe-actions__edge[data-edge='leading'] {
+    inset-inline-start: 0;
+    inline-size: max(0px, var(--ui-swipe-offset) - var(--ui-swipe-seam));
+    /* The primary is the outermost. */
+    flex-direction: row;
+  }
+
+  .ui-swipe-actions__edge[data-edge='trailing'] {
+    inset-inline-end: 0;
+    inline-size: max(0px, -1 * var(--ui-swipe-offset) - var(--ui-swipe-seam));
+    flex-direction: row-reverse;
+  }
+
+  /* AN ACTION: a segment of the list in its tint — a glyph over one short
+     word, centred, clipped by the segment while it is still narrow. */
+  .ui-swipe-action {
+    display: flex;
+    flex: 1 1 0;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sys-space-tight);
+    min-inline-size: 0;
+    padding: 0;
+    border: 0;
+    border-radius: var(--control-radius-subtle);
+    overflow: clip;
+    background: var(--sys-color-primary);
+    color: var(--sys-color-on-primary);
+    font: var(--sys-font-caption);
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition:
+      flex-grow var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-emphasized),
+      border-radius var(--sys-motion-duration-regular)
+        var(--sys-motion-ease-standard),
+      filter var(--sys-motion-duration-instant) var(--sys-motion-ease-standard);
+  }
+
+  .ui-swipe-action > .ui-icon {
+    font-size: 1.25rem;
+  }
+
+  .ui-swipe-action[data-tint='destructive'] {
+    background: var(--sys-color-destructive);
+    color: var(--sys-color-on-destructive);
+  }
+
+  @media (hover: hover) {
+    .ui-swipe-action:hover {
+      filter: brightness(1.08);
+    }
+  }
+
+  .ui-swipe-action:active {
+    filter: brightness(0.92);
+  }
+
+  .ui-swipe-action:focus-visible {
+    outline: var(--sys-focus-ring-width) solid var(--sys-color-ring);
+    outline-offset: calc(-1 * var(--sys-focus-ring-width));
+  }
+
+  /* PULLED PAST THE ACTIONS: the primary takes the whole edge — letting go
+     here runs it — and the others give their room up. */
+  .ui-swipe-actions[data-full='leading']
+    > .ui-swipe-actions__edge[data-edge='leading']
+    > .ui-swipe-action:not(:first-child),
+  .ui-swipe-actions[data-full='trailing']
+    > .ui-swipe-actions__edge[data-edge='trailing']
+    > .ui-swipe-action:not(:first-child) {
+    flex-grow: 0;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ui-swipe-action {
+      transition: none;
+    }
+  }
+}

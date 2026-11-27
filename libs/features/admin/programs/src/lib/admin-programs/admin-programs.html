@@ -65,6 +65,13 @@
           data-testid="admin-order-error"
           >{{ t('admin.programs.order.failed') }}</ui-notice
         >
+        } @if (quickFailed()) {
+        <ui-notice
+          uiTone="destructive"
+          uiAnnounce="polite"
+          data-testid="admin-quick-error"
+          >{{ t('admin.programs.quick.failed') }}</ui-notice
+        >
         }
         <span uiVisuallyHidden aria-live="polite"
           >{{ orderAnnouncement() }}</span
@@ -168,17 +175,32 @@
             </button>
           </ui-list-row>
           } @else {
-          <button
-            type="button"
-            uiListRow
-            [uiInteractive]="true"
-            (click)="openRow(row.id)"
-          >
-            <span>{{ row.title }}</span>
-            @if (row.statusKey; as key) {
-            <span uiTrailing>{{ t(key) }}</span>
-            }
-          </button>
+          <!-- EVERY ROW'S QUICK ACTION waits behind it: swiped in from the
+               trailing edge (or reached with Tab). A role or a course turns
+               its status over without opening the editor; an event starts
+               a new one from a copy of itself. -->
+          <ui-swipe-actions [attr.data-testid]="'admin-row-' + row.id">
+            <button
+              type="button"
+              uiListRow
+              [uiInteractive]="true"
+              (click)="openRow(row.id)"
+            >
+              <span>{{ row.title }}</span>
+              @if (row.statusKey; as key) {
+              <span uiTrailing>{{ t(key) }}</span>
+              }
+            </button>
+            <button
+              uiSwipeAction
+              uiTrailing
+              [attr.data-testid]="'admin-row-quick-' + row.id"
+              (click)="runQuick(row.id)"
+            >
+              <ui-icon [uiName]="row.quick.icon" />
+              {{ t(row.quick.labelKey) }}
+            </button>
+          </ui-swipe-actions>
           } }
         </ui-list-group>
       </ui-stack>
@@ -620,7 +642,9 @@
          house bottom bar, under the thumb and in place however long the
          list runs. The arrange mark leads; ＋ is the bar's primary on the
          trailing edge. While arranging, «Готово» stands where the mark
-         stood (Edit turns into Done in place) and ＋ keeps its place. -->
+         stood (Edit turns into Done in place) and ＋ keeps its place.
+         The controls are the schedule bar's: the large rung, medium
+         glyphs. -->
     <ui-page-action-bar data-testid="admin-programs-dock">
       @if (arranging()) {
       <button
@@ -628,7 +652,7 @@
         uiButton
         uiButtonStyle="bordered"
         uiTint="neutral"
-        uiControlSize="regular"
+        uiControlSize="large"
         data-testid="admin-order-done"
         (click)="stopArranging()"
       >
@@ -640,26 +664,26 @@
         uiButton
         uiButtonStyle="bordered"
         uiTint="neutral"
-        uiControlSize="regular"
+        uiControlSize="large"
         [uiIconOnly]="true"
         [attr.aria-label]="t('admin.programs.order.start')"
         data-testid="admin-order-start"
         (click)="startArranging()"
       >
-        <ui-icon uiName="list.arrange" />
+        <ui-icon uiName="list.arrange" uiScale="medium" />
       </button>
       }
       <button
         type="button"
         uiButton
         uiButtonStyle="borderedProminent"
-        uiControlSize="regular"
+        uiControlSize="large"
         [uiIconOnly]="true"
         [attr.aria-label]="t('admin.programs.add')"
         data-testid="admin-new"
         (click)="startCreate()"
       >
-        <ui-icon uiName="action.add" />
+        <ui-icon uiName="action.add" uiScale="medium" />
       </button>
     </ui-page-action-bar>
   </main>

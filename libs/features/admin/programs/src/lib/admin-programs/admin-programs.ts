@@ -5,6 +5,7 @@ import {
   inject,
   resource,
   signal,
+  viewChild,
 } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { Title } from '@angular/platform-browser';
@@ -36,6 +37,7 @@ import {
   UiChoiceMenu,
   type UiChoiceOption,
   UiIcon,
+  type UiIconName,
   UiModalSheet,
   UiSegmentedControl,
   UiTextField,
@@ -51,6 +53,8 @@ import {
   UiPageActionBar,
   UiSectionHeader,
   UiSheetActionBar,
+  UiSwipeAction,
+  UiSwipeActions,
 } from '@creativo/ui/patterns';
 import {
   UiForegroundStyleDirective,
@@ -109,6 +113,34 @@ type ProgramRow = {
   readonly title: string;
   /** The catalogue key of the row's status word; an event prints none. */
   readonly statusKey: string | null;
+  /**
+   * The quick action behind the row — a role's status or a course's
+   * enrolment turned over, an event started again from a copy — as
+   * the word and glyph it shows; a course or an event has none.
+   */
+  readonly quick: QuickAction;
+};
+
+/** The word and glyph of a row's quick action. */
+type QuickAction = {
+  readonly labelKey: string;
+  readonly icon: UiIconName;
+};
+
+/** Take an open role or course off the public pages. */
+const QUICK_CLOSE: QuickAction = {
+  labelKey: 'admin.programs.quick.close',
+  icon: 'program.hide',
+};
+/** Put a closed (or upcoming) one on them. */
+const QUICK_OPEN: QuickAction = {
+  labelKey: 'admin.programs.quick.open',
+  icon: 'program.show',
+};
+/** An event has no status: its quick action starts a new one from a copy. */
+const QUICK_DUPLICATE: QuickAction = {
+  labelKey: 'admin.programs.quick.duplicate',
+  icon: 'program.duplicate',
 };
 
 /** One shop chip of the role form: the shop's id and the word it prints. */
@@ -177,6 +209,8 @@ const NO_SHOP = '';
     UiSegmentedControl,
     UiSheetActionBar,
     UiStack,
+    UiSwipeAction,
+    UiSwipeActions,
     UiTextDirective,
     UiTextField,
     UiVisuallyHiddenDirective,
@@ -210,6 +244,9 @@ export class AdminPrograms {
   protected readonly arranging = signal(false);
   /** The row whose handle menu is open, by id. */
   protected readonly orderMenu = signal<string | null>(null);
+  /** A row's quick change was refused: said under the list's tabs. */
+  protected readonly quickFailed = signal(false);
+  private readonly reorderList = viewChild(UiReorderList);
   /** The last move could not be saved. */
   protected readonly orderFailed = signal(false);
   /** The last move in words, for a screen reader: «„Бръснар“ — място 2 от 5». */
@@ -237,6 +274,10 @@ export class AdminPrograms {
         id: position.id,
         title: position.title[locale],
         statusKey: `programs.status.position.${position.positionStatus}`,
+        quick:
+          position.positionStatus === PositionStatus.Open
+            ? QUICK_CLOSE
+            : QUICK_OPEN,
       }));
     }
     if (tab === ProgramsTab.Courses) {
@@ -244,12 +285,17 @@ export class AdminPrograms {
         id: course.id,
         title: course.title[locale],
         statusKey: `programs.status.enrollment.${course.enrollmentStatus}`,
+        quick:
+          course.enrollmentStatus === EnrollmentStatus.Open
+            ? QUICK_CLOSE
+            : QUICK_OPEN,
       }));
     }
     return this.store.events().map((event) => ({
       id: event.id,
       title: event.title[locale],
       statusKey: null,
+      quick: QUICK_DUPLICATE,
     }));
   });
 
@@ -530,7 +576,37 @@ export class AdminPrograms {
           : place === ProgramPlace.Down
             ? from + 1
             : count - 1;
-    void this.moveRow({ from, to });
+    // Through the list, so a pick from the menu glides as a drag does.
+    this.reorderList()?.move(from, to);
+  }
+
+  /**
+   * A row's quick action, by the list in view. A role's status or a
+   * course's enrolment is turned over and saved at once — the live list
+   * shows the new word when the store answers, and a refused save says so
+   * with nothing changed. An event opens the editor on a COPY of itself:
+   * nothing is written until that sheet's «Запази», which saves a new one.
+   */
+  protected async runQuick(id: string): Promise<void> {
+    const tab = this.tab();
+    this.quickFailed.set(false);
+    if (tab === ProgramsTab.Positions) {
+      const position = this.positions().find((entry) => entry.id === id);
+      if (position === undefined) return;
+      const saved = await this.store.togglePositionStatus(position);
+      if (!saved.ok) this.quickFailed.set(true);
+    } else if (tab === ProgramsTab.Courses) {
+      const course = this.courses().find((entry) => entry.id === id);
+      if (course === undefined) return;
+      const saved = await this.store.toggleCourseEnrollment(course);
+      if (!saved.ok) this.quickFailed.set(true);
+    } else {
+      const event = this.store.events().find((entry) => entry.id === id);
+      if (event === undefined) return;
+      this.startEditEvent(event);
+      // The same fields, no source: the sheet is a new event's.
+      this.editing.set({ programEditing: ProgramEditing.Event, source: null });
+    }
   }
 
   /**

@@ -45,6 +45,8 @@ import {
   type WriteShopEventPorts,
   reorderCourses,
   reorderPositions,
+  toggleCourseEnrollment,
+  togglePositionStatus,
   writeCourse,
   writePosition,
   writeShopEvent,
@@ -631,5 +633,62 @@ describe('reorderPositions, reorderCourses', () => {
     expect(unwrapErr(await reorder([second, first]))).toEqual(failedWrite);
     expect(attempts).toEqual(['course-b']);
     expect([...world.courses.values()]).toEqual([first, second]);
+  });
+});
+
+describe('togglePositionStatus', () => {
+  it('saves the role whole with the other status and answers it', async () => {
+    const open = positionOf('pos-a', { positionStatus: PositionStatus.Open });
+    const world = memoryProgramsWorld({ positions: [open] });
+    const toggle = togglePositionStatus(memoryProgramsPorts(world));
+
+    const closed = unwrapOk(await toggle(open));
+
+    expect(closed).toEqual({ ...open, positionStatus: PositionStatus.Closed });
+    expect(world.positions.get(open.id)).toEqual(closed);
+  });
+
+  it('answers a failed write and leaves the role as stored', async () => {
+    const open = positionOf('pos-a', { positionStatus: PositionStatus.Open });
+    const world = memoryProgramsWorld({ positions: [open] });
+    const toggle = togglePositionStatus({
+      ...memoryProgramsPorts(world),
+      savePosition: async () => Result.err(failedWrite),
+    });
+
+    expect(unwrapErr(await toggle(open))).toEqual(failedWrite);
+    expect(world.positions.get(open.id)).toEqual(open);
+  });
+});
+
+describe('toggleCourseEnrollment', () => {
+  it('saves the course whole with its enrolment turned over and answers it', async () => {
+    const upcoming = courseOf('course-a', {
+      enrollmentStatus: EnrollmentStatus.Upcoming,
+    });
+    const world = memoryProgramsWorld({ courses: [upcoming] });
+    const toggle = toggleCourseEnrollment(memoryProgramsPorts(world));
+
+    const open = unwrapOk(await toggle(upcoming));
+
+    expect(open).toEqual({
+      ...upcoming,
+      enrollmentStatus: EnrollmentStatus.Open,
+    });
+    expect(world.courses.get(upcoming.id)).toEqual(open);
+  });
+
+  it('answers a failed write and leaves the course as stored', async () => {
+    const open = courseOf('course-a', {
+      enrollmentStatus: EnrollmentStatus.Open,
+    });
+    const world = memoryProgramsWorld({ courses: [open] });
+    const toggle = toggleCourseEnrollment({
+      ...memoryProgramsPorts(world),
+      saveCourse: async () => Result.err(failedWrite),
+    });
+
+    expect(unwrapErr(await toggle(open))).toEqual(failedWrite);
+    expect(world.courses.get(open.id)).toEqual(open);
   });
 });

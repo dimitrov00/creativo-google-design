@@ -2966,6 +2966,12 @@
       "save": "Save",
       "close": "Close",
       "add": "Add",
+      "quick": {
+        "close": "Close",
+        "open": "Open",
+        "duplicate": "Duplicate",
+        "failed": "Couldn't save the change. Try again."
+      },
       "order": {
         "start": "Reorder",
         "done": "Done",

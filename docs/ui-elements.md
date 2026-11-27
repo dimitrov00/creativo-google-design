@@ -354,7 +354,7 @@ styles a native control or builds its own; a new element is added to
 | qr                      | `ui-code-scanner`                                                  |
 | qr code                 | `ui-code-scanner`                                                  |
 | quantity                | `ui-count-stepper`                                                 |
-| quick actions           | `ui-quick-actions`                                                 |
+| quick actions           | `ui-quick-actions`, `ui-swipe-actions`                             |
 | quick amounts           | `ui-choice-tiles`                                                  |
 | quick view              | `ui-detail-sheet`                                                  |
 | radar                   | `ui-radar`                                                         |
@@ -379,6 +379,7 @@ styles a native control or builds its own; a new element is added to
 | ripple                  | `uiInteractive`                                                    |
 | rounded corners         | `uiRadius`                                                         |
 | row                     | `ui-list-row`, `ui-stack`                                          |
+| row actions             | `ui-swipe-actions`                                                 |
 | rule                    | `ui-divider`                                                       |
 | ruler                   | `ui-slider`                                                        |
 | run of visits           | `ui-streak-track`                                                  |
@@ -416,6 +417,7 @@ styles a native control or builds its own; a new element is added to
 | shortcut buttons        | `ui-quick-actions`                                                 |
 | size                    | `uiFrame`                                                          |
 | skeleton                | `ui-skeleton`                                                      |
+| slide actions           | `ui-swipe-actions`                                                 |
 | slider                  | `ui-scroll-row`, `ui-slider`                                       |
 | sms code                | `ui-otp-field`                                                     |
 | snackbar                | `ui-toast`                                                         |
@@ -459,6 +461,12 @@ styles a native control or builds its own; a new element is added to
 | support code            | `ui-reference`                                                     |
 | surface                 | `ui-card`                                                          |
 | svg icon                | `ui-icon`                                                          |
+| swipe actions           | `ui-swipe-actions`                                                 |
+| swipe left              | `ui-swipe-actions`                                                 |
+| swipe right             | `ui-swipe-actions`                                                 |
+| swipe row               | `ui-swipe-actions`                                                 |
+| swipe to delete         | `ui-swipe-actions`                                                 |
+| swipeable               | `ui-swipe-actions`                                                 |
 | switch                  | `uiSwitch`                                                         |
 | switcher                | `ui-segmented-control`                                             |
 | symbol                  | `ui-icon`                                                          |
@@ -639,6 +647,7 @@ Import from `@creativo/ui/patterns`.
 | `ui-status-indicator`                                         | A flat status line: a coloured dot, the state in words (open, closed, available) and an optional quiet detail after it.                                       | a `Label` whose icon is `Circle().fill(tone)`                                                                     | A state drawn as a tinted capsule is `uiBadge`.                                                                                                                      |
 | `ui-stepper`                                                  | A progress trail through the steps of a flow: a row of thin segments showing which step of a short, fixed sequence you are on.                                | App pattern                                                                                                       | This is NOT a − / + counter: that is `ui-count-stepper` (SwiftUI `Stepper`). Loading progress is `ui-progress-view`; dots for swipeable pages are `ui-page-control`. |
 | `ui-streak-track`                                             | Draws a streak: the count of periods kept in a row over the last few periods, with kept, protected, missed and open marks.                                    | App pattern                                                                                                       | The steps of a flow are `ui-stepper`; a single share of a whole is `ui-gauge`.                                                                                       |
+| `ui-swipe-actions`                                            | Quick actions behind a list row, revealed by swiping it sideways: wrap a row and project the action buttons.                                                  | `.swipeActions(edge:allowsFullSwipe:)`                                                                            | A row's actions that are always visible are a `ui-menu` on a trailing «⋯»; verbs under a person are `ui-quick-actions`.                                              |
 | `ui-toast`                                                    | A transient receipt docked at the bottom: one sentence saying what just happened, one action (undo) and a timed dismiss.                                      | App pattern                                                                                                       | A message that stays in the page is `ui-notice`; a question that must be answered before anything else is `ui-alert`.                                                |
 | `button[uiCouponCard], article[uiCouponCard]`                 | A ticket-shaped card for one offer: its value, name and code over a tear line, with its conditions and the call to use it.                                    | App pattern                                                                                                       | A plain content surface is `ui-card`.                                                                                                                                |
 
@@ -649,6 +658,7 @@ Import from `@creativo/ui/patterns`.
 | `button[uiMenuItem], a[uiMenuItem], label[uiMenuItem], [uiMenuItem]` | `ui-menu`           | One action of the menu, on a button, a link or a file-picker label; an option or a tick box when the menu expresses a choice. |
 | `[uiMenuTrigger]`                                                    | `ui-menu`           | Marks the control that opens the menu, so the surface anchors to it and the control announces what it opens.                  |
 | `a[uiQuickAction], button[uiQuickAction]`                            | `ui-quick-actions`  | One verb of the run: a link or a button drawn as a glyph on a round disc with its word under it.                              |
+| `button[uiSwipeAction]`                                              | `ui-swipe-actions`  | One quick action revealed by swiping a row: a tinted segment with a glyph over a short word.                                  |
 
 ## modifiers
 
