@@ -12,15 +12,24 @@ import { of } from 'rxjs';
 import {
   Collections,
   type Course,
+  type CourseBody,
   type Position,
+  type PositionBody,
   type ShopEvent,
+  type ShopEventBody,
 } from '@core/entities';
 import type {
+  CourseBodyReadPorts,
+  CourseBodyWritePorts,
   CourseReadPorts,
   CourseWritePorts,
+  PositionBodyReadPorts,
+  PositionBodyWritePorts,
   PositionReadPorts,
   PositionWritePorts,
   ProgramsPorts,
+  ShopEventBodyReadPorts,
+  ShopEventBodyWritePorts,
   ShopEventReadPorts,
   ShopEventWritePorts,
 } from '@core/ports';
@@ -148,6 +157,53 @@ export const shopEventReadPorts = (db: Firestore): ShopEventReadPorts => ({
 export const shopEventWritePorts = (db: Firestore): ShopEventWritePorts => ({
   loadEvent: (id) => readDoc<ShopEvent>(doc(db, Collections.Events, id)),
   saveEvent: (event) => saveBody(db, Collections.Events, event),
+});
+
+// ── Bodies ────────────────────────────────────────────────────────────────
+// `positionBodies`, `courseBodies`, `eventBodies` — a thing's description, a
+// sibling document under the thing's own id: `{ body }`, Markdown per
+// language. One `getDoc` when the thing is opened (`null` for none), one
+// full-document `setDoc` on a save — the same zero mapping as above.
+
+/** A role's description (`null` when it has none) — `POSITION_BODY_READ_PORTS`. */
+export const positionBodyReadPorts = (
+  db: Firestore,
+): PositionBodyReadPorts => ({
+  loadPositionBody: (id) =>
+    readDoc<PositionBody>(doc(db, Collections.PositionBodies, id)),
+});
+
+/** A role's description, saved whole. */
+export const positionBodyWritePorts = (
+  db: Firestore,
+): PositionBodyWritePorts => ({
+  savePositionBody: (body) => saveBody(db, Collections.PositionBodies, body),
+});
+
+/** A course's description (`null` when it has none). */
+export const courseBodyReadPorts = (db: Firestore): CourseBodyReadPorts => ({
+  loadCourseBody: (id) =>
+    readDoc<CourseBody>(doc(db, Collections.CourseBodies, id)),
+});
+
+/** A course's description, saved whole. */
+export const courseBodyWritePorts = (db: Firestore): CourseBodyWritePorts => ({
+  saveCourseBody: (body) => saveBody(db, Collections.CourseBodies, body),
+});
+
+/** An event's description (`null` when it has none). */
+export const shopEventBodyReadPorts = (
+  db: Firestore,
+): ShopEventBodyReadPorts => ({
+  loadEventBody: (id) =>
+    readDoc<ShopEventBody>(doc(db, Collections.EventBodies, id)),
+});
+
+/** An event's description, saved whole. */
+export const shopEventBodyWritePorts = (
+  db: Firestore,
+): ShopEventBodyWritePorts => ({
+  saveEventBody: (body) => saveBody(db, Collections.EventBodies, body),
 });
 
 /** `PROGRAMS_PORTS` — the admin page's suite: the six bundles over one instance. */

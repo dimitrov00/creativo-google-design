@@ -1,7 +1,12 @@
 import type { ContactMethod } from '@core/components';
 import type { ContactRowVm } from '@creativo/features/shared/catalog';
-import { PositionStatus, WorkplaceMode } from '@core/components';
-import type { ShopLocation } from '@core/entities';
+import {
+  PositionStatus,
+  RichSpanStyle,
+  RichText,
+  WorkplaceMode,
+} from '@core/components';
+import type { PositionBody, ShopLocation } from '@core/entities';
 import { RepositoryError } from '@core/errors';
 import { LocationId, Result } from '@core/primitives';
 import {
@@ -12,8 +17,10 @@ import {
 } from '@core/testing';
 import {
   positionRowsVm,
+  positionSheetVm,
   type PositionRowsInput,
 } from './marketing-careers.presenter';
+import type { PositionRowVm } from './marketing-careers.vm';
 
 /*
  * The `/careers` rows' words (OR-42, Law 10), pinned from fixed inputs: a
@@ -148,6 +155,39 @@ describe('positionRowsVm', () => {
       ['HYBRID', 'Center · Creativo · Mladost'],
       ['REMOTE', null],
     ]);
+  });
+
+  it('words an opened role’s sheet: the row’s words, and its description parsed in the active language', () => {
+    const [row] = positionRowsVm(input()) as [PositionRowVm];
+    const body: PositionBody = {
+      id: row.id,
+      body: { en: '# What you do\n\nCut **hair**.', bg: '# Какво правиш' },
+    };
+
+    expect(positionSheetVm({ row, body, lang: 'en' })).toEqual({
+      title: row.title,
+      summary: row.summary,
+      workplaceTag: row.workplaceTag,
+      shopsLine: row.shopsLine,
+      body: [
+        RichText.heading(1, [RichText.span('What you do')]),
+        RichText.paragraph([
+          RichText.span('Cut '),
+          RichText.span('hair', RichSpanStyle.Bold),
+          RichText.span('.'),
+        ]),
+      ],
+      contacts: row.contact.contacts,
+    });
+    expect(positionSheetVm({ row, body, lang: 'bg' }).body).toEqual([
+      RichText.heading(1, [RichText.span('Какво правиш')]),
+    ]);
+  });
+
+  it('words a role with no description with no body', () => {
+    const [row] = positionRowsVm(input()) as [PositionRowVm];
+
+    expect(positionSheetVm({ row, body: null, lang: 'en' }).body).toBeNull();
   });
 
   it('is pure: same input → same output, inputs untouched', () => {

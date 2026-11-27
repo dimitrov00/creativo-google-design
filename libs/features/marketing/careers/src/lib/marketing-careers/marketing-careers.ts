@@ -1,7 +1,4 @@
-import {
-  ContactSheetComponent,
-  type ContactSheetVm,
-} from '@creativo/features/shared/catalog';
+import { ContactSheetComponent } from '@creativo/features/shared/catalog';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -13,8 +10,10 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { Title } from '@angular/platform-browser';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { PositionStatus } from '@core/components';
+import type { PositionBody } from '@core/entities';
 import {
   CATALOG_PORTS,
+  POSITION_BODY_READ_PORTS,
   POSITION_READ_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import {
@@ -32,7 +31,7 @@ import {
 } from '@creativo/ui/patterns';
 import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
 import { LoadSlice, LoadState } from '@creativo/shared/view-state';
-import { positionRowsVm } from './marketing-careers.presenter';
+import { positionRowsVm, positionSheetVm } from './marketing-careers.presenter';
 import type { PositionRowVm } from './marketing-careers.vm';
 
 const INSTAGRAM_URL = 'https://instagram.com/creativo.barbershop';
@@ -43,7 +42,9 @@ const INSTAGRAM_URL = 'https://instagram.com/creativo.barbershop';
  *  `toSignal` over the live read (`POSITION_READ_PORTS`, open roles only),
  *  the shared `LoadSlice` read state, `ui-list-group` for the list
  *  body (no `ui-divider`s — the seam is the separator), a hand-composed
- *  empty state falling back to the shop's Instagram link. A row's words
+ *  empty state falling back to the shop's Instagram link. A tapped role
+ *  opens its sheet and reads its description then (`POSITION_BODY_READ_PORTS`,
+ *  one document), drawn under its summary. A row's words
  *  are the presenter's (`positionRowsVm`, OR-42): at a multi-shop tenant a
  *  role scoped to some shops names them under its summary, from the
  *  catalogue's ACTIVE shops read once beside the roles
@@ -76,13 +77,16 @@ const INSTAGRAM_URL = 'https://instagram.com/creativo.barbershop';
 })
 export class MarketingCareers {
   private readonly positions = inject(POSITION_READ_PORTS);
+  private readonly bodies = inject(POSITION_BODY_READ_PORTS);
   private readonly catalog = inject(CATALOG_PORTS);
   private readonly transloco = inject(TranslocoService);
   private readonly title = inject(Title);
 
   protected readonly instagramUrl = INSTAGRAM_URL;
-  /** The row whose ways to answer the sheet lists; `null` while it is shut. */
-  protected readonly contactFor = signal<ContactSheetVm | null>(null);
+  /** The row the sheet is open for; `null` while it is shut. */
+  private readonly opened = signal<PositionRowVm | null>(null);
+  /** The open role's description, once read — `null` for none or not yet. */
+  private readonly openedBody = signal<PositionBody | null>(null);
   /** The dictionary, for the template's `@case`s (never bare literals). */
   protected readonly LoadState = LoadState;
 
@@ -117,15 +121,34 @@ export class MarketingCareers {
     },
   );
 
-  /** A role tapped: its sheet opens on its words and the ways to answer. */
+  /** The open role as its sheet prints it; `null` while it is shut. */
+  protected readonly contactFor = computed(() => {
+    const row = this.opened();
+    return row === null
+      ? null
+      : positionSheetVm({ row, body: this.openedBody(), lang: this.lang() });
+  });
+
+  /**
+   * A role tapped: its sheet opens at once on its words and the ways to
+   * answer, and its description is read — one document, only now — and
+   * drawn when it answers. A role with none, or a read that failed, leaves
+   * the sheet as it opened.
+   */
   protected open(row: PositionRowVm): void {
-    this.contactFor.set({
-      title: row.title,
-      summary: row.summary,
-      workplaceTag: row.workplaceTag,
-      shopsLine: row.shopsLine,
-      contacts: row.contact.contacts,
+    this.openedBody.set(null);
+    this.opened.set(row);
+    void this.bodies.loadPositionBody(row.id).then((result) => {
+      if (result.ok && this.opened()?.id === row.id) {
+        this.openedBody.set(result.value);
+      }
     });
+  }
+
+  /** The sheet has left. */
+  protected close(): void {
+    this.opened.set(null);
+    this.openedBody.set(null);
   }
 
   constructor() {

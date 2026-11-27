@@ -1,0 +1,88 @@
+@layer sys-components {
+  /* A column of blocks in the body face. The gap is the paragraph space; a
+     heading steps further from what is above it and stays close to what it
+     heads, so a section reads as one thought. */
+  .ui-rich-text {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sys-space-compact);
+    min-inline-size: 0;
+    font: var(--sys-font-body);
+    overflow-wrap: anywhere;
+  }
+
+  .ui-rich-text-runs {
+    display: contents;
+  }
+
+  .ui-rich-text__heading,
+  .ui-rich-text__paragraph,
+  .ui-rich-text__list,
+  .ui-rich-text__quote {
+    margin: 0;
+  }
+
+  /* A line break typed in a paragraph or a quote is a line break. */
+  .ui-rich-text__paragraph,
+  .ui-rich-text__quote {
+    white-space: pre-line;
+    text-wrap: pretty;
+  }
+
+  .ui-rich-text__heading {
+    font: var(--sys-font-headline);
+    text-wrap: balance;
+  }
+
+  .ui-rich-text__heading[data-level='1'] {
+    font: var(--sys-font-title3);
+  }
+
+  .ui-rich-text__heading:not(:first-child) {
+    margin-block-start: var(--sys-space-regular);
+  }
+
+  .ui-rich-text__list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sys-space-tight);
+    padding-inline-start: 1.25em;
+  }
+
+  .ui-rich-text__list > li::marker {
+    color: var(--sys-color-secondary-label);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* A quote is set off by a rule on its leading edge and quieter ink. */
+  .ui-rich-text__quote {
+    margin-block: var(--sys-space-compact);
+    padding-inline-start: var(--sys-space-regular);
+    border-inline-start: 2px solid var(--sys-color-separator);
+    color: var(--sys-color-secondary-label);
+  }
+
+  .ui-rich-text__run--bold {
+    font-weight: 600;
+  }
+
+  .ui-rich-text__run--italic {
+    font-style: italic;
+  }
+
+  .ui-rich-text strong {
+    font-weight: 600;
+  }
+
+  /* A link inside a body is read in the body's ink: the underline says link. */
+  .ui-rich-text a[data-link] {
+    color: inherit;
+  }
+
+  .ui-rich-text__image {
+    display: block;
+    inline-size: 100%;
+    block-size: auto;
+    border-radius: var(--control-radius-subtle);
+  }
+}

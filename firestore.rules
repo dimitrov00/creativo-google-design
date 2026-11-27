@@ -160,6 +160,24 @@ service cloud.firestore {
       return v is number && v >= 0;
     }
 
+    /**
+     * A body's text (`PositionBody.body` and its siblings): a
+     * `LocalizedText` of Markdown, each language at most 20 000 characters
+     * (`RichText.BODY_MAX_CHARS`).
+     */
+    function isBodyText(v) {
+      return isLocalizedText(v)
+        && v.bg.size() <= 20000
+        && v.en.size() <= 20000;
+    }
+
+    /** `positionBodies/{id}`, `courseBodies/{id}`, `eventBodies/{id}` — exactly `{ body }`. */
+    function validProgramBody(d) {
+      return d.keys().hasOnly(['body'])
+        && d.keys().hasAll(['body'])
+        && isBodyText(d.body);
+    }
+
     /** `positions/{id}` — `Position` minus `id`; `positionStatus` a `PositionStatus` tag, `workplaceMode` a `WorkplaceMode` one (a remote role names no shop). */
     function validPosition(d) {
       return d.keys().hasOnly(['title', 'summary', 'workplaceMode', 'locationIds', 'positionStatus', 'contacts', 'sortOrder'])
@@ -752,6 +770,34 @@ service cloud.firestore {
     match /events/{eventId} {
       allow read: if true;
       allow create, update: if isCatalogManager() && notReadAs() && validEvent(request.resource.data);
+      allow delete: if false;
+    }
+
+    // The descriptions (rich text, 2026-11-27): a sibling document under
+    // the thing's own id, `{ body }` — Markdown per language. Read by
+    // anyone, as the thing is; written whole by whoever may write the
+    // thing, and only for a thing that exists; never deleted by a client.
+    match /positionBodies/{positionId} {
+      allow read: if true;
+      allow create, update: if isCatalogManager() && notReadAs()
+        && validProgramBody(request.resource.data)
+        && exists(/databases/$(database)/documents/positions/$(positionId));
+      allow delete: if false;
+    }
+
+    match /courseBodies/{courseId} {
+      allow read: if true;
+      allow create, update: if isCatalogManager() && notReadAs()
+        && validProgramBody(request.resource.data)
+        && exists(/databases/$(database)/documents/courses/$(courseId));
+      allow delete: if false;
+    }
+
+    match /eventBodies/{eventId} {
+      allow read: if true;
+      allow create, update: if isCatalogManager() && notReadAs()
+        && validProgramBody(request.resource.data)
+        && exists(/databases/$(database)/documents/events/$(eventId));
       allow delete: if false;
     }
 

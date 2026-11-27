@@ -60,6 +60,7 @@ import {
   PhotoOrigin,
   PositionStatus,
   RegistrationState,
+  RichText,
   Role,
   SeasonKind,
   ServiceStatus,
@@ -1119,6 +1120,139 @@ describe('firestore.rules', () => {
         );
       });
     });
+  });
+
+  describe('the bodies (positionBodies/courseBodies/eventBodies) — public read, the thing’s writers, { body } within the size limit (rich text, 2026-11-27)', () => {
+    /** Each body collection, its parent collection and the parent's stored body. */
+    const BODIES = [
+      ['positionBodies', 'positions', POSITION_BODY],
+      ['courseBodies', 'courses', COURSE_BODY],
+      ['eventBodies', 'events', EVENT_BODY],
+    ] as const;
+    const BODY = { body: { en: '# Role\n\nWords.', bg: '# Роля\n\nДуми.' } };
+    /** The longest text one language may hold (`RichText.BODY_MAX_CHARS`). */
+    const longest = 'я'.repeat(RichText.BODY_MAX_CHARS);
+
+    it.each(BODIES)(
+      'lets an anonymous visitor read a %s document',
+      async (collectionName) => {
+        await seed(`${collectionName}/doc-1`, BODY);
+        const anon = testEnv.unauthenticatedContext();
+        await assertSucceeds(
+          getDoc(doc(anon.firestore(), collectionName, 'doc-1')),
+        );
+      },
+    );
+
+    it.each(BODIES)(
+      'lets a content_manager and the admin pair create and replace a %s document of a thing that exists',
+      async (collectionName, parent, parentBody) => {
+        await seed(`${parent}/doc-1`, parentBody);
+        for (const role of ['content_manager', 'admin', 'sysadmin']) {
+          const db = signedIn(`actor-${role}`, role).firestore();
+          await assertSucceeds(setDoc(doc(db, collectionName, 'doc-1'), BODY));
+        }
+        await assertSucceeds(
+          setDoc(
+            doc(
+              signedIn('manager-1', 'content_manager').firestore(),
+              collectionName,
+              'doc-1',
+            ),
+            { body: { en: longest, bg: longest } },
+          ),
+        );
+      },
+    );
+
+    it.each(BODIES)(
+      'refuses a %s document of a thing that does not exist',
+      async (collectionName) => {
+        const db = signedIn('manager-1', 'content_manager').firestore();
+        await assertFails(setDoc(doc(db, collectionName, 'doc-none'), BODY));
+      },
+    );
+
+    it.each(BODIES)(
+      'refuses everyone else a %s write: a visitor, a client, a barber, a receptionist, a read-as session',
+      async (collectionName, parent, parentBody) => {
+        await seed(`${parent}/doc-1`, parentBody);
+        await assertFails(
+          setDoc(
+            doc(
+              testEnv.unauthenticatedContext().firestore(),
+              collectionName,
+              'doc-1',
+            ),
+            BODY,
+          ),
+        );
+        for (const role of ['client', 'barber', 'receptionist']) {
+          await assertFails(
+            setDoc(
+              doc(
+                signedIn(`actor-${role}`, role).firestore(),
+                collectionName,
+                'doc-1',
+              ),
+              BODY,
+            ),
+          );
+        }
+        const readAs = testEnv.authenticatedContext('support-1', {
+          roles: ['admin'],
+          imp: 'imp-1',
+        });
+        await assertFails(
+          setDoc(doc(readAs.firestore(), collectionName, 'doc-1'), BODY),
+        );
+      },
+    );
+
+    it.each([
+      [
+        'one character over the limit in one language',
+        { body: { en: 'Words.', bg: longest + 'я' } },
+      ],
+      [
+        'one character over the limit in the other',
+        { body: { en: longest + 'a', bg: 'Думи.' } },
+      ],
+      ['a language left empty', { body: { en: '', bg: 'Думи.' } }],
+      ['a language missing', { body: { bg: 'Думи.' } }],
+      ['a third language', { body: { en: 'a', bg: 'б', de: 'c' } }],
+      ['a body that is one string', { body: '# Role' }],
+      ['a body that is not text', { body: { en: 1, bg: 2 } }],
+      ['a field beside the body', { ...BODY, title: 'x' }],
+      ['no body at all', {}],
+    ])('refuses %s, as a create and as an update', async (_what, malformed) => {
+      await seed('positions/doc-1', POSITION_BODY);
+      await seed('positions/doc-2', POSITION_BODY);
+      await seed('positionBodies/doc-2', BODY);
+      const db = signedIn('manager-1', 'content_manager').firestore();
+
+      await assertFails(setDoc(doc(db, 'positionBodies/doc-1'), malformed));
+      await assertFails(setDoc(doc(db, 'positionBodies/doc-2'), malformed));
+    });
+
+    it.each(BODIES)(
+      'lets no client delete a %s document, the admin pair included',
+      async (collectionName, parent, parentBody) => {
+        await seed(`${parent}/doc-1`, parentBody);
+        await seed(`${collectionName}/doc-1`, BODY);
+        for (const role of ['content_manager', 'admin', 'sysadmin']) {
+          await assertFails(
+            deleteDoc(
+              doc(
+                signedIn(`actor-${role}`, role).firestore(),
+                collectionName,
+                'doc-1',
+              ),
+            ),
+          );
+        }
+      },
+    );
   });
 
   describe('server-only collections and unmatched paths', () => {

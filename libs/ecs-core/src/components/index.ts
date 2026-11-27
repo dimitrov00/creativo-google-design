@@ -130,6 +130,7 @@ export * from './grid-event.data';
 export * from './grid-placement.data';
 export * from './history-note.data';
 export * from './home-landing.data';
+export * from './rich-text.data';
 export * from './same-again.data';
 export * from './identifier.data';
 export * from './identity-call.data';

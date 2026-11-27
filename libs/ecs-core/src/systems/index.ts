@@ -83,6 +83,7 @@ export * from './registration.system';
 export * from './retention.system';
 export * from './reward.system';
 export * from './rhythm-draft.system';
+export * from './rich-text.system';
 export * from './role-assignment.system';
 export * from './roster-break.system';
 export * from './roster-access.system';

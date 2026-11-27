@@ -8,7 +8,14 @@ import type {
   UtcEpochMs,
 } from '@core/primitives';
 import type { RepositoryError } from '@core/errors';
-import type { Course, ShopEvent, Position } from '@core/entities';
+import type {
+  Course,
+  CourseBody,
+  Position,
+  PositionBody,
+  ShopEvent,
+  ShopEventBody,
+} from '@core/entities';
 
 /**
  * The shop's programs content — `positions`, `courses`, `events` (blueprint
@@ -92,6 +99,41 @@ export type ObserveEvents = (
   query: EventsQuery,
 ) => Observable<Result<readonly ShopEvent[], RepositoryError>>;
 
+// ── Bodies ────────────────────────────────────────────────────────────────
+// The description of a role, a course or an event — a sibling document
+// under the same id, read ONCE when the thing is opened (never by a list)
+// and saved whole, under the rules, by whoever may save the thing itself.
+
+/** `positionBodies/{id}` — `null` for a role with no description. */
+export type LoadPositionBody = (
+  id: PositionId,
+) => Promise<Result<PositionBody | null, RepositoryError>>;
+
+/** A full-document set of `{ body }`, never a merge. */
+export type SavePositionBody = (
+  body: PositionBody,
+) => Promise<Result<void, RepositoryError>>;
+
+/** `courseBodies/{id}` — `null` for a course with no description. */
+export type LoadCourseBody = (
+  id: CourseId,
+) => Promise<Result<CourseBody | null, RepositoryError>>;
+
+/** A full-document set of `{ body }`, never a merge. */
+export type SaveCourseBody = (
+  body: CourseBody,
+) => Promise<Result<void, RepositoryError>>;
+
+/** `eventBodies/{id}` — `null` for an event with no description. */
+export type LoadEventBody = (
+  id: EventId,
+) => Promise<Result<ShopEventBody | null, RepositoryError>>;
+
+/** A full-document set of `{ body }`, never a merge. */
+export type SaveEventBody = (
+  body: ShopEventBody,
+) => Promise<Result<void, RepositoryError>>;
+
 // ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
 
 /** The careers page's roles, live — `POSITION_READ_PORTS`. */
@@ -125,6 +167,36 @@ export type ShopEventReadPorts = {
 export type ShopEventWritePorts = {
   readonly loadEvent: LoadEvent;
   readonly saveEvent: SaveEvent;
+};
+
+/** A role's description, read when the role is opened — `POSITION_BODY_READ_PORTS`. */
+export type PositionBodyReadPorts = {
+  readonly loadPositionBody: LoadPositionBody;
+};
+
+/** A role's description, saved whole. */
+export type PositionBodyWritePorts = {
+  readonly savePositionBody: SavePositionBody;
+};
+
+/** A course's description, read when the course is opened. */
+export type CourseBodyReadPorts = {
+  readonly loadCourseBody: LoadCourseBody;
+};
+
+/** A course's description, saved whole. */
+export type CourseBodyWritePorts = {
+  readonly saveCourseBody: SaveCourseBody;
+};
+
+/** An event's description, read when the event is opened. */
+export type ShopEventBodyReadPorts = {
+  readonly loadEventBody: LoadEventBody;
+};
+
+/** An event's description, saved whole. */
+export type ShopEventBodyWritePorts = {
+  readonly saveEventBody: SaveEventBody;
 };
 
 /** The programs suite the admin page binds — `PROGRAMS_PORTS`. */

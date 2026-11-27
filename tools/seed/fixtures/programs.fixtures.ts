@@ -14,7 +14,9 @@
  * The plan logic (`tools/seed/programs.mjs`) decides WHEN: the day each
  * event falls on, from the shop's today. Two roles (one open, one closed),
  * three courses (open, upcoming, closed) and two events (one ahead, one
- * behind). The copy speaks in the catalogue's «ти» voice (OR-51).
+ * behind), and ONE description (`positionBodies/{id}`): the open barber
+ * role's, Markdown per language, as the editor will save it. The copy
+ * speaks in the catalogue's «ти» voice (OR-51).
  */
 import {
   EnrollmentStatus,
@@ -26,7 +28,13 @@ import {
   type PositionInput,
   type ShopEventInput,
 } from '@core/components';
-import type { Course, Position, ShopEvent, ShopLocation } from '@core/entities';
+import type {
+  Course,
+  Position,
+  PositionBody,
+  ShopEvent,
+  ShopLocation,
+} from '@core/entities';
 import {
   CourseId,
   EventId,
@@ -212,6 +220,87 @@ export const CRAFT_NIGHT: EventForm = {
 };
 
 // ── The engine ─────────────────────────────────────────────────────────────
+
+// ── Bodies ─────────────────────────────────────────────────────────────────
+
+/**
+ * The open barber role's description — every construct of the subset but a
+ * picture (pictures arrive with the upload): two heading levels, bold,
+ * italic, a link, a bulleted and a numbered list, a quote.
+ */
+export const POSITION_BODIES: readonly PositionBody[] = [
+  {
+    id: PositionId.of('pos-barber'),
+    body: {
+      bg: [
+        '# Какво ще правиш',
+        '',
+        'Стол в салона ни в **Център**, пет дни в седмицата. Клиентите идват със запазен час, така че работиш спокойно и довършваш всяка подстрижка както трябва.',
+        '',
+        '- Подстригване и *фейд* на машинка и ножица',
+        '- Оформяне на брада и бръснене с бръснач',
+        '- Съвет за поддръжка след всяко посещение',
+        '',
+        '## Какво търсим',
+        '',
+        '- Поне две години зад стола',
+        '- Спокойна ръка и око за детайла',
+        '- Желание да учиш — виж [курсовете ни](/courses)',
+        '',
+        '## Какво даваме',
+        '',
+        '- Пълен график от първия ден',
+        '- Обучение с екипа всеки месец',
+        '- Инструменти и продукти от салона',
+        '',
+        '> Покажи ни работата си — останалото ще изградим заедно.',
+        '',
+        '## Как да кандидатстваш',
+        '',
+        '1. Пиши ни или се обади',
+        '2. Ела за пробен ден в салона',
+        '3. Започваме заедно',
+      ].join('\n'),
+      en: [
+        '# What you will do',
+        '',
+        'A chair at our **Center** shop, five days a week. Clients come with a booked time, so you work calmly and finish every cut properly.',
+        '',
+        '- Cuts and *fades* by clipper and scissor',
+        '- Beard shaping and straight-razor shaves',
+        '- Care advice after every visit',
+        '',
+        '## What we look for',
+        '',
+        '- At least two years behind the chair',
+        '- A steady hand and an eye for detail',
+        '- A wish to keep learning — see [our courses](/courses)',
+        '',
+        '## What we give',
+        '',
+        '- A full book from day one',
+        '- Training with the team every month',
+        '- Tools and products from the shop',
+        '',
+        "> Show us your work — we'll build the rest together.",
+        '',
+        '## How to apply',
+        '',
+        '1. Write to us or call',
+        '2. Come in for a trial day',
+        '3. We start together',
+      ].join('\n'),
+    },
+  },
+];
+
+/** The description as its document stores it. */
+export function positionBodyDocument(
+  entity: PositionBody,
+): Seeded<PositionId, PositionBody> {
+  const { id, ...body } = entity;
+  return { id, body: body satisfies Body<PositionBody> };
+}
 
 /** A seeded shop as `loadLocation` answers it — `null` when the seed holds none. */
 function seededShop(id: LocationId): ShopLocation | null {

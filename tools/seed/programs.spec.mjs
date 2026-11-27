@@ -16,12 +16,14 @@ import { join } from 'node:path';
 import {
   EnrollmentStatus,
   PositionStatus,
+  RichBlockKind,
+  RichText,
   TenantConfig,
   WallTime,
 } from '@core/components';
 import { Collections } from '@core/entities';
 import { CourseId, EventId, PositionId } from '@core/primitives';
-import { ProgramsSystem, ZonedTimeSystem } from '@core/systems';
+import { ProgramsSystem, RichTextSystem, ZonedTimeSystem } from '@core/systems';
 import { describe, expect, it } from 'vitest';
 import { createShopCalendar } from './calendar.mjs';
 import { LOCATIONS } from './fixtures/catalog.fixtures.ts';
@@ -31,6 +33,7 @@ import {
   EVENTS_COLLECTION,
   EVENT_PLANS,
   POSITIONS_COLLECTION,
+  POSITION_BODIES_COLLECTION,
   programWritesOf,
 } from './programs.mjs';
 
@@ -125,14 +128,16 @@ describe('the seed’s programs', () => {
   const positions = inCollection(writes, POSITIONS_COLLECTION);
   const courses = inCollection(writes, COURSES_COLLECTION);
   const events = inCollection(writes, EVENTS_COLLECTION);
+  const bodies = inCollection(writes, POSITION_BODIES_COLLECTION);
 
   it('writes the collections the app reads, and nothing else', () => {
     expect(POSITIONS_COLLECTION).toBe(Collections.Positions);
     expect(COURSES_COLLECTION).toBe(Collections.Courses);
     expect(EVENTS_COLLECTION).toBe(Collections.Events);
-    expect(positions.length + courses.length + events.length).toBe(
-      writes.length,
-    );
+    expect(POSITION_BODIES_COLLECTION).toBe(Collections.PositionBodies);
+    expect(
+      positions.length + courses.length + events.length + bodies.length,
+    ).toBe(writes.length);
     for (const { path } of writes)
       expect(path.split('/'), path).toHaveLength(2);
   });
@@ -233,6 +238,34 @@ describe('the seed’s programs', () => {
         ProgramsSystem.shopEvent(EventId.of(id), fields.value, instant.value),
         id,
       ).toEqual({ id, ...data });
+    }
+  });
+
+  it('writes the open barber role’s description: { body } within the size limit, every block of the subset but a picture, in both languages', () => {
+    expect(bodies.map(({ id }) => id)).toEqual(['pos-barber']);
+    expect(positions.map(({ id }) => id)).toContain('pos-barber');
+    const [{ data }] = bodies;
+    expect(Object.keys(data)).toEqual(rulesKeysOf(RULES, 'validProgramBody'));
+    expect(isLocalizedText(data.body)).toBe(true);
+    for (const lang of ['bg', 'en']) {
+      expect(data.body[lang].length, lang).toBeLessThanOrEqual(
+        RichText.BODY_MAX_CHARS,
+      );
+      const blocks = RichTextSystem.parse(data.body[lang]);
+      expect(new Set(blocks.map((block) => block.richBlockKind)), lang).toEqual(
+        new Set([
+          RichBlockKind.Heading,
+          RichBlockKind.Paragraph,
+          RichBlockKind.List,
+          RichBlockKind.Quote,
+        ]),
+      );
+      expect(
+        blocks.map((block) => block.richBlockKind),
+        lang,
+      ).toEqual(
+        RichTextSystem.parse(data.body.en).map((block) => block.richBlockKind),
+      );
     }
   });
 

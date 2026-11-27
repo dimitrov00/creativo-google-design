@@ -103,6 +103,12 @@ export const Collections = {
   Positions: 'positions',
   Courses: 'courses',
   Events: 'events',
+  /** `PositionBody`, keyed by its role's id — the description, read when the role is opened. */
+  PositionBodies: 'positionBodies',
+  /** `CourseBody`, keyed by its course's id. */
+  CourseBodies: 'courseBodies',
+  /** `ShopEventBody`, keyed by its event's id. */
+  EventBodies: 'eventBodies',
   /** Fixed-id tenant settings — `bookingPolicy` and `staffPermissions`. */
   Settings: 'settings',
   /** `BackfillJob` / `PolicyRecomputeJob` / `AnalyticsRecomputeJob`, keyed by the job. */
