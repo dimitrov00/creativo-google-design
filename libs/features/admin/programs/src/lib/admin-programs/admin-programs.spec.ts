@@ -572,8 +572,9 @@ describe('AdminPrograms', () => {
       'Заглавие',
       'Описание',
       'Начало — по часа на салона',
-      'Линк за записване',
     ]);
+    // The optional link starts as the row that adds it.
+    expect(textOf(host, 'admin-add-link')).toBe('Добави линк за записване');
     expect(
       host.querySelector('#admin-programs-sheet-title')?.textContent?.trim(),
     ).toBe('Ново събитие');
@@ -863,6 +864,74 @@ describe('AdminPrograms', () => {
 
       expect(world.positions.get(stored.id)?.positionStatus).toBe(
         PositionStatus.Closed,
+      );
+    });
+
+    it('offers the optional link as a row that adds it, and a stored link as its field', async () => {
+      const { fixture, host, world } = await configure({
+        positions: [
+          positionOf('pos_bare'),
+          positionOf('pos_linked', {
+            applyUrl: 'https://example.test/apply',
+            sortOrder: 1,
+          }),
+        ],
+      });
+      const field = () =>
+        host.querySelector<HTMLInputElement>('[data-testid="admin-apply-url"]');
+
+      rowsOf(host, 'admin-positions-list')[1]?.click();
+      fixture.detectChanges();
+      expect(field()?.value).toBe('https://example.test/apply');
+      expect(host.querySelector('[data-testid="admin-add-link"]')).toBeNull();
+
+      rowsOf(host, 'admin-positions-list')[0]?.click();
+      fixture.detectChanges();
+      expect(field()).toBeNull();
+
+      click(host, 'admin-add-link');
+      await settle(fixture);
+      expect(document.activeElement).toBe(field());
+      fillInput(host, 'admin-apply-url', 'https://example.test/join');
+      click(host, 'admin-save');
+      await settle(fixture);
+
+      expect(world.positions.get(PositionId.of('pos_bare'))?.applyUrl).toBe(
+        'https://example.test/join',
+      );
+    });
+
+    it('says inside the «Active» row what switching it off means', async () => {
+      const { fixture, host } = await configure({
+        positions: [positionOf('pos_1')],
+      });
+
+      rowsOf(host, 'admin-positions-list')[0]?.click();
+      fixture.detectChanges();
+
+      const row = host
+        .querySelector('[data-testid="admin-position-open"]')
+        ?.closest('ui-list-row');
+      expect(
+        Array.from(row?.querySelectorAll('ui-stack > span') ?? [], (line) =>
+          line.textContent?.trim(),
+        ),
+      ).toEqual([
+        'Active',
+        'An inactive role is not shown on the careers page.',
+      ]);
+    });
+
+    it('puts the cursor in the title of a new role', async () => {
+      const { fixture, host } = await configure();
+
+      click(host, 'admin-new');
+      await settle(fixture);
+      // The sheet gives its first focus a frame after it opens.
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+
+      expect(document.activeElement).toBe(
+        host.querySelector('[data-testid^="admin-position-title-"]'),
       );
     });
 

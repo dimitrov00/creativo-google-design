@@ -400,6 +400,11 @@ export class AdminPrograms {
   protected readonly shopsOwedShown = signal(false);
   /** The shops the role names; empty with the list unlimited = every shop. */
   protected readonly positionShopIds = signal<readonly LocationId[]>([]);
+  /**
+   * The optional link's field is drawn: the thing has one, or the row that
+   * adds one was tapped. One flag, since one sheet is open at a time.
+   */
+  protected readonly linkShown = signal(false);
   protected readonly positionApplyUrl = signal('');
 
   // Course fields
@@ -914,6 +919,23 @@ export class AdminPrograms {
     this.saveRefusals.set(null);
   }
 
+  /** «＋ Добави линк»: the field takes the row's place, the cursor in it. */
+  protected addLink(): void {
+    this.linkShown.set(true);
+    this.focusIn('[data-link-field]');
+  }
+
+  /** Puts the cursor in the sheet's first match, once it is drawn. */
+  private focusIn(selector: string): void {
+    afterNextRender(
+      () =>
+        this.host.nativeElement
+          .querySelector<HTMLElement>(`.lib-admin-programs__form ${selector}`)
+          ?.focus({ preventScroll: true }),
+      { injector: this.injector },
+    );
+  }
+
   /** A row tapped: its thing opens in the sheet. */
   protected openRow(id: string): void {
     const tab = this.tab();
@@ -1117,6 +1139,7 @@ export class AdminPrograms {
     this.positionStatus.set(input.positionStatus);
     this.positionWorkplace.set(input.workplaceMode);
     this.positionApplyUrl.set(input.applyUrl);
+    this.linkShown.set(input.applyUrl.trim() !== '');
   }
 
   private fillCourse(input: CourseInput): void {
@@ -1126,6 +1149,7 @@ export class AdminPrograms {
     this.courseEnrollmentStatus.set(input.enrollmentStatus);
     this.courseStartsLabel.set(input.startsLabel);
     this.courseApplyUrl.set(input.applyUrl);
+    this.linkShown.set(input.applyUrl.trim() !== '');
   }
 
   private fillEvent(input: ShopEventInput): void {
@@ -1135,6 +1159,7 @@ export class AdminPrograms {
     this.eventStartsAt.set(input.startsAt);
     this.eventLocationId.set(input.locationId);
     this.eventApplyUrl.set(input.applyUrl);
+    this.linkShown.set(input.applyUrl.trim() !== '');
     this.eventShopMenu.set(false);
   }
 

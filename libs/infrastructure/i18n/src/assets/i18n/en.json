@@ -3022,7 +3022,8 @@
         "description": "Description",
         "status": "Status",
         "applyUrl": "Apply link",
-        "linkHint": "Optional. Without a link the button opens Instagram."
+        "addApplyUrl": "Add an apply link",
+        "linkHint": "Without a link the button opens Instagram."
       },
       "position": {
         "open": "Active",
@@ -3041,7 +3042,8 @@
         "startsAt": "Starts — shop's local time",
         "shop": "Shop",
         "shopNone": "No specific shop",
-        "rsvpUrl": "RSVP link"
+        "rsvpUrl": "RSVP link",
+        "addRsvpUrl": "Add an RSVP link"
       },
       "shopHidden": "{{name}} (hidden)",
       "shopMissing": "Deleted shop"
