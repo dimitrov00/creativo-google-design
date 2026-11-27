@@ -229,15 +229,6 @@ export const UI_ICON_REGISTRY = {
    *  the button that turns rows into movable ones, never on a row itself
    *  (a row's grip is `list.reorder`). */
   'list.arrange': 'swap_vert',
-  /** A row of a pick-several list: chosen, and not. The ring that fills is
-   *  what says "more than one may be chosen" before anything is tapped —
-   *  a lone trailing check reads as pick-one. */
-  'selection.on': 'check_circle',
-  /* `trip_origin`, not `radio_button_unchecked`: this (filled) revision's
-     unchecked radio carries a third sub-path that fills its own hole, and
-     `circle` and `panorama_fish_eye` are solid too — each draws a disc,
-     which reads as CHOSEN. `trip_origin` is the set's one true ring. */
-  'selection.off': 'trip_origin',
   /** Take a program off the public site / put it back — a closed role is
    *  not shown there. The eye, struck and open: the two halves of one
    *  quick action on a row. */
