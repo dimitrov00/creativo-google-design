@@ -48,6 +48,7 @@ import {
   UiMenuItem,
   UiMenuTrigger,
   UiNotice,
+  UiPageActionBar,
   UiSectionHeader,
   UiSheetActionBar,
 } from '@creativo/ui/patterns';
@@ -169,6 +170,7 @@ const NO_SHOP = '';
     UiModalSheet,
     UiNotice,
     UiPaddingDirective,
+    UiPageActionBar,
     UiReorderHandle,
     UiReorderList,
     UiSectionHeader,

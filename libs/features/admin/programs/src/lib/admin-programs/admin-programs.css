@@ -2,9 +2,21 @@
   display: block;
 }
 
-/* The fixed site header's clearance on top, as `/account` keeps it. */
+/* A COLUMN floored by the dock: the fixed site header's clearance on top,
+   as `/account` keeps it, and the page's bottom bar sticking to the
+   viewport's floor (the bar needs a column parent to do so). */
 .lib-admin-programs__main {
-  padding-block: var(--landing-header-offset) var(--sys-space-spacious);
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-block-size: 100dvh;
+  padding-block-start: var(--landing-header-offset);
+}
+
+/* One clear screen step under the last row, so the dock's scrim never
+   covers it at scroll end. */
+.lib-admin-programs__content {
+  padding-block-end: var(--sys-space-spacious);
 }
 
 /* THE SHEET'S FORM — the team sheets' own rhythm: fields a `comfortable`
@@ -51,18 +63,6 @@
   gap: var(--sys-space-comfortable);
   min-inline-size: 0;
   margin-block-start: var(--sys-space-compact);
-}
-
-/* THE LIST'S BAR: «Подреди» leading, ＋ trailing; while arranging,
-   «Готово» stands where «Подреди» stood and ＋ keeps its place. */
-.lib-admin-programs__bar {
-  display: flex;
-  align-items: center;
-  gap: var(--sys-space-compact);
-}
-
-.lib-admin-programs__bar > :last-child {
-  margin-inline-start: auto;
 }
 
 .lib-admin-programs__hint {

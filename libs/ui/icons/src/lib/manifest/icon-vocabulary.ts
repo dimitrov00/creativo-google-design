@@ -225,6 +225,10 @@ export const UI_ICON_REGISTRY = {
    * menu on its own.
    */
   'list.reorder': 'drag_handle',
+  /** Enter a list's arrange mode — HIG's `arrow.up.arrow.down`: the mark on
+   *  the button that turns rows into movable ones, never on a row itself
+   *  (a row's grip is `list.reorder`). */
+  'list.arrange': 'swap_vert',
 
   /* ── The visit frame's resize handles ───────────────────────────── */
   /**

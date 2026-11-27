@@ -130,6 +130,17 @@
     font-weight: 600;
   }
 
+  /* NO STATE LAYER on a segment (owner, 2026-11-27). The shared hover and
+     press wash of [data-interactive] painted a second, darker capsule on
+     the segment under the pointer; on a tap the white pill then glided in
+     beneath it and the wash blinked out — two shapes answering one tap.
+     UISegmentedControl paints neither: the pill IS the feedback. A press
+     still shrinks the segment (the shared :active scale), so a tap is
+     felt on a phone, and the focus ring is unchanged. */
+  .ui-segmented-control__segment[data-interactive]::after {
+    content: none;
+  }
+
   /* An icon-only segment shows its glyph at the body's size — the glyph
      inherits the current font, so the segment's is raised, not the icon's. */
   .ui-segmented-control__segment[data-icon-only] {

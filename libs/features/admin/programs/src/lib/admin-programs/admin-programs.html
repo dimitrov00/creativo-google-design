@@ -7,10 +7,15 @@
   <main
     uiFrame
     [uiFrameMaxWidth]="'var(--sys-container-content)'"
-    uiPaddingHorizontal="regular"
     class="lib-admin-programs__main"
   >
-    <ui-stack uiSpacing="loose">
+    <!-- The gutter is the content's, not the page's: the dock below brings
+         its own, and the two must not add up. -->
+    <ui-stack
+      uiSpacing="loose"
+      uiPaddingHorizontal="regular"
+      class="lib-admin-programs__content"
+    >
       <ui-section-header uiAlignment="leading">
         <h1 uiTitle>{{ t('admin.programs.title') }}</h1>
         <p uiLede>{{ t('admin.programs.lede') }}</p>
@@ -44,50 +49,6 @@
       />
 
       <ui-stack uiSpacing="comfortable">
-        <!-- THE LIST'S BAR: «Подреди» on the leading edge while there is an
-             order to arrange, ＋ on the trailing one, as the team list keeps
-             its add. While arranging, «Готово» stands where «Подреди»
-             stood (Edit turns into Done in place) and ＋ keeps its place:
-             nothing in the bar moves. -->
-        <div class="lib-admin-programs__bar">
-          @if (arranging()) {
-          <button
-            type="button"
-            uiButton
-            uiButtonStyle="borderedProminent"
-            uiControlSize="regular"
-            data-testid="admin-order-done"
-            (click)="stopArranging()"
-          >
-            {{ t('admin.programs.order.done') }}
-          </button>
-          } @else if (canArrange()) {
-          <button
-            type="button"
-            uiButton
-            uiButtonStyle="bordered"
-            uiTint="neutral"
-            uiControlSize="regular"
-            data-testid="admin-order-start"
-            (click)="startArranging()"
-          >
-            {{ t('admin.programs.order.start') }}
-          </button>
-          }
-          <button
-            type="button"
-            uiButton
-            uiButtonStyle="borderedProminent"
-            uiControlSize="regular"
-            [uiIconOnly]="true"
-            [attr.aria-label]="t('admin.programs.add')"
-            data-testid="admin-new"
-            (click)="startCreate()"
-          >
-            <ui-icon uiName="action.add" />
-          </button>
-        </div>
-
         @if (arranging()) {
         <p
           uiText
@@ -655,5 +616,51 @@
       </ui-modal-sheet>
       }
     </ui-stack>
+    <!-- THE PAGE'S DOCK (owner, 2026-11-27): the list's actions live in the
+         house bottom bar, under the thumb and in place however long the
+         list runs. The arrange mark leads; ＋ is the bar's primary on the
+         trailing edge. While arranging, «Готово» stands where the mark
+         stood (Edit turns into Done in place) and ＋ keeps its place. -->
+    <ui-page-action-bar data-testid="admin-programs-dock">
+      @if (arranging()) {
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="bordered"
+        uiTint="neutral"
+        uiControlSize="regular"
+        data-testid="admin-order-done"
+        (click)="stopArranging()"
+      >
+        {{ t('admin.programs.order.done') }}
+      </button>
+      } @else if (canArrange()) {
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="bordered"
+        uiTint="neutral"
+        uiControlSize="regular"
+        [uiIconOnly]="true"
+        [attr.aria-label]="t('admin.programs.order.start')"
+        data-testid="admin-order-start"
+        (click)="startArranging()"
+      >
+        <ui-icon uiName="list.arrange" />
+      </button>
+      }
+      <button
+        type="button"
+        uiButton
+        uiButtonStyle="borderedProminent"
+        uiControlSize="regular"
+        [uiIconOnly]="true"
+        [attr.aria-label]="t('admin.programs.add')"
+        data-testid="admin-new"
+        (click)="startCreate()"
+      >
+        <ui-icon uiName="action.add" />
+      </button>
+    </ui-page-action-bar>
   </main>
 </ng-container>
