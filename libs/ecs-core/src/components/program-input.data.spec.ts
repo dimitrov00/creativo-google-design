@@ -8,6 +8,7 @@ describe('ProgramInput — the admin form’s reset values (today’s)', () => {
     expect(ProgramInput.blankPosition()).toEqual({
       title: { bg: '', en: '' },
       summary: { bg: '', en: '' },
+      workplaceMode: 'ON_SITE',
       locationIds: [],
       positionStatus: PositionStatus.Open,
       applyUrl: '',

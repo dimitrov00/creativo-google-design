@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { EnrollmentStatus, PositionStatus } from '@core/components';
+import {
+  EnrollmentStatus,
+  PositionStatus,
+  WorkplaceMode,
+} from '@core/components';
 import {
   CourseId,
   EventId,
@@ -96,6 +100,7 @@ describe('ProgramsSystem.position', () => {
         bg: 'Пълен работен ден',
         en: 'Full-time chair, Center location',
       },
+      workplaceMode: 'ON_SITE',
       locationIds: ['loc_center'],
       positionStatus: 'OPEN',
       applyUrl: INSTAGRAM,
@@ -153,6 +158,50 @@ describe('ProgramsSystem.position', () => {
         ),
       ).positionStatus,
     ).toBe('CLOSED');
+  });
+
+  it('keeps where the role is worked as typed, and an on-site or hybrid role keeps its shops', () => {
+    for (const workplaceMode of [
+      WorkplaceMode.OnSite,
+      WorkplaceMode.Hybrid,
+    ] as const) {
+      const position = unwrapOk(
+        ProgramsSystem.position(
+          POSITION_ID,
+          positionInputOf({ workplaceMode, locationIds: ['loc_center'] }),
+        ),
+      );
+
+      expect(position.workplaceMode).toBe(workplaceMode);
+      expect(position.locationIds).toEqual(['loc_center']);
+    }
+  });
+
+  it('ties a remote role to no shop: its location ids are dropped', () => {
+    const position = unwrapOk(
+      ProgramsSystem.position(
+        POSITION_ID,
+        positionInputOf({
+          workplaceMode: WorkplaceMode.Remote,
+          locationIds: ['loc_center'],
+        }),
+      ),
+    );
+
+    expect(position.workplaceMode).toBe('REMOTE');
+    expect(position.locationIds).toEqual([]);
+  });
+
+  it("still judges a remote role's location ids before dropping them", () => {
+    expect(
+      ProgramsSystem.position(
+        POSITION_ID,
+        positionInputOf({
+          workplaceMode: WorkplaceMode.Remote,
+          locationIds: ['loc/with/slash'],
+        }),
+      ).ok,
+    ).toBe(false);
   });
 
   it('rejects a blank localized title field', () => {

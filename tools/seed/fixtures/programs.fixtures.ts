@@ -19,6 +19,7 @@
 import {
   EnrollmentStatus,
   PositionStatus,
+  WorkplaceMode,
   TenantConfig,
   type CourseInput,
   type PositionInput,
@@ -61,7 +62,7 @@ export type EventForm = {
 
 // ── Positions ──────────────────────────────────────────────────────────────
 
-/** One open role at the Center shop, one closed one open at every shop. */
+/** One open role at the Center shop, one closed one at every shop, one open remote one. */
 export const POSITION_FORMS: readonly ProgramForm<PositionId, PositionInput>[] =
   [
     {
@@ -75,6 +76,7 @@ export const POSITION_FORMS: readonly ProgramForm<PositionId, PositionInput>[] =
           bg: 'Пет дни в седмицата, в салона в Център. Покажи ни работата си — останалото ще изградим заедно.',
           en: "Five days a week at our Center shop. Show us your work — we'll build the rest together.",
         },
+        workplaceMode: WorkplaceMode.OnSite,
         locationIds: [CENTER],
         positionStatus: PositionStatus.Open,
         applyUrl: '',
@@ -89,10 +91,29 @@ export const POSITION_FORMS: readonly ProgramForm<PositionId, PositionInput>[] =
           bg: 'Учиш до опитен бръснар и поемаш първите си клиенти. В момента не набираме — следи тази страница.',
           en: "Learn beside a senior barber and take your first clients. We're not hiring right now — keep an eye on this page.",
         },
+        workplaceMode: WorkplaceMode.OnSite,
         locationIds: [],
         positionStatus: PositionStatus.Closed,
         applyUrl: '',
         sortOrder: 1,
+      },
+    },
+    {
+      id: PositionId.of('pos-social'),
+      input: {
+        title: {
+          bg: 'Социални мрежи и съдържание',
+          en: 'Social media and content',
+        },
+        summary: {
+          bg: 'Снимаш, монтираш и пишеш за салоните — от където и да си. Няколко часа седмично.',
+          en: 'Shoot, edit and write for the shops — from wherever you are. A few hours a week.',
+        },
+        workplaceMode: WorkplaceMode.Remote,
+        locationIds: [],
+        positionStatus: PositionStatus.Open,
+        applyUrl: '',
+        sortOrder: 2,
       },
     },
   ];

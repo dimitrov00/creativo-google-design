@@ -20,6 +20,7 @@ import {
   LocalizedText,
   type PositionInput,
   PositionStatus,
+  WorkplaceMode,
   ProgramInput,
   type ShopEventInput,
   WallTime,
@@ -260,6 +261,7 @@ export class AdminPrograms {
 
   /** The status dictionaries, for the segments — the template never spells a stored tag. */
   protected readonly PositionStatus = PositionStatus;
+  protected readonly WorkplaceMode = WorkplaceMode;
   protected readonly EnrollmentStatus = EnrollmentStatus;
   /*
    * A status prints the catalogue's word for its stored tag —
@@ -377,6 +379,15 @@ export class AdminPrograms {
   protected readonly positionSummary = signal(LocalizedText.blank());
   protected readonly positionStatus = signal<PositionStatus>(
     PositionStatus.Open,
+  );
+  /** Where the role is worked. A remote one names no shop: the list goes. */
+  protected readonly positionWorkplace = signal<WorkplaceMode>(
+    WorkplaceMode.OnSite,
+  );
+  /** The shops list is drawn: there are shops to pick, and the role is not remote. */
+  protected readonly positionShopsShown = computed(
+    () =>
+      this.shopsShown() && this.positionWorkplace() !== WorkplaceMode.Remote,
   );
   /**
    * «Във всички салони» is off: the role names its shops. Kept apart from
@@ -865,6 +876,17 @@ export class AdminPrograms {
     if (next !== undefined) this.positionStatus.set(next);
   }
 
+  /**
+   * Remote hides the shops and the save drops them; the draft keeps what
+   * was picked, so turning back to a shop role finds them again.
+   */
+  protected pickWorkplace(id: string): void {
+    const next = Object.values(WorkplaceMode).find((tag) => tag === id);
+    if (next === undefined) return;
+    this.positionWorkplace.set(next);
+    if (next === WorkplaceMode.Remote) this.shopsOwedShown.set(false);
+  }
+
   protected pickEnrollmentStatus(id: string): void {
     const next = Object.values(EnrollmentStatus).find((tag) => tag === id);
     if (next !== undefined) this.courseEnrollmentStatus.set(next);
@@ -1034,7 +1056,7 @@ export class AdminPrograms {
     // A role limited to no shop at all: nothing is sent, the list says so.
     if (
       editing.programEditing === ProgramEditing.Position &&
-      this.shopsShown() &&
+      this.positionShopsShown() &&
       this.shopsLimited() &&
       this.positionShopIds().length === 0
     ) {
@@ -1091,6 +1113,7 @@ export class AdminPrograms {
     this.positionTitle.set(input.title);
     this.positionSummary.set(input.summary);
     this.positionStatus.set(input.positionStatus);
+    this.positionWorkplace.set(input.workplaceMode);
     this.positionApplyUrl.set(input.applyUrl);
   }
 
@@ -1139,6 +1162,7 @@ export class AdminPrograms {
     return {
       title: this.positionTitle(),
       summary: this.positionSummary(),
+      workplaceMode: this.positionWorkplace(),
       locationIds: this.positionShopIds(),
       positionStatus: this.positionStatus(),
       applyUrl: this.positionApplyUrl(),

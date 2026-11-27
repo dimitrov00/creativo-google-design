@@ -58,6 +58,7 @@ describe('programs fixtures — the entities', () => {
       id: PositionId.of('pos-1'),
       title: { bg: 'Бръснар', en: 'Barber' },
       summary: { bg: 'Пълен работен ден', en: 'Full-time chair' },
+      workplaceMode: 'ON_SITE',
       locationIds: [],
       positionStatus: 'OPEN',
       applyUrl: null,

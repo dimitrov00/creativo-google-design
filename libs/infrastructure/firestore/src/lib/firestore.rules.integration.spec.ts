@@ -925,6 +925,20 @@ describe('firestore.rules', () => {
         ...position({ positionStatus: 'open' }),
       ],
       [
+        'a workplace tag outside WorkplaceMode',
+        ...position({ workplaceMode: 'remote' }),
+      ],
+      [
+        'a remote role that names a shop',
+        ...position({ workplaceMode: 'REMOTE', locationIds: ['loc-center'] }),
+      ],
+      [
+        'a missing key — workplaceMode absent',
+        'positions',
+        POSITION_BODY,
+        withoutKey(POSITION_BODY, 'workplaceMode'),
+      ],
+      [
         'an enrollment tag outside EnrollmentStatus',
         ...course({ enrollmentStatus: 'PAUSED' }),
       ],

@@ -124,6 +124,8 @@ test.describe('programs — a content manager publishes, the public pages show i
         .getByTestId('admin-position-summary-bg')
         .fill('Пълен работен ден, в Центъра.');
       await form.getByRole('radio', { name: 'Отворена', exact: true }).click();
+      // Worked from anywhere: the careers row says so.
+      await form.getByTestId('admin-position-workplace-REMOTE').click();
     });
     const positionRow = page
       .getByTestId('admin-positions-list')
@@ -193,6 +195,9 @@ test.describe('programs — a content manager publishes, the public pages show i
     const careersRow = rowOf(careers, position.bg);
     await expect(careersRow).toBeVisible({ timeout: 20_000 });
     await expect(statusOf(careersRow)).toHaveText('Отворена');
+    await expect(careersRow.getByTestId('careers-row-workplace')).toHaveText(
+      'От вкъщи',
+    );
 
     // /courses — the course under «Open» (the default tab), with its
     // status word.

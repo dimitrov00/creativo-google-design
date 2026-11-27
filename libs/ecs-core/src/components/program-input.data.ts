@@ -4,6 +4,7 @@ import type { LocalizedText } from './localized-text.data';
 import type { PositionInput } from './position-input.data';
 import { PositionStatus } from './program-status.data';
 import type { ShopEventInput } from './shop-event-input.data';
+import { WorkplaceMode } from './workplace-mode.data';
 
 /*
  * The admin programs form as typed (`/admin/programs`) — FOREIGN input
@@ -22,11 +23,12 @@ export type ProgramInput = PositionInput | CourseInput | ShopEventInput;
 const blankText = (): LocalizedText => ({ bg: '', en: '' });
 
 export const ProgramInput = {
-  /** The empty role form — open, no apply URL, first in order. */
+  /** The empty role form — open, on site at every shop, no apply URL, first in order. */
   blankPosition(): PositionInput {
     return {
       title: blankText(),
       summary: blankText(),
+      workplaceMode: WorkplaceMode.OnSite,
       locationIds: [],
       positionStatus: PositionStatus.Open,
       applyUrl: '',

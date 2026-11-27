@@ -128,10 +128,11 @@ describe('the seed’s programs', () => {
       expect(path.split('/'), path).toHaveLength(2);
   });
 
-  it('writes two roles, three courses and two events under fixed ids', () => {
+  it('writes three roles, three courses and two events under fixed ids', () => {
     expect(positions.map(({ id, data }) => [id, data.positionStatus])).toEqual([
       ['pos-barber', PositionStatus.Open],
       ['pos-apprentice', PositionStatus.Closed],
+      ['pos-social', PositionStatus.Open],
     ]);
     expect(courses.map(({ id, data }) => [id, data.enrollmentStatus])).toEqual([
       ['crs-fundamentals', EnrollmentStatus.Open],
@@ -282,6 +283,12 @@ describe('the seed’s programs', () => {
     expect(positions.map(({ data }) => data.locationIds)).toEqual([
       ['loc-center'],
       [],
+      [],
+    ]);
+    expect(positions.map(({ data }) => data.workplaceMode)).toEqual([
+      'ON_SITE',
+      'ON_SITE',
+      'REMOTE',
     ]);
   });
 

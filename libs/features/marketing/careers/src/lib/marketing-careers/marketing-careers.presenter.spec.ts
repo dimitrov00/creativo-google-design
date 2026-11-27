@@ -1,4 +1,4 @@
-import { PositionStatus } from '@core/components';
+import { PositionStatus, WorkplaceMode } from '@core/components';
 import type { ShopLocation } from '@core/entities';
 import { RepositoryError } from '@core/errors';
 import { LocationId, Result } from '@core/primitives';
@@ -66,6 +66,7 @@ describe('positionRowsVm', () => {
         title: 'Barber — full time',
         summary: 'Five days a week.',
         shopsLine: 'Center · Creativo · Mladost',
+        workplaceTag: null,
         href: 'https://example.com/apply',
         positionStatus: PositionStatus.Open,
       },
@@ -76,6 +77,7 @@ describe('positionRowsVm', () => {
         title: 'Barber',
         summary: 'Full-time chair',
         shopsLine: null,
+        workplaceTag: null,
         href: INSTAGRAM,
         positionStatus: PositionStatus.Closed,
       },
@@ -84,6 +86,7 @@ describe('positionRowsVm', () => {
         title: 'Barber',
         summary: 'Full-time chair',
         shopsLine: null,
+        workplaceTag: null,
         href: INSTAGRAM,
         positionStatus: PositionStatus.Open,
       },
@@ -120,6 +123,24 @@ describe('positionRowsVm', () => {
       ]);
       expect(rows.map((row) => row.shopsLine)).toEqual([null, null, null]);
     }
+  });
+
+  it('hands on the workplace tag of a hybrid or remote role, and none for an on-site one', () => {
+    const rows = positionRowsVm(
+      input({
+        positions: [
+          SCOPED,
+          { ...SCOPED, workplaceMode: WorkplaceMode.Hybrid },
+          positionOf('pos_remote', { workplaceMode: WorkplaceMode.Remote }),
+        ],
+      }),
+    );
+
+    expect(rows.map((row) => [row.workplaceTag, row.shopsLine])).toEqual([
+      [null, 'Center · Creativo · Mladost'],
+      ['HYBRID', 'Center · Creativo · Mladost'],
+      ['REMOTE', null],
+    ]);
   });
 
   it('is pure: same input → same output, inputs untouched', () => {

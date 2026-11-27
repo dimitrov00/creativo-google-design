@@ -292,6 +292,7 @@ export async function seedClosedPositions(run: string): Promise<void> {
           bg: `Роля ${place + 1} ${run}`,
         },
         summary: { en: 'Seeded for a scan.', bg: 'Заредена за проверка.' },
+        workplaceMode: 'ON_SITE',
         locationIds: [],
         positionStatus: 'CLOSED',
         applyUrl: null,

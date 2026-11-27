@@ -65,6 +65,7 @@ import {
   PersonalRecordKind,
 } from './personal-record.data';
 import { PositionStatus } from './program-status.data';
+import { WorkplaceMode } from './workplace-mode.data';
 import { LabelCode } from './public-label.data';
 import { QualifierComparison } from './qualifier-comparison.data';
 import { RewardGrant, type RewardGrantRule } from './reward-grant.data';
@@ -193,6 +194,7 @@ export type LoyaltyDictionariesHold = [
   Expect<Holds<typeof NotificationTopic, NotificationTopic>>, // notification-payload.data.ts
   Expect<Holds<typeof PersonalRecordKind, PersonalRecordKind>>, // personal-record.data.ts
   Expect<Holds<typeof PositionStatus, PositionStatus>>, // program-status.data.ts
+  Expect<Holds<typeof WorkplaceMode, WorkplaceMode>>, // workplace-mode.data.ts
   Expect<Holds<typeof RewardGrant, RewardGrant>>, // reward-grant.data.ts
   Expect<Holds<typeof RedeemProblem, RedeemProblem>>, // redeem-problem.data.ts
   Expect<Holds<typeof FamilyScope, FamilyScope>>, // family-scope-filter.data.ts
@@ -247,6 +249,7 @@ export type LoyaltyDictionaryFields = [
   Expect<Equals<NotificationPayload['notificationTopic'], NotificationTopic>>, // notification-payload.data.ts
   Expect<Equals<PersonalRecord['personalRecordKind'], PersonalRecordKind>>, // personal-record.data.ts
   Expect<Equals<Position['positionStatus'], PositionStatus>>, // position.entity.ts
+  Expect<Equals<Position['workplaceMode'], WorkplaceMode>>, // position.entity.ts
   Expect<Equals<RewardGrantRule['rewardGrant'], RewardGrant>>, // reward-grant.data.ts
   Expect<Equals<FamilyScopeFilter['familyScope'], FamilyScope>>, // family-scope-filter.data.ts
   Expect<Equals<StreakIntervalRule['streakInterval'], StreakInterval>>, // streak-interval.data.ts
@@ -296,6 +299,7 @@ export type LoyaltyDictionariesScream = [
   Expect<Screaming<NotificationTopic>>,
   Expect<Screaming<PersonalRecordKind>>,
   Expect<Screaming<PositionStatus>>,
+  Expect<Screaming<WorkplaceMode>>,
   Expect<Screaming<RewardGrant>>,
   Expect<Screaming<RedeemProblem>>,
   Expect<Screaming<FamilyScope>>,

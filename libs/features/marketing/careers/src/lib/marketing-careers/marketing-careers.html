@@ -58,13 +58,17 @@
               <span uiText uiFont="footnote" uiForegroundStyle="secondary"
                 >{{ row.summary }}</span
               >
-              @if (row.shopsLine; as shops) {
-              <span
-                uiText
-                uiFont="footnote"
-                uiForegroundStyle="secondary"
-                data-testid="careers-row-shops"
-                >{{ shops }}</span
+              @if (row.workplaceTag || row.shopsLine) {
+              <!-- WHERE THE ROLE IS WORKED: «От вкъщи», «Хибридно ·
+                   Център», or just the shops of an on-site role. -->
+              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                >@if (row.workplaceTag; as tag) {<span
+                  data-testid="careers-row-workplace"
+                  >{{ t('programs.workplace.' + tag) }}</span
+                >} @if (row.workplaceTag && row.shopsLine) { · } @if
+                (row.shopsLine; as shops) {<span data-testid="careers-row-shops"
+                  >{{ shops }}</span
+                >}</span
               >
               }
             </ui-stack>
