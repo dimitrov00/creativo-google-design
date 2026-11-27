@@ -84,22 +84,29 @@
                 (input)="positionSummaryBg.set(inputValue($event))"
               ></textarea>
             </label>
-            <ui-segmented-control
-              [uiSegments]="[
-                {
-                  id: PositionStatus.Open,
-                  label: t('programs.status.position.' + PositionStatus.Open),
-                },
-                {
-                  id: PositionStatus.Closed,
-                  label: t('programs.status.position.' + PositionStatus.Closed),
-                },
-              ]"
-              [uiSelectedId]="positionStatus()"
-              [uiLabel]="t('admin.programs.field.status')"
-              data-testid="admin-position-status"
-              (uiPicked)="pickPositionStatus($event)"
-            />
+            <div
+              class="lib-admin-programs__field lib-admin-programs__field--fill"
+            >
+              <span aria-hidden="true"
+                >{{ t('admin.programs.field.status') }}</span
+              >
+              <ui-segmented-control
+                [uiSegments]="[
+                  {
+                    id: PositionStatus.Open,
+                    label: t('programs.status.position.' + PositionStatus.Open),
+                  },
+                  {
+                    id: PositionStatus.Closed,
+                    label: t('programs.status.position.' + PositionStatus.Closed),
+                  },
+                ]"
+                [uiSelectedId]="positionStatus()"
+                [uiLabel]="t('admin.programs.field.status')"
+                data-testid="admin-position-status"
+                (uiPicked)="pickPositionStatus($event)"
+              />
+            </div>
             @if (shopsShown()) {
             <div
               class="lib-admin-programs__field"
@@ -187,30 +194,37 @@
                 (input)="courseDescriptionBg.set(inputValue($event))"
               ></textarea>
             </label>
-            <ui-segmented-control
-              [uiSegments]="[
-                {
-                  id: EnrollmentStatus.Open,
-                  label: t('programs.status.enrollment.' + EnrollmentStatus.Open),
-                },
-                {
-                  id: EnrollmentStatus.Upcoming,
-                  label: t(
-                    'programs.status.enrollment.' + EnrollmentStatus.Upcoming
-                  ),
-                },
-                {
-                  id: EnrollmentStatus.Closed,
-                  label: t(
-                    'programs.status.enrollment.' + EnrollmentStatus.Closed
-                  ),
-                },
-              ]"
-              [uiSelectedId]="courseEnrollmentStatus()"
-              [uiLabel]="t('admin.programs.field.status')"
-              data-testid="admin-course-status"
-              (uiPicked)="pickEnrollmentStatus($event)"
-            />
+            <div
+              class="lib-admin-programs__field lib-admin-programs__field--fill"
+            >
+              <span aria-hidden="true"
+                >{{ t('admin.programs.field.status') }}</span
+              >
+              <ui-segmented-control
+                [uiSegments]="[
+                  {
+                    id: EnrollmentStatus.Open,
+                    label: t('programs.status.enrollment.' + EnrollmentStatus.Open),
+                  },
+                  {
+                    id: EnrollmentStatus.Upcoming,
+                    label: t(
+                      'programs.status.enrollment.' + EnrollmentStatus.Upcoming
+                    ),
+                  },
+                  {
+                    id: EnrollmentStatus.Closed,
+                    label: t(
+                      'programs.status.enrollment.' + EnrollmentStatus.Closed
+                    ),
+                  },
+                ]"
+                [uiSelectedId]="courseEnrollmentStatus()"
+                [uiLabel]="t('admin.programs.field.status')"
+                data-testid="admin-course-status"
+                (uiPicked)="pickEnrollmentStatus($event)"
+              />
+            </div>
             <label>
               {{ t('admin.programs.course.startsLabelEn') }}
               <input

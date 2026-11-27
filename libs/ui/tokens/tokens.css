@@ -297,6 +297,128 @@
     /* Cinematic entrance curve (v2 landing-hero) — long settle, no bounce. */
     --sys-motion-ease-entrance: cubic-bezier(0.16, 1, 0.3, 1);
 
+    /* ── Springs (SwiftUI's presets, for parts that MOVE) ──
+       `.smooth` (0.5 s, no bounce) and `.snappy` (0.5 s, bounce 0.15) as
+       the spring equation sampled into `linear()`. SwiftUI's 0.5 s is when
+       the motion reads as done; the duration here is when the spring comes
+       to rest, so the curve keeps the spring's real speed (half the travel
+       is covered in about 150 ms). Use the pair as one value —
+       `transition: translate var(--sys-motion-spring-snappy)` — the parts
+       exist for script. Colour and opacity keep the ease curves above.
+       Hand-written, and checked: `src/lib/spring.spec.ts` recomputes both
+       from `src/lib/spring.ts` and fails when a number here differs.
+       TRIAL (owner, 2026-11-25): on the segmented thumb only until judged
+       on a phone. */
+    --sys-motion-spring-smooth-duration: 740ms;
+    --sys-motion-spring-smooth-easing: linear(
+      0,
+      0.015,
+      0.054,
+      0.108,
+      0.171,
+      0.238,
+      0.307,
+      0.374,
+      0.438,
+      0.499,
+      0.555,
+      0.606,
+      0.653,
+      0.695,
+      0.733,
+      0.767,
+      0.797,
+      0.824,
+      0.847,
+      0.868,
+      0.886,
+      0.901,
+      0.915,
+      0.927,
+      0.937,
+      0.946,
+      0.954,
+      0.96,
+      0.966,
+      0.971,
+      0.975,
+      0.979,
+      0.982,
+      0.985,
+      0.987,
+      0.989,
+      0.99,
+      0.992,
+      0.993,
+      0.994,
+      0.995,
+      0.996,
+      0.996,
+      0.997,
+      0.997,
+      0.998,
+      0.998,
+      0.998,
+      0.999,
+      0.999,
+      1
+    );
+    --sys-motion-spring-smooth: var(--sys-motion-spring-smooth-duration)
+      var(--sys-motion-spring-smooth-easing);
+    --sys-motion-spring-snappy-duration: 700ms;
+    --sys-motion-spring-snappy-easing: linear(
+      0,
+      0.016,
+      0.057,
+      0.115,
+      0.183,
+      0.258,
+      0.334,
+      0.409,
+      0.482,
+      0.55,
+      0.613,
+      0.671,
+      0.723,
+      0.768,
+      0.809,
+      0.844,
+      0.874,
+      0.9,
+      0.921,
+      0.94,
+      0.955,
+      0.967,
+      0.977,
+      0.985,
+      0.991,
+      0.996,
+      0.999,
+      1.002,
+      1.004,
+      1.005,
+      1.006,
+      1.006,
+      1.006,
+      1.006,
+      1.006,
+      1.006,
+      1.005,
+      1.005,
+      1.004,
+      1.004,
+      1.003,
+      1.003,
+      1.002,
+      1.002,
+      1.002,
+      1.001,
+      1.001,
+      1
+    );
+    --sys-motion-spring-snappy: var(--sys-motion-spring-snappy-duration)
+      var(--sys-motion-spring-snappy-easing);
+
     /* ── Layering (v2 z-ladder) ── */
     /* Shell chrome that floats above content but below the header (safe-area
        veils, deep-link anchors) — replaces calc(--sys-layer-header - n)
@@ -314,5 +436,20 @@
   }
   :root[data-density='spacious'] {
     --sys-density: 1.08;
+  }
+
+  /* A browser without `linear()` gets the house glide in place of a
+     spring: the emphasized curve at the deliberate duration. */
+  @supports not (transition-timing-function: linear(0, 1)) {
+    :root {
+      --sys-motion-spring-smooth-duration: var(
+        --sys-motion-duration-deliberate
+      );
+      --sys-motion-spring-smooth-easing: var(--sys-motion-ease-emphasized);
+      --sys-motion-spring-snappy-duration: var(
+        --sys-motion-duration-deliberate
+      );
+      --sys-motion-spring-snappy-easing: var(--sys-motion-ease-emphasized);
+    }
   }
 }
