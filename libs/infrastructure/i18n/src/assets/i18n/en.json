@@ -3006,7 +3006,16 @@
         "newEvent": "New event"
       },
       "section": {
-        "shared": "For every language"
+        "about": {
+          "POSITION": "About the role",
+          "COURSE": "About the course",
+          "EVENT": "About the event"
+        },
+        "where": "Where",
+        "when": "When and where",
+        "apply": "Applying",
+        "enrollment": "Enrolment",
+        "visibility": "Visibility"
       },
       "saveFailed": "Couldn't save. Check the required fields and try again.",
       "field": {
@@ -3017,6 +3026,8 @@
         "linkHint": "Optional. Without a link the button opens Instagram."
       },
       "position": {
+        "open": "Open for applications",
+        "openHint": "A closed role is not shown on the careers page.",
         "workplace": "Workplace",
         "summary": "Summary",
         "shops": "Shops",

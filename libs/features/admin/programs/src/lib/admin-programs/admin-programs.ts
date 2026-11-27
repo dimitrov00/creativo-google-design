@@ -47,6 +47,7 @@ import {
   UiModalSheet,
   type UiSegment,
   UiSegmentedControl,
+  UiSwitch,
   UiTextField,
 } from '@creativo/ui/controls';
 import { UiStack } from '@creativo/ui/layout';
@@ -245,6 +246,7 @@ const NO_SHOP = '';
     UiStack,
     UiSwipeAction,
     UiSwipeActions,
+    UiSwitch,
     UiTextDirective,
     UiTextField,
     UiVisuallyHiddenDirective,
@@ -871,9 +873,9 @@ export class AdminPrograms {
     if (next !== undefined) this.setTab(next);
   }
 
-  protected pickPositionStatus(id: string): void {
-    const next = Object.values(PositionStatus).find((tag) => tag === id);
-    if (next !== undefined) this.positionStatus.set(next);
+  /** The switch «Приема кандидати»: on is open, off is closed. */
+  protected setPositionOpen(open: boolean): void {
+    this.positionStatus.set(open ? PositionStatus.Open : PositionStatus.Closed);
   }
 
   /**

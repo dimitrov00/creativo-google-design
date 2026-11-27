@@ -517,9 +517,11 @@ describe('AdminPrograms', () => {
     rowsOf(host, 'admin-positions-list')[0]?.click();
     fixture.detectChanges();
 
-    expect(segmentWorded(host, 'Closed').getAttribute('data-selected')).toBe(
-      '',
-    );
+    expect(
+      host
+        .querySelector('[data-testid="admin-position-open"]')
+        ?.getAttribute('aria-checked'),
+    ).toBe('false');
   });
 
   it('switches tabs and clears any open form', async () => {
@@ -837,6 +839,46 @@ describe('AdminPrograms', () => {
       expect(trailingTextOf(host, 'admin-positions-list')).toBe(
         'Отворена · Затворена',
       );
+    });
+
+    it('closes a role with the switch at the end of the sheet', async () => {
+      const stored = positionOf('pos_1');
+      const { fixture, host, world } = await configure({
+        positions: [stored],
+      });
+
+      rowsOf(host, 'admin-positions-list')[0]?.click();
+      fixture.detectChanges();
+      const open = () =>
+        host
+          .querySelector('[data-testid="admin-position-open"]')
+          ?.getAttribute('aria-checked');
+      expect(open()).toBe('true');
+
+      click(host, 'admin-position-open');
+      fixture.detectChanges();
+      expect(open()).toBe('false');
+      click(host, 'admin-save');
+      await settle(fixture);
+
+      expect(world.positions.get(stored.id)?.positionStatus).toBe(
+        PositionStatus.Closed,
+      );
+    });
+
+    it('names each section of the sheet for what it asks', async () => {
+      const { fixture, host } = await configure({
+        positions: [positionOf('pos_1')],
+      });
+
+      rowsOf(host, 'admin-positions-list')[0]?.click();
+      fixture.detectChanges();
+
+      expect(
+        [...host.querySelectorAll('.lib-admin-programs__section h3')].map(
+          (heading) => heading.textContent?.trim(),
+        ),
+      ).toEqual(['About the role', 'Where', 'Applying', 'Visibility']);
     });
 
     it('keeps the stored scope on an edit (OR-42)', async () => {
