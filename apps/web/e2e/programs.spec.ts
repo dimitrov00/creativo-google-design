@@ -123,7 +123,10 @@ test.describe('programs — a content manager publishes, the public pages show i
       await form
         .getByTestId('admin-position-summary-bg')
         .fill('Пълен работен ден, в Центъра.');
-      await form.getByRole('radio', { name: 'Отворена', exact: true }).click();
+      await expect(form.getByTestId('admin-position-open')).toHaveAttribute(
+        'aria-checked',
+        'true',
+      );
       // Worked from anywhere: the careers row says so.
       await form.getByTestId('admin-position-workplace-REMOTE').click();
     });

@@ -251,99 +251,99 @@
                every language of the shop under its own name, and the fields
                below show the one in view — so the sheet is no longer with
                each language added. A dot marks a language a save found
-               wanting. What is not words (status, shops, dates, links) is
-               said once, under «За всички езици». -->
-          @if (manyLanguages) {
-          <div class="lib-admin-programs__field">
-            <span
-              uiText
-              uiFont="footnote"
-              uiForegroundStyle="secondary"
-              aria-hidden="true"
-              >{{ t('admin.programs.language.label') }}</span
-            ><ui-segmented-control
-              uiControlSize="regular"
-              [uiSegments]="languageSegments()"
-              [uiSelectedId]="language()"
-              [uiLabel]="t('admin.programs.language.label')"
-              data-testid="admin-language"
-              (uiPicked)="pickLanguage($event)"
-            />
-          </div>
-          } @for (input of translatedInputs(); track input.id) {
-          <label
-            class="lib-admin-programs__field"
-            [htmlFor]="'admin-field-' + input.id"
-            ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
-              >{{ t(input.labelKey) }}</span
-            >@if (input.multiline) {<textarea
-              uiTextField
-              [id]="'admin-field-' + input.id"
-              uiControlSize="large"
-              rows="4"
-              [attr.data-testid]="'admin-' + input.id + '-' + language()"
-              [attr.lang]="language()"
-              [attr.aria-invalid]="owes(input) ? 'true' : null"
-              [attr.data-owed]="owes(input) ? '' : null"
-              [readonly]="saving()"
-              [value]="input.text()[language()]"
-              (input)="typeText(input, $event)"
-            ></textarea>
-            } @else {<input
-              type="text"
-              uiTextField
-              [id]="'admin-field-' + input.id"
-              uiControlSize="large"
-              autocomplete="off"
-              [attr.data-testid]="'admin-' + input.id + '-' + language()"
-              [attr.lang]="language()"
-              [attr.aria-invalid]="owes(input) ? 'true' : null"
-              [attr.data-owed]="owes(input) ? '' : null"
-              [readonly]="saving()"
-              [value]="input.text()[language()]"
-              (input)="typeText(input, $event)"
-            />}
-          </label>
-          } @if (language() !== defaultLanguage) {
-          <div class="lib-admin-programs__field lib-admin-programs__field--hug">
-            <button
-              type="button"
-              uiButton
-              uiButtonStyle="bordered"
-              uiTint="neutral"
-              uiControlSize="regular"
-              [disabled]="saving()"
-              data-testid="admin-language-copy"
-              (click)="copyFromDefault()"
-            >
-              {{ t('admin.programs.language.copy', { from:
-              t('admin.programs.language.name.' + defaultLanguage) }) }}
-            </button>
-          </div>
-          }
+               wanting.
+
+               THE SHEET IN SECTIONS (owner, 2026-11-27), each named for
+               what it asks: what the thing is (the words, with the language
+               switch that belongs to them alone), where and when, how to
+               apply, and — for a role — whether it shows. -->
           <section class="lib-admin-programs__section">
             <ui-section-header uiHeaderProminence="increased"
               ><h3 uiTitle>
-                {{ t('admin.programs.section.shared') }}
+                {{ t('admin.programs.section.about.' + current.programEditing)
+                }}
               </h3></ui-section-header
             >
-            @switch (current.programEditing) { @case (ProgramEditing.Position) {
+            @if (manyLanguages) {
             <div class="lib-admin-programs__field">
               <span
                 uiText
                 uiFont="footnote"
                 uiForegroundStyle="secondary"
                 aria-hidden="true"
-                >{{ t('admin.programs.field.status') }}</span
+                >{{ t('admin.programs.language.label') }}</span
               ><ui-segmented-control
                 uiControlSize="regular"
-                [uiSegments]="[{ id: PositionStatus.Open, label: t('programs.status.position.' + PositionStatus.Open) },{ id: PositionStatus.Closed, label: t('programs.status.position.' + PositionStatus.Closed) },]"
-                [uiSelectedId]="positionStatus()"
-                [uiLabel]="t('admin.programs.field.status')"
-                data-testid="admin-position-status"
-                (uiPicked)="pickPositionStatus($event)"
+                [uiSegments]="languageSegments()"
+                [uiSelectedId]="language()"
+                [uiLabel]="t('admin.programs.language.label')"
+                data-testid="admin-language"
+                (uiPicked)="pickLanguage($event)"
               />
             </div>
+            } @for (input of translatedInputs(); track input.id; let first =
+            $first) {
+            <label
+              class="lib-admin-programs__field"
+              [htmlFor]="'admin-field-' + input.id"
+              ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                >{{ t(input.labelKey) }}</span
+              >@if (input.multiline) {<textarea
+                uiTextField
+                [id]="'admin-field-' + input.id"
+                uiControlSize="large"
+                rows="4"
+                [attr.data-testid]="'admin-' + input.id + '-' + language()"
+                [attr.lang]="language()"
+                [attr.aria-invalid]="owes(input) ? 'true' : null"
+                [attr.data-owed]="owes(input) ? '' : null"
+                [readonly]="saving()"
+                [value]="input.text()[language()]"
+                (input)="typeText(input, $event)"
+              ></textarea>
+              } @else {<input
+                type="text"
+                uiTextField
+                [id]="'admin-field-' + input.id"
+                [attr.data-sheet-autofocus]="first && current.source === null ? '' : null"
+                uiControlSize="large"
+                autocomplete="off"
+                [attr.data-testid]="'admin-' + input.id + '-' + language()"
+                [attr.lang]="language()"
+                [attr.aria-invalid]="owes(input) ? 'true' : null"
+                [attr.data-owed]="owes(input) ? '' : null"
+                [readonly]="saving()"
+                [value]="input.text()[language()]"
+                (input)="typeText(input, $event)"
+              />}
+            </label>
+            } @if (language() !== defaultLanguage) {
+            <div
+              class="lib-admin-programs__field lib-admin-programs__field--hug"
+            >
+              <button
+                type="button"
+                uiButton
+                uiButtonStyle="bordered"
+                uiTint="neutral"
+                uiControlSize="regular"
+                [disabled]="saving()"
+                data-testid="admin-language-copy"
+                (click)="copyFromDefault()"
+              >
+                {{ t('admin.programs.language.copy', { from:
+                t('admin.programs.language.name.' + defaultLanguage) }) }}
+              </button>
+            </div>
+            }
+          </section>
+          @switch (current.programEditing) { @case (ProgramEditing.Position) {
+          <section class="lib-admin-programs__section">
+            <ui-section-header uiHeaderProminence="increased"
+              ><h3 uiTitle>
+                {{ t('admin.programs.section.where') }}
+              </h3></ui-section-header
+            >
             <!-- WHERE THE ROLE IS WORKED, as job boards word it. A remote
                  role is tied to no shop, so the shops list below goes. -->
             <div class="lib-admin-programs__field">
@@ -399,11 +399,23 @@
               }
             </div>
             }
+          </section>
+          <section class="lib-admin-programs__section">
+            <ui-section-header uiHeaderProminence="increased"
+              ><h3 uiTitle>
+                {{ t('admin.programs.section.apply') }}
+              </h3></ui-section-header
+            >
+            <!-- THE LINK IS OPTIONAL, so it starts as a row that adds it
+                 (Calendar's URL): no empty field stands in the sheet. -->
+            @if (linkShown()) {
             <label class="lib-admin-programs__field"
               ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
                 >{{ t('admin.programs.field.applyUrl') }}</span
               ><input
                 type="url"
+                data-link-field
+                data-testid="admin-apply-url"
                 inputmode="url"
                 uiTextField
                 uiControlSize="large"
@@ -418,7 +430,64 @@
                 >{{ t('admin.programs.field.linkHint') }}</span
               ></label
             >
-            } @case (ProgramEditing.Course) {
+            } @else {
+            <div class="lib-admin-programs__field">
+              <ui-list-group>
+                <button
+                  uiListRow
+                  uiSize="large"
+                  type="button"
+                  [uiInteractive]="true"
+                  [disabled]="saving()"
+                  data-testid="admin-add-link"
+                  (click)="addLink()"
+                >
+                  <span uiLeading>
+                    <ui-icon uiName="action.add" aria-hidden="true" />
+                  </span>
+                  {{ t('admin.programs.field.addApplyUrl') }}
+                </button>
+              </ui-list-group>
+              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                >{{ t('admin.programs.field.linkHint') }}</span
+              >
+            </div>
+            }
+          </section>
+          <!-- WHETHER THE ROLE IS ACTIVE: one yes-or-no, so a switch, and
+               last — the answer given once the rest is written. The row
+               names itself («Активна») and says under its name what
+               off means, so no heading stands over it. -->
+          <section class="lib-admin-programs__section">
+            <div class="lib-admin-programs__field">
+              <ui-list-group>
+                <ui-list-row uiSize="large" uiLabelWraps>
+                  <ui-stack uiSpacing="none">
+                    <span>{{ t('admin.programs.position.open') }}</span>
+                    <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                      >{{ t('admin.programs.position.openHint') }}</span
+                    >
+                  </ui-stack>
+                  <button
+                    uiSwitch
+                    uiTrailing
+                    [uiOn]="positionStatus() === PositionStatus.Open"
+                    [uiDisabled]="saving()"
+                    [attr.aria-label]="t('admin.programs.position.open')"
+                    data-testid="admin-position-open"
+                    (uiOnChange)="setPositionOpen($event)"
+                  ></button>
+                </ui-list-row>
+              </ui-list-group>
+            </div>
+          </section>
+          } @case (ProgramEditing.Course) {
+          <section class="lib-admin-programs__section">
+            <ui-section-header uiHeaderProminence="increased"
+              ><h3 uiTitle>
+                {{ t('admin.programs.section.enrollment') }}
+              </h3></ui-section-header
+            >
             <div class="lib-admin-programs__field">
               <span
                 uiText
@@ -435,11 +504,16 @@
                 (uiPicked)="pickEnrollmentStatus($event)"
               />
             </div>
+            <!-- THE LINK IS OPTIONAL, so it starts as a row that adds it
+                 (Calendar's URL): no empty field stands in the sheet. -->
+            @if (linkShown()) {
             <label class="lib-admin-programs__field"
               ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
                 >{{ t('admin.programs.field.applyUrl') }}</span
               ><input
                 type="url"
+                data-link-field
+                data-testid="admin-apply-url"
                 inputmode="url"
                 uiTextField
                 uiControlSize="large"
@@ -454,7 +528,37 @@
                 >{{ t('admin.programs.field.linkHint') }}</span
               ></label
             >
-            } @case (ProgramEditing.Event) {
+            } @else {
+            <div class="lib-admin-programs__field">
+              <ui-list-group>
+                <button
+                  uiListRow
+                  uiSize="large"
+                  type="button"
+                  [uiInteractive]="true"
+                  [disabled]="saving()"
+                  data-testid="admin-add-link"
+                  (click)="addLink()"
+                >
+                  <span uiLeading>
+                    <ui-icon uiName="action.add" aria-hidden="true" />
+                  </span>
+                  {{ t('admin.programs.field.addApplyUrl') }}
+                </button>
+              </ui-list-group>
+              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                >{{ t('admin.programs.field.linkHint') }}</span
+              >
+            </div>
+            }
+          </section>
+          } @case (ProgramEditing.Event) {
+          <section class="lib-admin-programs__section">
+            <ui-section-header uiHeaderProminence="increased"
+              ><h3 uiTitle>
+                {{ t('admin.programs.section.when') }}
+              </h3></ui-section-header
+            >
             <label class="lib-admin-programs__field"
               ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
                 >{{ t('admin.programs.event.startsAt') }}</span
@@ -502,11 +606,23 @@
               </ui-choice-menu>
             </div>
             }
+          </section>
+          <section class="lib-admin-programs__section">
+            <ui-section-header uiHeaderProminence="increased"
+              ><h3 uiTitle>
+                {{ t('admin.programs.section.apply') }}
+              </h3></ui-section-header
+            >
+            <!-- THE LINK IS OPTIONAL, so it starts as a row that adds it
+                 (Calendar's URL): no empty field stands in the sheet. -->
+            @if (linkShown()) {
             <label class="lib-admin-programs__field"
               ><span uiText uiFont="footnote" uiForegroundStyle="secondary"
                 >{{ t('admin.programs.event.rsvpUrl') }}</span
               ><input
                 type="url"
+                data-link-field
+                data-testid="admin-apply-url"
                 inputmode="url"
                 uiTextField
                 uiControlSize="large"
@@ -521,8 +637,31 @@
                 >{{ t('admin.programs.field.linkHint') }}</span
               ></label
             >
-            } }
+            } @else {
+            <div class="lib-admin-programs__field">
+              <ui-list-group>
+                <button
+                  uiListRow
+                  uiSize="large"
+                  type="button"
+                  [uiInteractive]="true"
+                  [disabled]="saving()"
+                  data-testid="admin-add-link"
+                  (click)="addLink()"
+                >
+                  <span uiLeading>
+                    <ui-icon uiName="action.add" aria-hidden="true" />
+                  </span>
+                  {{ t('admin.programs.event.addRsvpUrl') }}
+                </button>
+              </ui-list-group>
+              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
+                >{{ t('admin.programs.field.linkHint') }}</span
+              >
+            </div>
+            }
           </section>
+          } }
         </div>
         <ui-sheet-action-bar sheet-overlay [uiVisible]="true">
           <button

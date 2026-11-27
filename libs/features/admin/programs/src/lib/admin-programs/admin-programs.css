@@ -55,8 +55,9 @@
   align-items: flex-start;
 }
 
-/* The translation: a section of its own, a `loose` step under the rest
-   (the form's gap plus this), its fields the form's own step apart. */
+/* A section of the sheet under its heading: a `loose` step under the one
+   before (the form's gap plus this), its fields the form's own step
+   apart. */
 .lib-admin-programs__section {
   display: flex;
   flex-direction: column;

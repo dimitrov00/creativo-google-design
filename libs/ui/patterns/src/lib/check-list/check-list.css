@@ -94,15 +94,17 @@
   /* ── THE SURFACE AND ITS ROWS ────────────────────────────────────────────
      One card on the grouped-list fill at the group's own corner. The rows
      carry no fill of their own and nothing divides them: the trace is the
-     only line, so the tree reads as one thing. The surface clips, so a
-     row's hover and press wash takes the card's corners at its ends. */
+     only line, so the tree reads as one thing. The surface clips and has
+     no padding of its own, so a row's hover and press wash runs edge to
+     edge and takes the card's corners at its ends — a band of padding
+     above the first row and under the last showed as a gap the wash did
+     not fill (owner, 2026-11-27). */
   .ui-check-list__surface {
     display: flex;
     flex-direction: column;
     overflow: clip;
     border-radius: var(--control-radius-prominent);
     background: var(--sys-color-surface-secondary);
-    padding-block: var(--sys-space-tight);
   }
 
   .ui-check-list__row {

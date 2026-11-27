@@ -3006,7 +3006,15 @@
         "newEvent": "New event"
       },
       "section": {
-        "shared": "For every language"
+        "about": {
+          "POSITION": "About the role",
+          "COURSE": "About the course",
+          "EVENT": "About the event"
+        },
+        "where": "Where",
+        "when": "When and where",
+        "apply": "Applying",
+        "enrollment": "Enrolment"
       },
       "saveFailed": "Couldn't save. Check the required fields and try again.",
       "field": {
@@ -3014,9 +3022,12 @@
         "description": "Description",
         "status": "Status",
         "applyUrl": "Apply link",
-        "linkHint": "Optional. Without a link the button opens Instagram."
+        "addApplyUrl": "Add an apply link",
+        "linkHint": "Without a link the button opens Instagram."
       },
       "position": {
+        "open": "Active",
+        "openHint": "An inactive role is not shown on the careers page.",
         "workplace": "Workplace",
         "summary": "Summary",
         "shops": "Shops",
@@ -3031,7 +3042,8 @@
         "startsAt": "Starts — shop's local time",
         "shop": "Shop",
         "shopNone": "No specific shop",
-        "rsvpUrl": "RSVP link"
+        "rsvpUrl": "RSVP link",
+        "addRsvpUrl": "Add an RSVP link"
       },
       "shopHidden": "{{name}} (hidden)",
       "shopMissing": "Deleted shop"
