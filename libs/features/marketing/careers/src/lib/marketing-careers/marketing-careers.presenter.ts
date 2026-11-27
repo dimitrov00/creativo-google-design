@@ -62,6 +62,7 @@ export function positionRowsVm(
   for (const position of input.positions) {
     rows.push({
       id: position.id,
+      ordinal: String(rows.length + 1).padStart(2, '0'),
       title: LocalizedText.pick(position.title, locale),
       summary: LocalizedText.pick(position.summary, locale),
       shopsLine: shopsLineOf(position, named),
@@ -70,7 +71,6 @@ export function positionRowsVm(
           ? null
           : position.workplaceMode,
       contact: contactRowVm(position.contacts, input.fallbackHref),
-      positionStatus: position.positionStatus,
     });
   }
   return rows;

@@ -1,4 +1,4 @@
-import type { PositionStatus, WorkplaceMode } from '@core/components';
+import type { WorkplaceMode } from '@core/components';
 import type { PositionId } from '@core/primitives';
 import type { ContactRowVm } from '@creativo/features/shared/catalog';
 
@@ -11,6 +11,8 @@ import type { ContactRowVm } from '@creativo/features/shared/catalog';
 /** One role as its row prints it. */
 export type PositionRowVm = {
   readonly id: PositionId;
+  /** «01» — the role's place in the list, two figures wide. */
+  readonly ordinal: string;
   /** «Бръснар — пълно работно време» — the title in the active language. */
   readonly title: string;
   /** The summary in the active language. */
@@ -29,6 +31,4 @@ export type PositionRowVm = {
   readonly workplaceTag: WorkplaceMode | null;
   /** How the role is answered: one way is the row's link, several open the sheet. */
   readonly contact: ContactRowVm;
-  /** The stored status — the badge's word (`programs.status.position.<tag>`) and tone. */
-  readonly positionStatus: PositionStatus;
 };

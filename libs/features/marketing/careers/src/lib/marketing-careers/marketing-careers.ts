@@ -1,4 +1,3 @@
-import { NgTemplateOutlet } from '@angular/common';
 import {
   ContactSheetComponent,
   type ContactSheetVm,
@@ -23,32 +22,15 @@ import {
   SiteFooterComponent,
   SiteHeaderComponent,
 } from '@creativo/features/shared/shell';
-import {
-  UiBadge,
-  UiBadgeTone,
-  UiButton,
-  UiIcon,
-  UiSkeleton,
-} from '@creativo/ui/controls';
+import { UiButton, UiIcon, UiSkeleton } from '@creativo/ui/controls';
 import { UiStack } from '@creativo/ui/layout';
-import {
-  UiCard,
-  UiEmptyState,
-  UiListGroup,
-  UiListRow,
-  UiSectionHeader,
-} from '@creativo/ui/patterns';
+import { UiCard, UiEmptyState } from '@creativo/ui/patterns';
 import { UiFrameDirective, UiTextDirective } from '@creativo/ui/modifiers';
 import { LoadSlice, LoadState } from '@creativo/shared/view-state';
 import { positionRowsVm } from './marketing-careers.presenter';
 import type { PositionRowVm } from './marketing-careers.vm';
 
 const INSTAGRAM_URL = 'https://instagram.com/creativo.barbershop';
-
-const STATUS_TONES = {
-  [PositionStatus.Open]: 'accent',
-  [PositionStatus.Closed]: 'neutral',
-} as const satisfies Record<PositionStatus, UiBadgeTone>;
 
 /** `/careers` — public browse page for open positions, replacing the
  *  landing hiring teaser's Instagram-only "Apply" CTA with a real
@@ -68,19 +50,14 @@ const STATUS_TONES = {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     ContactSheetComponent,
-    NgTemplateOutlet,
     SiteFooterComponent,
     SiteHeaderComponent,
     TranslocoDirective,
-    UiBadge,
     UiButton,
     UiCard,
     UiEmptyState,
     UiFrameDirective,
     UiIcon,
-    UiListGroup,
-    UiListRow,
-    UiSectionHeader,
     UiSkeleton,
     UiStack,
     UiTextDirective,
@@ -135,10 +112,5 @@ export class MarketingCareers {
 
   constructor() {
     this.title.setTitle('Careers · Creativo');
-  }
-
-  protected statusTone(positionStatus: PositionStatus): UiBadgeTone {
-    // eslint-disable-next-line security/detect-object-injection -- closed union.
-    return STATUS_TONES[positionStatus];
   }
 }

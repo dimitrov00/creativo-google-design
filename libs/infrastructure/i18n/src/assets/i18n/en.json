@@ -843,8 +843,15 @@
   "programs": {
     "careers": {
       "back": "Creativo",
-      "eyebrow": "Careers",
-      "title": "Open positions.",
+      "title": "Come work the other side of the chair",
+      "open": "Open roles",
+      "apply": "Apply",
+      "applyFor": "Apply for “{{role}}”",
+      "closer": {
+        "title": "Don't see your role?",
+        "body": "Write to us. There is always a chair for good hands.",
+        "cta": "Message us on Instagram"
+      },
       "subtitle": "A few seats open for people who take their craft seriously.",
       "empty": {
         "title": "Nothing open right now.",

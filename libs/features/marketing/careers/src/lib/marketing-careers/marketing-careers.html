@@ -5,107 +5,181 @@
     <main
       uiFrame
       [uiFrameMaxWidth]="'var(--sys-container-content)'"
-      class="cr-programs-page__main"
+      class="cr-careers"
     >
-      <ui-stack uiSpacing="loose">
-        <ui-section-header uiAlignment="leading">
-          <p uiEyebrow>{{ t('programs.careers.eyebrow') }}</p>
-          <h1 uiTitle>{{ t('programs.careers.title') }}</h1>
-          <p uiLede>{{ t('programs.careers.subtitle') }}</p>
-        </ui-section-header>
+      <!-- THE PAGE (owner, 2026-11-27 — "not basic"): an editorial page of
+           the shop's own, not a section header over a settings list. One
+           line set in the display face says the invitation; the roles are
+           numbered set pieces with their words whole and one clear way in;
+           a band of the accent's wash closes for whoever did not find their
+           role. No
+           eyebrow, no dot, no status capsule — every role here is open. -->
+      <header class="cr-careers__hero">
+        <h1 uiText uiFont="display" class="cr-careers__headline">
+          {{ t('programs.careers.title') }}
+        </h1>
+        <p
+          uiText
+          uiFont="headline"
+          uiForegroundStyle="secondary"
+          class="cr-careers__lede"
+        >
+          {{ t('programs.careers.subtitle') }}
+        </p>
+      </header>
 
-        @if (state(); as current) { @switch (current.loadState) { @case
-        (LoadState.Loading) {
-        <ui-stack uiSpacing="tight">
-          <ui-skeleton uiRadius="regular" [uiFrameHeight]="'4rem'" uiFrame />
-          <ui-skeleton uiRadius="regular" [uiFrameHeight]="'4rem'" uiFrame />
-          <ui-skeleton uiRadius="regular" [uiFrameHeight]="'4rem'" uiFrame />
-        </ui-stack>
-        } @case (LoadState.Failed) {
-        <ui-card data-testid="careers-error">
-          {{ t('programs.careers.empty.title') }}
-        </ui-card>
-        } @case (LoadState.Ready) { @if (current.data.length === 0) {
-        <ui-card data-testid="careers-empty">
-          <ui-empty-state [uiTitle]="t('programs.careers.empty.title')">
-            <p>{{ t('programs.careers.empty.body') }}</p>
-            <a
-              uiActions
-              [href]="instagramUrl"
-              target="_blank"
-              rel="noopener"
-              uiButton
-              uiButtonStyle="bordered"
-              uiControlSize="regular"
-            >
-              {{ t('programs.careers.empty.cta') }}
-              <ui-icon uiName="link.external" />
-            </a>
-          </ui-empty-state>
-        </ui-card>
-        } @else {
-        <ui-list-group data-testid="careers-list">
-          @for (row of current.data; track row.id) {
-          <!-- ONE WAY to answer is the row's own link; several open the
-               contact sheet, which lists them. -->
-          <ng-template #rowBody>
-            <ui-stack uiSpacing="none">
-              <span>{{ row.title }}</span>
-              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
-                >{{ row.summary }}</span
-              >
-              @if (row.workplaceTag || row.shopsLine) {
-              <!-- WHERE THE ROLE IS WORKED: «От вкъщи», «Хибридно ·
-                   Център», or just the shops of an on-site role. -->
-              <span uiText uiFont="footnote" uiForegroundStyle="secondary"
-                >@if (row.workplaceTag; as tag) {<span
-                  data-testid="careers-row-workplace"
-                  >{{ t('programs.workplace.' + tag) }}</span
-                >} @if (row.workplaceTag && row.shopsLine) { · } @if
-                (row.shopsLine; as shops) {<span data-testid="careers-row-shops"
-                  >{{ shops }}</span
-                >}</span
-              >
-              }
-            </ui-stack>
-            <ui-stack
-              uiTrailing
-              uiAxis="horizontal"
-              uiAlignment="center"
-              uiSpacing="compact"
-            >
-              <span uiBadge [uiTone]="statusTone(row.positionStatus)">
-                {{ t('programs.status.position.' + row.positionStatus) }}
-              </span>
-              <ui-icon uiName="link.external" />
-            </ui-stack>
-          </ng-template>
-          @if (row.contact.only; as only) {
-          <a
-            uiListRow
-            [uiInteractive]="true"
-            [href]="only.href"
-            [attr.target]="opensNewTab(only) ? '_blank' : null"
-            rel="noopener"
-          >
-            <ng-container [ngTemplateOutlet]="rowBody" />
-          </a>
-          } @else {
-          <button
-            uiListRow
-            type="button"
-            [uiInteractive]="true"
-            aria-haspopup="dialog"
-            (click)="
-              contactFor.set({ title: row.title, contacts: row.contact.contacts })
-            "
-          >
-            <ng-container [ngTemplateOutlet]="rowBody" />
-          </button>
-          } }
-        </ui-list-group>
-        } } } }
+      @if (state(); as current) { @switch (current.loadState) { @case
+      (LoadState.Loading) {
+      <ui-stack uiSpacing="compact">
+        <ui-skeleton uiRadius="regular" [uiFrameHeight]="'11rem'" uiFrame />
+        <ui-skeleton uiRadius="regular" [uiFrameHeight]="'11rem'" uiFrame />
       </ui-stack>
+      } @case (LoadState.Failed) {
+      <ui-card data-testid="careers-error">
+        {{ t('programs.careers.empty.title') }}
+      </ui-card>
+      } @case (LoadState.Ready) { @if (current.data.length === 0) {
+      <ui-card data-testid="careers-empty">
+        <ui-empty-state [uiTitle]="t('programs.careers.empty.title')">
+          <p>{{ t('programs.careers.empty.body') }}</p>
+          <a
+            uiActions
+            [href]="instagramUrl"
+            target="_blank"
+            rel="noopener"
+            uiButton
+            uiButtonStyle="bordered"
+            uiControlSize="regular"
+          >
+            {{ t('programs.careers.empty.cta') }}
+            <ui-icon uiName="link.external" />
+          </a>
+        </ui-empty-state>
+      </ui-card>
+      } @else {
+      <section class="cr-careers__open" aria-labelledby="careers-open-title">
+        <h2
+          id="careers-open-title"
+          uiText
+          uiFont="title2"
+          class="cr-careers__open-title"
+        >
+          {{ t('programs.careers.open') }}
+          <!-- How many, as a figure on the house's orange (the accent law:
+               colour is a shape; words and figures stay ink). -->
+          <span class="cr-careers__count" data-testid="careers-count"
+            >{{ current.data.length }}</span
+          >
+        </h2>
+        <ol class="cr-careers__roles" data-testid="careers-list">
+          @for (row of current.data; track row.id) {
+          <li class="cr-careers__role" data-testid="careers-role">
+            <span class="cr-careers__ordinal" aria-hidden="true"
+              >{{ row.ordinal }}</span
+            >
+            <div class="cr-careers__body">
+              <h3 uiText uiFont="title" class="cr-careers__role-title">
+                {{ row.title }}
+              </h3>
+              <p
+                uiText
+                uiFont="body"
+                uiForegroundStyle="secondary"
+                class="cr-careers__summary"
+              >
+                {{ row.summary }}
+              </p>
+              @if (row.workplaceTag || row.shopsLine) {
+              <!-- WHERE THE ROLE IS WORKED: «От вкъщи», «Хибридно · Център»,
+                   or just the shops of an on-site role — one quiet line
+                   behind the place glyph. -->
+              <p uiText uiFont="subheadline" class="cr-careers__where">
+                <ui-icon uiName="location.place" aria-hidden="true" />
+                <span
+                  >@if (row.workplaceTag; as tag) {<span
+                    data-testid="careers-row-workplace"
+                    >{{ t('programs.workplace.' + tag) }}</span
+                  >} @if (row.workplaceTag && row.shopsLine) { · } @if
+                  (row.shopsLine; as shops) {<span
+                    data-testid="careers-row-shops"
+                    >{{ shops }}</span
+                  >}</span
+                >
+              </p>
+              }
+            </div>
+            <!-- ONE WAY to answer is the button's own link; several open
+                 the contact sheet, which lists them. -->
+            <div class="cr-careers__action">
+              @if (row.contact.only; as only) {
+              <a
+                uiButton
+                uiButtonStyle="borderedProminent"
+                uiTint="neutral"
+                uiControlSize="large"
+                [href]="only.href"
+                [attr.target]="opensNewTab(only) ? '_blank' : null"
+                rel="noopener"
+                [attr.aria-label]="
+                  t('programs.careers.applyFor', { role: row.title })
+                "
+                data-testid="careers-apply"
+              >
+                {{ t('programs.careers.apply') }}
+                <ui-icon uiTrailing uiName="link.external" />
+              </a>
+              } @else {
+              <button
+                type="button"
+                uiButton
+                uiButtonStyle="borderedProminent"
+                uiTint="neutral"
+                uiControlSize="large"
+                aria-haspopup="dialog"
+                [attr.aria-label]="
+                  t('programs.careers.applyFor', { role: row.title })
+                "
+                data-testid="careers-apply"
+                (click)="
+                  contactFor.set({
+                    title: row.title,
+                    contacts: row.contact.contacts,
+                  })
+                "
+              >
+                {{ t('programs.careers.apply') }}
+                <ui-icon uiTrailing uiName="link.external" />
+              </button>
+              }
+            </div>
+          </li>
+          }
+        </ol>
+      </section>
+      } } } }
+
+      <!-- THE CLOSER: for whoever did not find their role — the accent as a
+           SHAPE (a washed band), its words ink. -->
+      <aside class="cr-careers__closer" data-testid="careers-closer">
+        <h2 uiText uiFont="title" class="cr-careers__closer-title">
+          {{ t('programs.careers.closer.title') }}
+        </h2>
+        <p uiText uiFont="body" class="cr-careers__closer-body">
+          {{ t('programs.careers.closer.body') }}
+        </p>
+        <a
+          uiButton
+          uiButtonStyle="borderedProminent"
+          uiTint="neutral"
+          uiControlSize="large"
+          [href]="instagramUrl"
+          target="_blank"
+          rel="noopener"
+        >
+          {{ t('programs.careers.closer.cta') }}
+          <ui-icon uiTrailing uiName="link.external" />
+        </a>
+      </aside>
     </main>
 
     <cr-contact-sheet

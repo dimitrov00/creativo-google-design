@@ -14,7 +14,7 @@ import { signInAs } from './support/sign-in';
  * id), so the journey proves the tightened `firestore.rules` shape checks
  * (`validPosition` / `validCourse` / `validEvent`, DEP-7) admit the live
  * writer. Then the public pages show them to anyone: `/careers` the
- * position with its status word, `/courses` the course with its status
+ * position with where it is worked and the way to answer it, `/courses` the course with its status
  * word (the catalogues' `programs.status.*`, E-17, translated by OR-53 —
  * this run is in bg, so «Отворена» for a role and «Отворен» for a course,
  * each agreeing with its noun), and `/events` the event's title and its
@@ -197,17 +197,18 @@ test.describe('programs — a content manager publishes, the public pages show i
         .locator('[uilistrow]', { hasText: event.bg }),
     ).toBeVisible({ timeout: 20_000 });
 
-    // /careers — the position, in the page's language (bg), with its
-    // status word.
+    // /careers — the position, in the page's language (bg), where it is
+    // worked and the way to answer it.
     await page.goto('/careers');
     const careers = page.getByTestId('careers-list');
-    const careersRow = rowOf(careers, position.bg);
-    await expect(careersRow).toBeVisible({ timeout: 20_000 });
-    await expect(statusOf(careersRow)).toHaveText('Отворена');
-    await expect(careersRow.getByTestId('careers-row-workplace')).toHaveText(
+    const careersRole = careers
+      .getByTestId('careers-role')
+      .filter({ hasText: position.bg });
+    await expect(careersRole).toBeVisible({ timeout: 20_000 });
+    await expect(careersRole.getByTestId('careers-row-workplace')).toHaveText(
       'От вкъщи',
     );
-    await expect(careersRow).toHaveAttribute(
+    await expect(careersRole.getByTestId('careers-apply')).toHaveAttribute(
       'href',
       'mailto:jobs@example.test',
     );

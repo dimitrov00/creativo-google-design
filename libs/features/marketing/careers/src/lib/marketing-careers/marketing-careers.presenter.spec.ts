@@ -73,32 +73,32 @@ describe('positionRowsVm', () => {
     expect(positionRowsVm(input())).toEqual([
       {
         id: SCOPED.id,
+        ordinal: '01',
         title: 'Barber — full time',
         summary: 'Five days a week.',
         shopsLine: 'Center · Creativo · Mladost',
         workplaceTag: null,
         contact: only('LINK', 'https://example.com/apply'),
-        positionStatus: PositionStatus.Open,
       },
       // Open at every shop, and scoped only to a shop no listed one
       // answers: no shops line.
       {
         id: EVERYWHERE.id,
+        ordinal: '02',
         title: 'Barber',
         summary: 'Full-time chair',
         shopsLine: null,
         workplaceTag: null,
         contact: only('INSTAGRAM', INSTAGRAM),
-        positionStatus: PositionStatus.Closed,
       },
       {
         id: AT_GONE_SHOP.id,
+        ordinal: '03',
         title: 'Barber',
         summary: 'Full-time chair',
         shopsLine: null,
         workplaceTag: null,
         contact: only('INSTAGRAM', INSTAGRAM),
-        positionStatus: PositionStatus.Open,
       },
     ]);
   });

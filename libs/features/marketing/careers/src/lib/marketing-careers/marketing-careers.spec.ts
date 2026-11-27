@@ -68,12 +68,14 @@ function programStatusWords(lang: string): Translation {
     readonly programs: {
       readonly status: Translation;
       readonly workplace: Translation;
+      readonly careers: Translation;
     };
   };
   return {
     programs: {
       status: catalogue.programs.status,
       workplace: catalogue.programs.workplace,
+      careers: catalogue.programs.careers,
     },
   };
 }
@@ -227,7 +229,7 @@ describe('MarketingCareers', () => {
     fixture.detectChanges();
 
     const row = (fixture.nativeElement as HTMLElement).querySelector(
-      '[data-testid="careers-list"] a[uilistrow]',
+      '[data-testid="careers-list"] a[data-testid="careers-apply"]',
     );
     expect(row?.getAttribute('href')).toBe('tel:+359888123456');
     expect(row?.getAttribute('target')).toBeNull();
@@ -251,7 +253,7 @@ describe('MarketingCareers', () => {
 
     host
       .querySelector<HTMLElement>(
-        '[data-testid="careers-list"] button[uilistrow]',
+        '[data-testid="careers-list"] button[data-testid="careers-apply"]',
       )
       ?.click();
     fixture.detectChanges();
@@ -268,7 +270,7 @@ describe('MarketingCareers', () => {
     ]);
   });
 
-  it('renders one row per open position, linking to its apply URL, with a status badge', async () => {
+  it('draws one role per open position, its button linking to its apply URL', async () => {
     const asked: (PositionStatus | null)[] = [];
     const fixture = await configure(
       [
@@ -290,27 +292,14 @@ describe('MarketingCareers', () => {
     const host: HTMLElement = fixture.nativeElement;
     const list = host.querySelector('[data-testid="careers-list"]');
     expect(list).not.toBeNull();
-    const row = list?.querySelector('a[uilistrow]');
-    expect(row?.getAttribute('href')).toBe('https://example.com/apply');
-    const badge = row?.querySelector('[uibadge]');
-    expect(badge?.getAttribute('data-tone')).toBe('accent');
+    const apply = list?.querySelector('a[data-testid="careers-apply"]');
+    expect(apply?.getAttribute('href')).toBe('https://example.com/apply');
+    expect(apply?.getAttribute('target')).toBe('_blank');
+    expect(apply?.getAttribute('aria-label')).toBe('Apply for “Barber”');
+    // Every role here is open, so none says so: no status capsule.
+    expect(list?.querySelector('[uibadge]')).toBeNull();
     // The page asks for open roles only — once.
     expect(asked).toEqual([PositionStatus.Open]);
-  });
-
-  it('badges a closed position with a neutral tone', async () => {
-    const fixture = await configure([
-      positionOf('pos_1', { positionStatus: PositionStatus.Closed }),
-    ]);
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    const host: HTMLElement = fixture.nativeElement;
-    const badge = host.querySelector(
-      '[data-testid="careers-list"] a[uilistrow] [uibadge]',
-    );
-    expect(badge?.getAttribute('data-tone')).toBe('neutral');
   });
 
   it('falls back to the Instagram link when a position has no contact of its own', async () => {
@@ -320,54 +309,64 @@ describe('MarketingCareers', () => {
     fixture.detectChanges();
 
     const host: HTMLElement = fixture.nativeElement;
-    const row = host.querySelector('[data-testid="careers-list"] a[uilistrow]');
+    const row = host.querySelector(
+      '[data-testid="careers-list"] a[data-testid="careers-apply"]',
+    );
     expect(row?.getAttribute('href')).toBe(
       'https://instagram.com/creativo.barbershop',
     );
   });
 
-  // Flip 4, F4-7: the stored status is SCREAMING (`OPEN`); the badge prints
-  // the catalogue's word for it (OR-53).
-  it('prints the badge text "Open" for an open role', async () => {
+  it('opens on the invitation alone — one heading in the display face, no eyebrow over it', async () => {
     const host = await render(await configure([positionOf('pos_1')]));
 
-    const badge = host.querySelector(
-      '[data-testid="careers-list"] a[uilistrow] [uibadge]',
+    const heading = host.querySelector('h1');
+    expect(heading?.textContent?.trim()).toBe(
+      'Come work the other side of the chair',
     );
-    expect(badge?.textContent?.trim()).toBe('Open');
+    expect(heading?.getAttribute('data-font')).toBe('display');
+    expect(host.querySelector('[uieyebrow]')).toBeNull();
   });
 
-  it('prints the badge text "Closed" for a closed role', async () => {
+  it('counts the open roles beside their heading and numbers each, two figures wide', async () => {
     const host = await render(
       await configure([
-        positionOf('pos_1', { positionStatus: PositionStatus.Closed }),
+        positionOf('pos_1'),
+        positionOf('pos_2', { sortOrder: 1 }),
       ]),
     );
 
-    const badge = host.querySelector(
-      '[data-testid="careers-list"] a[uilistrow] [uibadge]',
-    );
-    expect(badge?.textContent?.trim()).toBe('Closed');
+    expect(
+      host.querySelector('[data-testid="careers-count"]')?.textContent?.trim(),
+    ).toBe('2');
+    expect(
+      Array.from(host.querySelectorAll('.cr-careers__ordinal'), (figure) =>
+        figure.textContent?.trim(),
+      ),
+    ).toEqual(['01', '02']);
   });
 
-  it('prints the bg badge word, agreeing with «позиция» (OR-53)', async () => {
-    const host = await render(await configure([positionOf('pos_1')]), 'bg');
+  it("closes on the way in for whoever found no role: the shop's Instagram", async () => {
+    const host = await render(await configure([positionOf('pos_1')]));
 
-    const badge = host.querySelector(
-      '[data-testid="careers-list"] a[uilistrow] [uibadge]',
+    const closer = host.querySelector('[data-testid="careers-closer"]');
+    expect(closer?.querySelector('h2')?.textContent?.trim()).toBe(
+      "Don't see your role?",
     );
-    expect(badge?.textContent?.trim()).toBe('Отворена');
+    expect(closer?.querySelector('a')?.getAttribute('href')).toBe(
+      'https://instagram.com/creativo.barbershop',
+    );
   });
 
   it('prints the title and summary in the active language', async () => {
     const en = await render(await configure([positionOf('pos_1')]), 'en');
-    const enRow = en.querySelector('[data-testid="careers-list"] a[uilistrow]');
+    const enRow = en.querySelector('[data-testid="careers-role"]');
     expect(enRow?.textContent).toContain('Barber');
     expect(enRow?.textContent).toContain('Full-time chair');
     TestBed.resetTestingModule();
 
     const bg = await render(await configure([positionOf('pos_1')]), 'bg');
-    const bgRow = bg.querySelector('[data-testid="careers-list"] a[uilistrow]');
+    const bgRow = bg.querySelector('[data-testid="careers-role"]');
     expect(bgRow?.textContent).toContain('Бръснар');
     expect(bgRow?.textContent).toContain('Пълен работен ден');
   });
@@ -389,9 +388,7 @@ describe('MarketingCareers', () => {
       'bg',
     );
 
-    const rows = host.querySelectorAll(
-      '[data-testid="careers-list"] a[uilistrow]',
-    );
+    const rows = host.querySelectorAll('[data-testid="careers-role"]');
     expect(
       rows[0]
         ?.querySelector('[data-testid="careers-row-shops"]')
@@ -419,9 +416,7 @@ describe('MarketingCareers', () => {
       'bg',
     );
 
-    const rows = host.querySelectorAll(
-      '[data-testid="careers-list"] a[uilistrow]',
-    );
+    const rows = host.querySelectorAll('[data-testid="careers-role"]');
     const placeOf = (row: Element | undefined) =>
       row
         ?.querySelector('[data-testid="careers-row-workplace"]')
