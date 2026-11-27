@@ -23,7 +23,7 @@ export type ProgramInput = PositionInput | CourseInput | ShopEventInput;
 const blankText = (): LocalizedText => ({ bg: '', en: '' });
 
 export const ProgramInput = {
-  /** The empty role form — open, on site at every shop, no apply URL, first in order. */
+  /** The empty role form — open, on site at every shop, no contact, first in order. */
   blankPosition(): PositionInput {
     return {
       title: blankText(),
@@ -31,29 +31,29 @@ export const ProgramInput = {
       workplaceMode: WorkplaceMode.OnSite,
       locationIds: [],
       positionStatus: PositionStatus.Open,
-      applyUrl: '',
+      contacts: [],
       sortOrder: 0,
     };
   },
-  /** The empty course form — open, no starts label, no apply URL, first in order. */
+  /** The empty course form — open, no starts label, no contact, first in order. */
   blankCourse(): CourseInput {
     return {
       title: blankText(),
       description: blankText(),
       enrollmentStatus: EnrollmentStatus.Open,
       startsLabel: blankText(),
-      applyUrl: '',
+      contacts: [],
       sortOrder: 0,
     };
   },
-  /** The empty event form — no start, no location, no RSVP link, first in order. */
+  /** The empty event form — no start, no location, no contact, first in order. */
   blankShopEvent(): ShopEventInput {
     return {
       title: blankText(),
       description: blankText(),
       startsAt: '',
       locationId: '',
-      applyUrl: '',
+      contacts: [],
       sortOrder: 0,
     };
   },

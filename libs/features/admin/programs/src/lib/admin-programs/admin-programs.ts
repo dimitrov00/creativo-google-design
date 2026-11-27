@@ -12,6 +12,7 @@ import {
   type WritableSignal,
 } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { NgTemplateOutlet } from '@angular/common';
 import { Title } from '@angular/platform-browser';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import {
@@ -19,7 +20,9 @@ import {
   EnrollmentStatus,
   LocalizedText,
   type PositionInput,
+  ContactMethod,
   PositionStatus,
+  type ProgramContact,
   WorkplaceMode,
   ProgramInput,
   type ShopEventInput,
@@ -29,9 +32,12 @@ import type { Course, Position, ShopEvent, ShopLocation } from '@core/entities';
 import type { ProgramSaveError } from '@core/errors';
 import { type LocationId, Locale, Tag } from '@core/primitives';
 import { LocationScopeSystem, ProgramsSystem } from '@core/systems';
-import { shopNameOf } from '@creativo/features/shared/catalog';
+import { CONTACT_ICON, shopNameOf } from '@creativo/features/shared/catalog';
 import { SiteHeaderComponent } from '@creativo/features/shared/shell';
-import { sameLocationIds } from '@creativo/infrastructure/firebase-app';
+import {
+  AUTH_DEPLOYMENT_PORTS,
+  sameLocationIds,
+} from '@creativo/infrastructure/firebase-app';
 import {
   DEFAULT_LOCALE,
   loadedLanguage,
@@ -46,7 +52,9 @@ import {
   type UiIconName,
   UiModalSheet,
   type UiSegment,
+  UiPhoneField,
   UiSegmentedControl,
+  UiSwitch,
   UiTextField,
 } from '@creativo/ui/controls';
 import { UiStack } from '@creativo/ui/layout';
@@ -79,6 +87,37 @@ import { AdminProgramsStore, ProgramsTab } from '../admin-programs.store';
 
 /** Which program the edit form is open on — the field `programEditing`, the
  *  ONLY source of these strings (Law 6). */
+/** How one contact method's field is typed. */
+type ContactInput = {
+  readonly inputType: 'email' | 'text' | 'url';
+  readonly inputmode: 'email' | 'text' | 'url';
+  readonly placeholder: string;
+};
+
+/** Each method's field. The phone is the DS phone field, so its entry is never read. */
+const CONTACT_INPUT = {
+  [ContactMethod.Phone]: {
+    inputType: 'text',
+    inputmode: 'text',
+    placeholder: '',
+  },
+  [ContactMethod.Email]: {
+    inputType: 'email',
+    inputmode: 'email',
+    placeholder: 'name@example.com',
+  },
+  [ContactMethod.Instagram]: {
+    inputType: 'text',
+    inputmode: 'text',
+    placeholder: '@',
+  },
+  [ContactMethod.Link]: {
+    inputType: 'url',
+    inputmode: 'url',
+    placeholder: 'https://',
+  },
+} as const satisfies Record<ContactMethod, ContactInput>;
+
 const ProgramEditing = {
   /** A careers position. */
   Position: 'POSITION',
@@ -220,6 +259,8 @@ const NO_SHOP = '';
   selector: 'lib-admin-programs',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    NgTemplateOutlet,
+    UiPhoneField,
     SiteHeaderComponent,
     TranslocoDirective,
     UiButton,
@@ -245,6 +286,7 @@ const NO_SHOP = '';
     UiStack,
     UiSwipeAction,
     UiSwipeActions,
+    UiSwitch,
     UiTextDirective,
     UiTextField,
     UiVisuallyHiddenDirective,
@@ -398,7 +440,27 @@ export class AdminPrograms {
   protected readonly shopsOwedShown = signal(false);
   /** The shops the role names; empty with the list unlimited = every shop. */
   protected readonly positionShopIds = signal<readonly LocationId[]>([]);
-  protected readonly positionApplyUrl = signal('');
+  // The ways to answer — one draft, since one sheet is open at a time.
+  protected readonly ContactMethod = ContactMethod;
+  /** How each method's field is typed. */
+  protected readonly contactInput = CONTACT_INPUT;
+  /** The glyph each method leads with — the public pages' own table. */
+  protected readonly contactIcon = CONTACT_ICON;
+  /** The contacts as typed, in the order they were added; a blank one is not saved. */
+  protected readonly contacts = signal<readonly ProgramContact[]>([]);
+  /** The methods not added yet, in the dictionary's order — what the menu offers. */
+  protected readonly contactsLeft = computed((): readonly ContactMethod[] => {
+    const added = this.contacts();
+    return Tag.values(ContactMethod).filter(
+      (method) => !added.some((contact) => contact.contactMethod === method),
+    );
+  });
+  protected readonly contactMenu = signal(false);
+  /** A save was refused over a contact left blank: its field says so. */
+  protected readonly contactsOwedShown = signal(false);
+  /** The country a phone number is read in until one is picked. */
+  protected readonly defaultCountry = inject(AUTH_DEPLOYMENT_PORTS)
+    .authDeployment.defaultCountry;
 
   // Course fields
   protected readonly courseTitle = signal(LocalizedText.blank());
@@ -407,7 +469,6 @@ export class AdminPrograms {
     EnrollmentStatus.Open,
   );
   protected readonly courseStartsLabel = signal(LocalizedText.blank());
-  protected readonly courseApplyUrl = signal('');
 
   // Event fields
   protected readonly eventTitle = signal(LocalizedText.blank());
@@ -416,7 +477,6 @@ export class AdminPrograms {
   protected readonly eventStartsAt = signal('');
   /** The menu's pick — a shop's id, or {@link NO_SHOP}. */
   protected readonly eventLocationId = signal<string>(NO_SHOP);
-  protected readonly eventApplyUrl = signal('');
   /** Whether the «Салон» menu is open. */
   protected readonly eventShopMenu = signal(false);
 
@@ -433,6 +493,10 @@ export class AdminPrograms {
 
   /** The data language a shop's name is read in — `bg` for every language but `en`. */
   private readonly locale = computed(() => localeFor(this.loadedLang()));
+  /** The language the phone field names its countries in. */
+  protected readonly phoneLocale = computed(
+    () => this.loadedLang() ?? DEFAULT_LOCALE,
+  );
 
   // ── The shops (OR-37, OR-42) ────────────────────────────────────────────
 
@@ -871,9 +935,9 @@ export class AdminPrograms {
     if (next !== undefined) this.setTab(next);
   }
 
-  protected pickPositionStatus(id: string): void {
-    const next = Object.values(PositionStatus).find((tag) => tag === id);
-    if (next !== undefined) this.positionStatus.set(next);
+  /** The switch «Активна»: on is open, off is closed. */
+  protected setPositionOpen(open: boolean): void {
+    this.positionStatus.set(open ? PositionStatus.Open : PositionStatus.Closed);
   }
 
   /**
@@ -912,6 +976,50 @@ export class AdminPrograms {
     this.saveRefusals.set(null);
   }
 
+  /** A method picked from the menu: its field joins the others, the cursor in it. */
+  protected addContact(method: ContactMethod): void {
+    this.contactMenu.set(false);
+    this.contacts.update((contacts) => [
+      ...contacts,
+      { contactMethod: method, contactValue: '' },
+    ]);
+    this.focusIn(
+      `[data-testid="admin-contact-${method}"] :is(input, [data-contact-field])`,
+    );
+  }
+
+  protected setContact(method: ContactMethod, contactValue: string): void {
+    this.contacts.update((contacts) =>
+      contacts.map((contact) =>
+        contact.contactMethod === method
+          ? { contactMethod: method, contactValue }
+          : contact,
+      ),
+    );
+  }
+
+  protected removeContact(method: ContactMethod): void {
+    this.contacts.update((contacts) =>
+      contacts.filter((contact) => contact.contactMethod !== method),
+    );
+  }
+
+  /** Is this contact the blank one a refused save points at? */
+  protected owesContact(contact: ProgramContact): boolean {
+    return this.contactsOwedShown() && contact.contactValue.trim() === '';
+  }
+
+  /** Puts the cursor in the sheet's first match, once it is drawn. */
+  private focusIn(selector: string): void {
+    afterNextRender(
+      () =>
+        this.host.nativeElement
+          .querySelector<HTMLElement>(`.lib-admin-programs__form ${selector}`)
+          ?.focus({ preventScroll: true }),
+      { injector: this.injector },
+    );
+  }
+
   /** A row tapped: its thing opens in the sheet. */
   protected openRow(id: string): void {
     const tab = this.tab();
@@ -928,7 +1036,7 @@ export class AdminPrograms {
   }
 
   protected startEditPosition(position: Position): void {
-    this.fillPosition({ ...position, applyUrl: position.applyUrl ?? '' });
+    this.fillPosition(position);
     // The stored scope, as stored — an edit never wipes it (OR-42).
     this.positionShopIds.set(position.locationIds);
     this.shopsLimited.set(position.locationIds.length > 0);
@@ -943,7 +1051,6 @@ export class AdminPrograms {
     this.fillCourse({
       ...course,
       startsLabel: course.startsLabel ?? ProgramInput.blankCourse().startsLabel,
-      applyUrl: course.applyUrl ?? '',
     });
     this.editing.set({ programEditing: ProgramEditing.Course, source: course });
     this.saveRefusals.set(null);
@@ -959,7 +1066,6 @@ export class AdminPrograms {
         WallTime.of(event.localDate, event.startMinutes),
       ),
       locationId: event.locationId ?? NO_SHOP,
-      applyUrl: event.applyUrl ?? '',
     });
     this.editing.set({ programEditing: ProgramEditing.Event, source: event });
     this.saveRefusals.set(null);
@@ -1053,6 +1159,14 @@ export class AdminPrograms {
       );
       return;
     }
+    // A contact added and left blank: fill it or take it away. Nothing is
+    // sent — a field the admin asked for is never dropped behind their back.
+    if (this.contacts().some((contact) => contact.contactValue.trim() === '')) {
+      this.contactsOwedShown.set(true);
+      this.saveRefusals.set(null);
+      this.focusIn('.lib-admin-programs__contact [aria-invalid="true"]');
+      return;
+    }
     // A role limited to no shop at all: nothing is sent, the list says so.
     if (
       editing.programEditing === ProgramEditing.Position &&
@@ -1114,7 +1228,7 @@ export class AdminPrograms {
     this.positionSummary.set(input.summary);
     this.positionStatus.set(input.positionStatus);
     this.positionWorkplace.set(input.workplaceMode);
-    this.positionApplyUrl.set(input.applyUrl);
+    this.contacts.set(input.contacts);
   }
 
   private fillCourse(input: CourseInput): void {
@@ -1123,7 +1237,7 @@ export class AdminPrograms {
     this.courseDescription.set(input.description);
     this.courseEnrollmentStatus.set(input.enrollmentStatus);
     this.courseStartsLabel.set(input.startsLabel);
-    this.courseApplyUrl.set(input.applyUrl);
+    this.contacts.set(input.contacts);
   }
 
   private fillEvent(input: ShopEventInput): void {
@@ -1132,7 +1246,7 @@ export class AdminPrograms {
     this.eventDescription.set(input.description);
     this.eventStartsAt.set(input.startsAt);
     this.eventLocationId.set(input.locationId);
-    this.eventApplyUrl.set(input.applyUrl);
+    this.contacts.set(input.contacts);
     this.eventShopMenu.set(false);
   }
 
@@ -1141,6 +1255,8 @@ export class AdminPrograms {
     this.language.set(DEFAULT_LOCALE);
     this.owedShown.set(false);
     this.shopsOwedShown.set(false);
+    this.contactsOwedShown.set(false);
+    this.contactMenu.set(false);
   }
 
   /**
@@ -1165,7 +1281,7 @@ export class AdminPrograms {
       workplaceMode: this.positionWorkplace(),
       locationIds: this.positionShopIds(),
       positionStatus: this.positionStatus(),
-      applyUrl: this.positionApplyUrl(),
+      contacts: this.contacts(),
       sortOrder: this.placeOf(this.store.positions()),
     };
   }
@@ -1176,7 +1292,7 @@ export class AdminPrograms {
       description: this.courseDescription(),
       enrollmentStatus: this.courseEnrollmentStatus(),
       startsLabel: this.courseStartsLabel(),
-      applyUrl: this.courseApplyUrl(),
+      contacts: this.contacts(),
       sortOrder: this.placeOf(this.store.courses()),
     };
   }
@@ -1187,7 +1303,7 @@ export class AdminPrograms {
       description: this.eventDescription(),
       startsAt: this.eventStartsAt(),
       locationId: this.eventLocationId(),
-      applyUrl: this.eventApplyUrl(),
+      contacts: this.contacts(),
       sortOrder: this.editing()?.source?.sortOrder ?? 0,
     };
   }

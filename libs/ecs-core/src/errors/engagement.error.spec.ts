@@ -213,11 +213,11 @@ describe('EngagementError factories', () => {
     });
     expect(
       EngagementError.program(
-        EngagementErrorCode.CourseApplyUrlInvalid,
+        EngagementErrorCode.CourseContactInvalid,
         'not a url',
       ),
     ).toEqual({
-      errorCode: 'ENGAGEMENT_COURSE_INVALID_APPLY_URL',
+      errorCode: 'ENGAGEMENT_COURSE_INVALID_CONTACT',
       rawValue: 'not a url',
     });
     expect(
@@ -282,7 +282,7 @@ describe('EngagementError factories', () => {
     const codes = ENGAGEMENT_ERROR_CODES;
     const at = (code: EngagementErrorCode) => codes.indexOf(code);
     expect(at(EngagementErrorCode.PositionNotFound)).toBe(
-      at(EngagementErrorCode.ShopEventApplyUrlInvalid) + 1,
+      at(EngagementErrorCode.ShopEventContactInvalid) + 1,
     );
     expect(codes.slice(at(EngagementErrorCode.PositionNotFound))).toEqual([
       'ENGAGEMENT_POSITION_NOT_FOUND',

@@ -3,7 +3,7 @@ import type { ShopEvent, ShopLocation } from '@core/entities';
 import type { RepositoryError } from '@core/errors';
 import { type Result } from '@core/primitives';
 import { ProgramsSystem } from '@core/systems';
-import { namedShopsOf } from '@creativo/features/shared/catalog';
+import { contactRowVm, namedShopsOf } from '@creativo/features/shared/catalog';
 import { formatWallClock } from '@creativo/ui/wall-clock';
 import type { EventRowVm } from './marketing-events.vm';
 import { localeFor } from '@creativo/infrastructure/i18n';
@@ -64,7 +64,7 @@ export function eventRowsVm(input: EventRowsInput): readonly EventRowVm[] {
       id: event.id,
       title: LocalizedText.pick(event.title, locale),
       whenLine: shop === null ? date : `${date} · ${shop.name}`,
-      href: event.applyUrl ?? input.fallbackHref,
+      contact: contactRowVm(event.contacts, input.fallbackHref),
     });
   }
   return rows;

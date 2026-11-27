@@ -216,10 +216,71 @@ describe('MarketingCareers', () => {
     expect(host.querySelector('[data-testid="careers-list"]')).toBeNull();
   });
 
+  it('hands a call to the device: a role answered by phone alone links to it, in no new tab', async () => {
+    const fixture = await configure([
+      positionOf('pos_1', {
+        contacts: [{ contactMethod: 'PHONE', contactValue: '+359888123456' }],
+      }),
+    ]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const row = (fixture.nativeElement as HTMLElement).querySelector(
+      '[data-testid="careers-list"] a[uilistrow]',
+    );
+    expect(row?.getAttribute('href')).toBe('tel:+359888123456');
+    expect(row?.getAttribute('target')).toBeNull();
+  });
+
+  it('opens the contact sheet for a role answered several ways, each way a link', async () => {
+    const fixture = await configure([
+      positionOf('pos_1', {
+        contacts: [
+          { contactMethod: 'PHONE', contactValue: '+359888123456' },
+          { contactMethod: 'EMAIL', contactValue: 'jobs@example.test' },
+          { contactMethod: 'INSTAGRAM', contactValue: 'creativo' },
+        ],
+      }),
+    ]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const host: HTMLElement = fixture.nativeElement;
+    expect(host.querySelector('[data-testid="contact-sheet"]')).toBeNull();
+
+    host
+      .querySelector<HTMLElement>(
+        '[data-testid="careers-list"] button[uilistrow]',
+      )
+      ?.click();
+    fixture.detectChanges();
+
+    expect(
+      Array.from(
+        host.querySelectorAll('[data-testid^="contact-link-"]'),
+        (link) => [link.getAttribute('href'), link.getAttribute('target')],
+      ),
+    ).toEqual([
+      ['tel:+359888123456', null],
+      ['mailto:jobs@example.test', null],
+      ['https://www.instagram.com/creativo', '_blank'],
+    ]);
+  });
+
   it('renders one row per open position, linking to its apply URL, with a status badge', async () => {
     const asked: (PositionStatus | null)[] = [];
     const fixture = await configure(
-      [positionOf('pos_1', { applyUrl: 'https://example.com/apply' })],
+      [
+        positionOf('pos_1', {
+          contacts: [
+            {
+              contactMethod: 'LINK',
+              contactValue: 'https://example.com/apply',
+            },
+          ],
+        }),
+      ],
       asked,
     );
     fixture.detectChanges();
@@ -252,7 +313,7 @@ describe('MarketingCareers', () => {
     expect(badge?.getAttribute('data-tone')).toBe('neutral');
   });
 
-  it('falls back to the Instagram link when a position has no applyUrl', async () => {
+  it('falls back to the Instagram link when a position has no contact of its own', async () => {
     const fixture = await configure([positionOf('pos_1')]);
     fixture.detectChanges();
     await fixture.whenStable();

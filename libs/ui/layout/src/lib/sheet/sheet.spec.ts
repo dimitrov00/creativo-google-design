@@ -99,6 +99,31 @@ describe('UiSheet', () => {
     expect(document.body.style.overflow).not.toBe('hidden');
   });
 
+  it('gives the first focus to a field the content marks data-sheet-autofocus', async () => {
+    @Component({
+      imports: [UiSheet],
+      template: `<ui-sheet [uiIsPresented]="open()"
+        ><input data-testid="plain" /><input
+          data-testid="marked"
+          data-sheet-autofocus
+      /></ui-sheet>`,
+    })
+    class MarkedHost {
+      open = signal(false);
+    }
+    const marked = TestBed.createComponent(MarkedHost);
+    marked.detectChanges();
+
+    marked.componentInstance.open.set(true);
+    marked.detectChanges();
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+
+    expect(document.activeElement).toBe(
+      marked.nativeElement.querySelector('[data-testid="marked"]'),
+    );
+    marked.destroy();
+  });
+
   it('projects content inside a .ui-sheet__surface wrapper', () => {
     fixture.detectChanges();
     const surface: HTMLElement =

@@ -117,13 +117,20 @@ describe('writePosition', () => {
         id: null,
         input: positionInputOf({
           title: textFixture(' Barber ', 'Бръснар'),
-          applyUrl: '  https://example.test/apply ',
+          contacts: [
+            {
+              contactMethod: 'LINK',
+              contactValue: '  https://example.test/apply ',
+            },
+          ],
         }),
       }),
     );
 
     const expected = positionOf('pos-1', {
-      applyUrl: 'https://example.test/apply',
+      contacts: [
+        { contactMethod: 'LINK', contactValue: 'https://example.test/apply' },
+      ],
     });
     expect(saved).toEqual(expected);
     expect([...world.positions.values()]).toEqual([expected]);
@@ -154,7 +161,7 @@ describe('writePosition', () => {
   it('closes an existing position — the full body replaced, its locations wiped as the page sends none (F4-8)', async () => {
     const stored = positionOf('pos_1', {
       locationIds: [CENTER],
-      applyUrl: 'https://old.test',
+      contacts: [{ contactMethod: 'LINK', contactValue: 'https://old.test' }],
     });
     const world = memoryProgramsWorld({ positions: [stored] });
     const save = writePosition({

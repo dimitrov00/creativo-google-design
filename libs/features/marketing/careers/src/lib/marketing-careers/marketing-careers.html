@@ -46,13 +46,9 @@
         } @else {
         <ui-list-group data-testid="careers-list">
           @for (row of current.data; track row.id) {
-          <a
-            uiListRow
-            [uiInteractive]="true"
-            [href]="row.href"
-            target="_blank"
-            rel="noopener"
-          >
+          <!-- ONE WAY to answer is the row's own link; several open the
+               contact sheet, which lists them. -->
+          <ng-template #rowBody>
             <ui-stack uiSpacing="none">
               <span>{{ row.title }}</span>
               <span uiText uiFont="footnote" uiForegroundStyle="secondary"
@@ -83,12 +79,39 @@
               </span>
               <ui-icon uiName="link.external" />
             </ui-stack>
+          </ng-template>
+          @if (row.contact.only; as only) {
+          <a
+            uiListRow
+            [uiInteractive]="true"
+            [href]="only.href"
+            [attr.target]="opensNewTab(only) ? '_blank' : null"
+            rel="noopener"
+          >
+            <ng-container [ngTemplateOutlet]="rowBody" />
           </a>
-          }
+          } @else {
+          <button
+            uiListRow
+            type="button"
+            [uiInteractive]="true"
+            aria-haspopup="dialog"
+            (click)="
+              contactFor.set({ title: row.title, contacts: row.contact.contacts })
+            "
+          >
+            <ng-container [ngTemplateOutlet]="rowBody" />
+          </button>
+          } }
         </ui-list-group>
         } } } }
       </ui-stack>
     </main>
+
+    <cr-contact-sheet
+      [uiContact]="contactFor()"
+      (uiClosed)="contactFor.set(null)"
+    />
 
     <cr-site-footer />
   </div>

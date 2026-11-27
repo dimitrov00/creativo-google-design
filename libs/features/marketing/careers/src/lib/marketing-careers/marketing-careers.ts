@@ -1,7 +1,14 @@
+import { NgTemplateOutlet } from '@angular/common';
+import {
+  ContactSheetComponent,
+  type ContactSheetVm,
+  opensNewTab,
+} from '@creativo/features/shared/catalog';
 import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  signal,
   inject,
 } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -60,6 +67,8 @@ const STATUS_TONES = {
   selector: 'cr-marketing-careers',
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    ContactSheetComponent,
+    NgTemplateOutlet,
     SiteFooterComponent,
     SiteHeaderComponent,
     TranslocoDirective,
@@ -87,6 +96,9 @@ export class MarketingCareers {
   private readonly title = inject(Title);
 
   protected readonly instagramUrl = INSTAGRAM_URL;
+  /** The row whose ways to answer the sheet lists; `null` while it is shut. */
+  protected readonly contactFor = signal<ContactSheetVm | null>(null);
+  protected readonly opensNewTab = opensNewTab;
   /** The dictionary, for the template's `@case`s (never bare literals). */
   protected readonly LoadState = LoadState;
 

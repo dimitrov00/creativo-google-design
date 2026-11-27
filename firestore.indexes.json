@@ -377,6 +377,21 @@
   ],
   "fieldOverrides": [
     {
+      "collectionGroup": "positions",
+      "fieldPath": "contacts",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "courses",
+      "fieldPath": "contacts",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "events",
+      "fieldPath": "contacts",
+      "indexes": []
+    },
+    {
       "collectionGroup": "services",
       "fieldPath": "offerings",
       "indexes": []

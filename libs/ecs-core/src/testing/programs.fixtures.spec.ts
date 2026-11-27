@@ -61,7 +61,7 @@ describe('programs fixtures — the entities', () => {
       workplaceMode: 'ON_SITE',
       locationIds: [],
       positionStatus: 'OPEN',
-      applyUrl: null,
+      contacts: [],
       sortOrder: 0,
     });
     expect(
@@ -76,7 +76,7 @@ describe('programs fixtures — the entities', () => {
       description: { bg: 'Шестседмичен курс', en: 'Six-week evening course' },
       enrollmentStatus: 'OPEN',
       startsLabel: null,
-      applyUrl: null,
+      contacts: [],
       sortOrder: 0,
     });
     expect(
@@ -102,7 +102,7 @@ describe('programs fixtures — the entities', () => {
       startMinutes: 545,
       utcEpochMs: utcMs('2026-11-05T09:05:00.000+02:00'),
       locationId: 'loc-center',
-      applyUrl: null,
+      contacts: [],
       sortOrder: 0,
     });
   });

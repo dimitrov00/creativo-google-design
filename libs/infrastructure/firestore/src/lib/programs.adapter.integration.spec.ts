@@ -44,7 +44,9 @@ const POSITIONS: readonly Position[] = [
   positionOf('p-first', {
     sortOrder: 0,
     locationIds: [LocationId.of('loc-center')],
-    applyUrl: 'https://example.test/apply',
+    contacts: [
+      { contactMethod: 'LINK', contactValue: 'https://example.test/apply' },
+    ],
   }),
   positionOf('p-closed', {
     positionStatus: PositionStatus.Closed,
