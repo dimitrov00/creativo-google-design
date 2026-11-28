@@ -58,6 +58,7 @@ describe('LogEvent', () => {
       PrivacyClientExported: 'privacy.client_exported',
       PrivacyErasureStep: 'privacy.erasure_step',
       ProfileUpdateRefused: 'profile.update.refused',
+      ProgramImageCleanupFailed: 'program.image_cleanup_failed',
       RegistrationDisplayNameFailed: 'registration.display_name_failed',
       RhythmRuleWriteFailed: 'rhythm rule write failed',
       RolesChanged: 'roles.changed',

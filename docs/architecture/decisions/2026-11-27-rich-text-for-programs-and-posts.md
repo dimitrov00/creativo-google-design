@@ -1,8 +1,8 @@
 # Rich text for programs and posts (2026-11-27)
 
 > **Status: DECIDED by Claude under the owner's standing delegation
-> (2026-10-26), awaiting the owner's read. Steps 1–3 built for roles
-> (2026-11-27); pictures (step 4), and courses and events, are not.** The owner asked on
+> (2026-10-26), awaiting the owner's read. Steps 1–4 built for roles
+> (2026-11-28); courses and events are not.** The owner asked on
 > 2026-11-27 for a role's page to hold a real description — headings, lists,
 > pictures — written by staff in a rich text editor, and for the same thing
 > to carry blog posts later; and asked whether Firebase can hold it or
@@ -131,3 +131,53 @@ Each step is its own pull request. Steps 1 and 2 need no new dependency.
   sends no `require-trusted-types-for`; the three sinks the library has
   were closed by reading its source. `verify:csp` should visit the editor
   before a release.
+
+## As built (step 4, pictures, 2026-11-28)
+
+- **The hand-off is the barber photo's.** The browser sizes the picture
+  (long side at most 2 400 px), stages it under `pending/{userId}/…` and
+  calls `addProgramImage` with the file's NAME. The callable asks who may
+  (a token role that writes the programs pages — the rules'
+  `isCatalogManager()`), checks the staged object's type and size, copies it
+  to `media/programs/{programId}/{imageId}` and deletes the staged file. No
+  document is read or written: a description names its pictures in its own
+  text.
+- **Not re-encoded on the server, and not WebP.** Decision 4 says the
+  callable re-encodes; decision 3 names a `.webp` object. Neither is so.
+  The functions hold no image library, and adding one (`sharp`, a native
+  dependency) for this was not worth it; Safari cannot encode WebP from a
+  canvas. So the BROWSER re-encodes to JPEG at the size cap, as the visit
+  photos and the barber photo already do, and the server admits JPEG, PNG
+  and WebP up to 5 MiB. The object has no extension; its type is the
+  object's own. What this leaves open: a catalogue manager who skips the
+  browser's step can store a picture wider than 2 400 px, up to 5 MiB.
+- **A picture's id carries its size** — `{act}_{width}x{height}`. The act's
+  name makes it unguessable and the same on a replay; the size lets the
+  page hold the picture's place before its bytes arrive
+  (`RichText.imageSize`), so the text under a picture does not jump. The
+  size is the browser's claim and decides layout only.
+- **A new role's pictures need a folder before the role is saved.** The
+  editor draws the new role's id when its first picture is picked, and the
+  save uses that id. The callable therefore does not ask that the role
+  exists.
+- **Removal is a sweep, after every save.** A trigger on each `…Bodies`
+  document (`sweepPositionImagesOnBodyChange`, and the course's and the
+  event's) lists the folder and deletes what the saved description does not
+  name in any language — but only objects older than an hour, since a
+  younger one may be held by an editor that has not saved yet. A removed
+  description's pictures go the same way.
+- **Limits.** 12 pictures per language (`ProgramImageSystem.admitBody`,
+  refused before the save) and 48 objects per folder (the callable). The rules
+  cannot count pictures in a string, so the 12 is not held by them.
+- **Left behind, knowingly.** A picture removed from a text less than an
+  hour after its upload stays until the next save after that hour. Pictures
+  uploaded for a new role that is then never saved stay for good: nothing
+  writes a description for that id, so no sweep runs. Both are bounded by
+  the folder's cap and by who may upload.
+- **In the editor.** A picture button, and picture files pasted or dropped
+  in; a selected picture shows a row for its description (the alt text) and
+  a button that takes it out. A picture just uploaded is shown from the
+  bytes already in the browser.
+- **Not built:** the first picture as the sheet's header (step 2's last
+  clause), and pictures for courses and events (their descriptions are not
+  shown yet).

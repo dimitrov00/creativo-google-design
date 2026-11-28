@@ -34,6 +34,7 @@ import {
   type NowUtcMs,
   type StoredObjectCopyPorts,
   type StoredObjectDeletePorts,
+  type StoredObjectListPorts,
   type TriggerFailurePorts,
 } from '@core/ports';
 import {
@@ -47,6 +48,7 @@ import {
   addBarber as addBarberPipeline,
   amendRosterBreaks as amendRosterBreaksPipeline,
   AnalyticsDaySource,
+  addProgramImage as addProgramImagePipeline,
   auditDocumentChange,
   bookAppointment,
   cancelAppointment as cancelAppointmentPipeline,
@@ -57,6 +59,7 @@ import {
   continuePolicyRecompute,
   deleteDraftBarber as deleteDraftBarberPipeline,
   setBarberPhoto as setBarberPhotoPipeline,
+  sweepProgramImages,
   editAppointment,
   editBarber as editBarberPipeline,
   endImpersonation as endImpersonationPipeline,
@@ -123,6 +126,7 @@ import { postmarkOtpSender } from './adapters/postmark-otp-sender.adapter';
 import {
   storageObjectPorts,
   storedObjectCopyPorts,
+  storedObjectListPorts,
 } from './adapters/storage-objects.adapter';
 import { singleTenantPorts } from './adapters/tenant.adapter';
 import {
@@ -224,6 +228,10 @@ import {
   decodeStaffAnalytics,
 } from './wire/analytics.wire';
 import {
+  decodeAddProgramImage,
+  decodeSweepProgramImagesEvent,
+} from './wire/programs.wire';
+import {
   decodeActivateBarber,
   decodeAddBarber,
   decodeDeleteDraftBarber,
@@ -313,7 +321,11 @@ import { refusalOf, type WireRequest } from './wire/wire-read';
  * a barber's days off, blocks and one-day breaks: 64; then `listTeam`, the
  * Team page's read: 65; staff permissions' save: 66; then
  * `setBarberPhoto`, a barber's one photo, over the server ports and the
- * default bucket — the second export that reaches Storage: 67.
+ * default bucket — the second export that reaches Storage: 67. Rich text's
+ * pictures added `addProgramImage` and the three sweeps of a description's
+ * folder (`sweepPositionImagesOnBodyChange`, `…Course…`, `…Event…`): 72,
+ * the daily close of ended working periods (`closeEndedPeriodsDaily`)
+ * being the 68th.
  *
  * App Check (security hardening S-WS-A) reads ONE switch, the string param
  * `APP_CHECK_MODE` (`config/app-check.json` → `lib/app-check.ts`): the edge
@@ -663,6 +675,24 @@ const photoPorts = once(() => ({
 }));
 
 /**
+ * A description's pictures (`addProgramImage`, and the sweep after a
+ * description's write): the server ports — for the clock and the log; no
+ * document is read or written — and the default bucket's stat, copy,
+ * delete and listing. The listing reaches for the bucket when it is
+ * CALLED, as the photo's ports do.
+ */
+const programImageListPorts: StoredObjectListPorts = {
+  listStoredObjects: (prefix) =>
+    storedObjectListPorts(bucket()).listStoredObjects(prefix),
+};
+
+const programImagePorts = once(() => ({
+  ...serverPorts(),
+  ...photoObjectPorts,
+  ...programImageListPorts,
+}));
+
+/**
  * The admin roles change's ports: the server ports, Admin Auth's session
  * revocation, and the photo's object ports — a link is followed by its
  * photo (one photo per barber). Built on first use.
@@ -714,6 +744,7 @@ const root = {
   roles: rolesPorts,
   analytics: analyticsPorts,
   photo: photoPorts,
+  programImages: programImagePorts,
   period: periodPorts,
 } as const;
 
@@ -782,6 +813,9 @@ const EXCEPTION_DOC = `${Collections.ScheduleExceptions}/{docId}` as const;
 const SCHEDULE_DOC = `${Collections.BarberSchedules}/{barberId}` as const;
 const LOCATION_DOC = `${Collections.Locations}/{locationId}` as const;
 const SETTINGS_DOC = `${Collections.Settings}/{docId}` as const;
+const POSITION_BODY_DOC = `${Collections.PositionBodies}/{docId}` as const;
+const COURSE_BODY_DOC = `${Collections.CourseBodies}/{docId}` as const;
+const EVENT_BODY_DOC = `${Collections.EventBodies}/{docId}` as const;
 const POLICY_RECOMPUTE_JOB_DOC =
   `${Collections.BackfillJobs}/${POLICY_RECOMPUTE_DOC}` as const;
 const ANALYTICS_RECOMPUTE_JOB_DOC =
@@ -1242,6 +1276,66 @@ export const setBarberPhoto = onCall(
     decodeSetBarberPhoto,
     (ports, cmd) => setBarberPhotoPipeline(ports)(cmd),
     refusalOf,
+  ),
+);
+
+/**
+ * A picture for a role's, a course's or an event's description, taken from
+ * an upload the caller staged under their own account and copied into the
+ * description's folder under `media/`
+ * (`docs/architecture/decisions/2026-11-27-rich-text-for-programs-and-posts.md`).
+ */
+export const addProgramImage = onCall(
+  LOG_DIGEST_SECRETS,
+  wiredCallable(
+    plain(Callables.AddProgramImage, null),
+    root.programImages,
+    decodeAddProgramImage,
+    (ports, cmd) => addProgramImagePipeline(ports)(cmd),
+    refusalOf,
+  ),
+);
+
+/** One description's write, swept: the pictures it no longer names are removed (none decoded: nothing to do). */
+async function sweepProgramImagesFrom(
+  event: DocumentWriteEvent<{ readonly docId: string }>,
+): Promise<void> {
+  const cmd = decodeSweepProgramImagesEvent(event);
+  if (cmd === null) return;
+  failOnRefusal(await sweepProgramImages(root.programImages())(cmd));
+}
+
+const SWEEP_POSITION_IMAGES_FN = 'sweepPositionImagesOnBodyChange';
+const SWEEP_COURSE_IMAGES_FN = 'sweepCourseImagesOnBodyChange';
+const SWEEP_EVENT_IMAGES_FN = 'sweepEventImagesOnBodyChange';
+
+/** A role's description saved or removed — retried: the sweep deletes what is not named, and a second run finds nothing. */
+export const sweepPositionImagesOnBodyChange = onDocumentWritten(
+  { document: POSITION_BODY_DOC, retry: true },
+  retryingTrigger(
+    { fn: SWEEP_POSITION_IMAGES_FN, timeoutSeconds: null },
+    root.edge,
+    sweepProgramImagesFrom,
+  ),
+);
+
+/** A course's description saved or removed. */
+export const sweepCourseImagesOnBodyChange = onDocumentWritten(
+  { document: COURSE_BODY_DOC, retry: true },
+  retryingTrigger(
+    { fn: SWEEP_COURSE_IMAGES_FN, timeoutSeconds: null },
+    root.edge,
+    sweepProgramImagesFrom,
+  ),
+);
+
+/** An event's description saved or removed. */
+export const sweepEventImagesOnBodyChange = onDocumentWritten(
+  { document: EVENT_BODY_DOC, retry: true },
+  retryingTrigger(
+    { fn: SWEEP_EVENT_IMAGES_FN, timeoutSeconds: null },
+    root.edge,
+    sweepProgramImagesFrom,
   ),
 );
 

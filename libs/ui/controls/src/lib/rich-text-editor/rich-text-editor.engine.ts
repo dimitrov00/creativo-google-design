@@ -16,9 +16,10 @@ import { Paragraph } from '@tiptap/extension-paragraph';
 import { Text } from '@tiptap/extension-text';
 import { Dropcursor, Placeholder, UndoRedo } from '@tiptap/extensions';
 import type { Slice } from '@tiptap/pm/model';
-import { EditorState } from '@tiptap/pm/state';
+import { EditorState, NodeSelection } from '@tiptap/pm/state';
 import type { EditorView } from '@tiptap/pm/view';
-import type { RichText } from '@core/components';
+import { RichText } from '@core/components';
+import { ProgramImageId } from '@core/primitives';
 import { RichTextSystem } from '@core/systems';
 import {
   UiRichMarkName,
@@ -32,6 +33,7 @@ import {
   type UiRichEditorState,
   type UiRichEngine,
   type UiRichEngineOptions,
+  type UiRichImageSource,
 } from './rich-text-editor.model';
 
 /*
@@ -54,29 +56,117 @@ import {
 /** What was last copied or cut in this editor: the piece itself, and the text the clipboard got. */
 type Copied = { readonly slice: Slice; readonly text: string };
 
-/** A picture a body names — kept through an edit, shown as a labelled plate. */
-const RichImage = Node.create({
-  name: UiRichNodeName.Image,
-  group: 'block',
-  atom: true,
-  selectable: true,
-  draggable: true,
-  addAttributes() {
-    return { imageId: { default: '' }, imageAlt: { default: '' } };
-  },
-  renderHTML({ node }) {
-    const alt = String(node.attrs['imageAlt'] ?? '');
-    return [
-      'div',
-      { class: 'ui-rich-text-editor__image' },
-      alt.length > 0 ? alt : String(node.attrs['imageId'] ?? ''),
-    ];
-  },
-});
+/** One picture as it is drawn: its frame, its image, and the id it shows. */
+type DrawnImage = {
+  readonly frame: HTMLElement;
+  readonly image: HTMLImageElement;
+  imageId: ProgramImageId;
+  imageAlt: string;
+};
+
+/** The picture files of a paste or a drop — `[]` when it carries none. */
+function imageFilesOf(data: DataTransfer | null): readonly File[] {
+  if (data === null) return [];
+  const out: File[] = [];
+  // A clipboard that carries no files may carry no list of them either.
+  for (const file of Array.from(data.files ?? [])) {
+    if (file.type.startsWith('image/')) out.push(file);
+  }
+  return out;
+}
+
+/**
+ * A picture a body names, drawn as the page draws it: a frame that holds
+ * the picture's place (its id carries its size) and the image inside, its
+ * address asked of the host. The elements are made one by one — no HTML
+ * string — and `drawn` keeps each, so a late address reaches it.
+ */
+function richImage(source: UiRichImageSource, drawn: Set<DrawnImage>) {
+  const draw = (entry: DrawnImage): void => {
+    const size = RichText.imageSize(entry.imageId);
+    entry.frame.style.aspectRatio =
+      size === null ? '' : `${size.pixelWidth} / ${size.pixelHeight}`;
+    entry.image.alt = entry.imageAlt;
+    const address = source(entry.imageId);
+    if (address === null) {
+      entry.frame.setAttribute('data-pending', '');
+      entry.image.removeAttribute('src');
+    } else {
+      entry.frame.removeAttribute('data-pending');
+      if (entry.image.getAttribute('src') !== address) {
+        entry.image.src = address;
+      }
+    }
+  };
+  return {
+    redraw: (): void => drawn.forEach(draw),
+    node: Node.create({
+      name: UiRichNodeName.Image,
+      group: 'block',
+      atom: true,
+      selectable: true,
+      draggable: true,
+      addAttributes() {
+        return { imageId: { default: '' }, imageAlt: { default: '' } };
+      },
+      // What a copy carries: the description, as words.
+      renderHTML({ node }) {
+        return [
+          'div',
+          { class: 'ui-rich-text-editor__image' },
+          String(node.attrs['imageAlt'] ?? ''),
+        ];
+      },
+      addNodeView() {
+        return ({ node }) => {
+          const frame = document.createElement('figure');
+          frame.className = 'ui-rich-text-editor__image';
+          const image = document.createElement('img');
+          image.className = 'ui-rich-text__image';
+          image.draggable = false;
+          image.decoding = 'async';
+          frame.append(image);
+          const entry: DrawnImage = {
+            frame,
+            image,
+            imageId: ProgramImageId.of(String(node.attrs['imageId'] ?? '')),
+            imageAlt: String(node.attrs['imageAlt'] ?? ''),
+          };
+          drawn.add(entry);
+          draw(entry);
+          return {
+            dom: frame,
+            update(next) {
+              if (next.type.name !== UiRichNodeName.Image) return false;
+              entry.imageId = ProgramImageId.of(
+                String(next.attrs['imageId'] ?? ''),
+              );
+              entry.imageAlt = String(next.attrs['imageAlt'] ?? '');
+              draw(entry);
+              return true;
+            },
+            destroy() {
+              drawn.delete(entry);
+            },
+          };
+        };
+      },
+    }),
+  };
+}
 
 /** The blocks as the JSON the library takes (its own type is the same shape, writable). */
 function jsonOf(blocks: RichText): JSONContent {
   return documentOf(blocks) as JSONContent;
+}
+
+/** The description of the picture that is selected; `null` when the selection is no picture. */
+function selectedImageAlt(editor: Editor): string | null {
+  const { selection } = editor.state;
+  return selection instanceof NodeSelection &&
+    selection.node.type.name === UiRichNodeName.Image
+    ? String(selection.node.attrs['imageAlt'] ?? '')
+    : null;
 }
 
 function stateOf(editor: Editor): UiRichEditorState {
@@ -96,6 +186,7 @@ function stateOf(editor: Editor): UiRichEditorState {
     hasSelection: !editor.state.selection.empty,
     canUndo: editor.can().undo(),
     canRedo: editor.can().redo(),
+    imageAlt: selectedImageAlt(editor),
   };
 }
 
@@ -103,6 +194,7 @@ export function createRichTextEngine(
   options: UiRichEngineOptions,
 ): UiRichEngine {
   let copied: Copied | null = null;
+  const pictures = richImage(options.imageSource, new Set());
 
   const remember = (view: EditorView): boolean => {
     const { selection } = view.state;
@@ -164,7 +256,7 @@ export function createRichTextEngine(
         HTMLAttributes: { 'data-link': '', rel: null, target: null },
         isAllowedUri: (url) => RichTextSystem.linkHref(url) === url,
       }),
-      RichImage,
+      pictures.node,
       UndoRedo,
       Dropcursor,
       Placeholder.configure({ placeholder: options.placeholder }),
@@ -181,6 +273,11 @@ export function createRichTextEngine(
         cut: remember,
         paste(view, event) {
           event.preventDefault();
+          const files = imageFilesOf(event.clipboardData);
+          if (files.length > 0) {
+            options.onFiles(files);
+            return true;
+          }
           const text = event.clipboardData?.getData('text/plain') ?? '';
           if (text.length === 0) return true;
           if (copied !== null && copied.text === text) {
@@ -194,9 +291,18 @@ export function createRichTextEngine(
         },
         drop(view, event) {
           // A piece dragged inside the editor is moved by the library; a
-          // drop from outside would be read as HTML, so it is not taken.
+          // drop from outside would be read as HTML, so only its picture
+          // files are taken — put where they were dropped.
           if (view.dragging) return false;
           event.preventDefault();
+          const files = imageFilesOf(event.dataTransfer);
+          if (files.length === 0) return true;
+          const at = view.posAtCoords({
+            left: event.clientX,
+            top: event.clientY,
+          });
+          if (at !== null) editor.commands.setTextSelection(at.pos);
+          options.onFiles(files);
           return true;
         },
       },
@@ -277,6 +383,40 @@ export function createRichTextEngine(
         chain.extendMarkRange(UiRichMarkName.Link).setLink({ href }).run();
       }
     },
+    insertImage(imageId) {
+      // After the selection, never over it: picking a picture must not
+      // delete the words that happen to be selected.
+      editor
+        .chain()
+        .focus()
+        .insertContentAt(editor.state.selection.to, {
+          type: UiRichNodeName.Image,
+          attrs: { imageId, imageAlt: '' },
+        })
+        .run();
+      // The picture just put in is selected, so its description row opens
+      // on it: a picture is described while it is in view.
+      let at = -1;
+      editor.state.doc.descendants((node, pos) => {
+        if (
+          node.type.name === UiRichNodeName.Image &&
+          node.attrs['imageId'] === imageId
+        ) {
+          at = pos;
+        }
+      });
+      if (at >= 0) editor.commands.setNodeSelection(at);
+    },
+    setImageAlt(imageAlt) {
+      if (selectedImageAlt(editor) === null) return;
+      editor.commands.updateAttributes(UiRichNodeName.Image, { imageAlt });
+    },
+    removeImage() {
+      if (selectedImageAlt(editor) === null) return;
+      editor.view.dispatch(editor.state.tr.deleteSelection());
+      editor.view.focus();
+    },
+    refreshImages: pictures.redraw,
     setEditable: (editable) => editor.setEditable(editable),
     focus: () => {
       editor.commands.focus();

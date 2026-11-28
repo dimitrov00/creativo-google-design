@@ -857,7 +857,8 @@ tools/ops/log-metrics.sh --project "$PROJECT_ID" --apply
 - [ ] **Add a lifecycle rule that deletes pending uploads after one day.**
       `pending/` is a waiting area: the team's photo picker writes a picture
       to `pending/{uid}/{name}`, and the `setBarberPhoto` callable checks
-      it, copies it into `media/` and deletes it. A picture whose call never
+      it, copies it into `media/` and deletes it. A picture for a role's
+      description goes the same way, through `addProgramImage`. A picture whose call never
       came (a closed tab, a failed or refused call) stays, so the default
       bucket deletes anything under `pending/` a day old. Nothing reads these
       objects, so the rule can only remove leftovers. The rule is

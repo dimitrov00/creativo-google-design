@@ -1,5 +1,5 @@
-import type { MediaRef } from '@core/components';
-import type { Result, UserId } from '@core/primitives';
+import type { MediaRef, ProgramId } from '@core/components';
+import type { ProgramImageId, Result, UserId } from '@core/primitives';
 import type { MediaError } from '@core/errors';
 import type { AppointmentPhotoFacts } from '@core/entities';
 
@@ -79,6 +79,16 @@ export type StageUpload = (
   image: Blob,
 ) => Promise<Result<void, MediaError>>;
 
+/**
+ * The address a description's picture is fetched from — the object
+ * `media/programs/{programId}/{imageId}`, readable by anyone who holds its
+ * path.
+ */
+export type ResolveProgramImage = (
+  programId: ProgramId,
+  imageId: ProgramImageId,
+) => Promise<Result<string, MediaError>>;
+
 // ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
 
 /** A person's avatar — upload, find, remove. */
@@ -101,6 +111,11 @@ export type PhotoUploadPorts = {
 /** A picture staged for a callable — `STAGED_UPLOAD_PORTS` (web). */
 export type StagedUploadPorts = {
   readonly stageUpload: StageUpload;
+};
+
+/** A description's pictures, by id — `PROGRAM_IMAGE_RESOLVE_PORTS` (web). */
+export type ProgramImageResolvePorts = {
+  readonly resolveProgramImage: ResolveProgramImage;
 };
 
 /** The Storage bundle the web binds — an intersection of its bundles. */

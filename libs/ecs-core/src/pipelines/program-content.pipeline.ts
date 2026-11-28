@@ -21,7 +21,11 @@ import type {
   PositionWritePorts,
   ShopEventWritePorts,
 } from '@core/ports';
-import { ProgramsSystem, ZonedTimeSystem } from '@core/systems';
+import {
+  ProgramImageSystem,
+  ProgramsSystem,
+  ZonedTimeSystem,
+} from '@core/systems';
 
 /**
  * The admin programs saves (flip 4, F4-3) — `positions`, `courses`,
@@ -104,7 +108,8 @@ export type WritePositionBodyCommand = {
 /**
  * Saves a role's description from the editor — after the role itself is
  * saved, so the document it sits beside exists (the rules ask). No read:
- * `ProgramsSystem.body` judges what was typed, then ONE write — the body
+ * `ProgramsSystem.body` judges what was typed and
+ * `ProgramImageSystem.admitBody` how many pictures it names, then ONE write — the body
  * set whole, or, when every language is blank, the document removed.
  * Nothing is written after a refusal.
  */
@@ -115,6 +120,8 @@ export const writePositionBody =
   ): Promise<Result<void, readonly ProgramSaveError[]>> => {
     const body = ProgramsSystem.body(cmd.body);
     if (!body.ok) return body;
+    const pictures = ProgramImageSystem.admitBody(body.value);
+    if (!pictures.ok) return pictures;
     const written =
       body.value === null
         ? await ports.clearPositionBody(cmd.id)

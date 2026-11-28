@@ -201,6 +201,8 @@ export const EngagementErrorCode = {
   ShopEventContactInvalid: 'ENGAGEMENT_SHOP_EVENT_INVALID_CONTACT',
   /** A description longer than one language may hold (`rawValue`: its length). */
   ProgramBodyTooLong: 'ENGAGEMENT_PROGRAM_BODY_TOO_LONG',
+  /** A description naming more pictures than one language may (`rawValue`: how many). */
+  ProgramBodyTooManyImages: 'ENGAGEMENT_PROGRAM_BODY_TOO_MANY_IMAGES',
   /** An admin update of a role that is no longer stored — nothing is written. */
   PositionNotFound: 'ENGAGEMENT_POSITION_NOT_FOUND',
   /** An admin update of a course that is no longer stored — nothing is written. */
@@ -217,6 +219,18 @@ export const EngagementErrorCode = {
    * another shop's clock (OR-38, DEP-F28): the admin picks another.
    */
   ShopEventLocationUnknown: 'ENGAGEMENT_SHOP_EVENT_LOCATION_UNKNOWN',
+  /** `addProgramImage` was reached without a signed-in session. */
+  ProgramImageUnauthenticated: 'ENGAGEMENT_PROGRAM_IMAGE_UNAUTHENTICATED',
+  /** The caller's token holds no role that writes the programs pages. */
+  ProgramImageForbidden: 'ENGAGEMENT_PROGRAM_IMAGE_FORBIDDEN',
+  /** A malformed `addProgramImage` request — `field` names the first offending one. */
+  ProgramImageInvalidInput: 'ENGAGEMENT_PROGRAM_IMAGE_INVALID_INPUT',
+  /** The picture the call names was never uploaded by this account, or is gone. */
+  ProgramImageMissing: 'ENGAGEMENT_PROGRAM_IMAGE_MISSING',
+  /** The uploaded picture is no image the shop shows, or is too large. */
+  ProgramImageInvalid: 'ENGAGEMENT_PROGRAM_IMAGE_INVALID',
+  /** The description's folder already holds as many pictures as it may. */
+  ProgramImagesFull: 'ENGAGEMENT_PROGRAM_IMAGES_FULL',
 } as const;
 export type EngagementErrorCode =
   (typeof EngagementErrorCode)[keyof typeof EngagementErrorCode];
@@ -251,6 +265,7 @@ export type EngagementError =
   | EngagementError.StreakScheduleNotAfterCurrent
   | EngagementError.ProgramError
   | EngagementError.ProgramNotFound
+  | EngagementError.ProgramImageError
   | EngagementError.ShopEventZoneUnknown
   | EngagementError.ShopEventLocationUnknown;
 
@@ -657,6 +672,28 @@ export const EngagementError = {
     };
   },
 
+  // ── A description's pictures (`addProgramImage`) ──────────────────────
+  programImageUnauthenticated(): EngagementError.ProgramImageUnauthenticated {
+    return { errorCode: EngagementErrorCode.ProgramImageUnauthenticated };
+  },
+  programImageForbidden(): EngagementError.ProgramImageForbidden {
+    return { errorCode: EngagementErrorCode.ProgramImageForbidden };
+  },
+  programImageInvalidInput(
+    field: string,
+  ): EngagementError.ProgramImageInvalidInput {
+    return { errorCode: EngagementErrorCode.ProgramImageInvalidInput, field };
+  },
+  programImageMissing(): EngagementError.ProgramImageMissing {
+    return { errorCode: EngagementErrorCode.ProgramImageMissing };
+  },
+  programImageInvalid(): EngagementError.ProgramImageInvalid {
+    return { errorCode: EngagementErrorCode.ProgramImageInvalid };
+  },
+  programImagesFull(): EngagementError.ProgramImagesFull {
+    return { errorCode: EngagementErrorCode.ProgramImagesFull };
+  },
+
   /** Narrows an error to one code — `EngagementError.is(e, EngagementErrorCode.PointsInsufficient)`. */
   is<C extends EngagementErrorCode>(
     error: EngagementError,
@@ -875,7 +912,8 @@ export namespace EngagementError {
     | typeof EngagementErrorCode.CourseContactInvalid
     | typeof EngagementErrorCode.ShopEventSortOrderInvalid
     | typeof EngagementErrorCode.ShopEventContactInvalid
-    | typeof EngagementErrorCode.ProgramBodyTooLong;
+    | typeof EngagementErrorCode.ProgramBodyTooLong
+    | typeof EngagementErrorCode.ProgramBodyTooManyImages;
   export type ProgramError = {
     readonly errorCode: ProgramCode;
     readonly rawValue: Scalar;
@@ -888,6 +926,34 @@ export namespace EngagementError {
     readonly errorCode: ProgramNotFoundCode;
     readonly programId: PositionId | CourseId | EventId;
   };
+  export type ProgramImageUnauthenticated = Bare<
+    typeof EngagementErrorCode.ProgramImageUnauthenticated
+  >;
+  export type ProgramImageForbidden = Bare<
+    typeof EngagementErrorCode.ProgramImageForbidden
+  >;
+  export type ProgramImageInvalidInput = {
+    readonly errorCode: typeof EngagementErrorCode.ProgramImageInvalidInput;
+    /** The request field at fault (`programId`, `stagedName`, `mediaWidth`, …). */
+    readonly field: string;
+  };
+  export type ProgramImageMissing = Bare<
+    typeof EngagementErrorCode.ProgramImageMissing
+  >;
+  export type ProgramImageInvalid = Bare<
+    typeof EngagementErrorCode.ProgramImageInvalid
+  >;
+  export type ProgramImagesFull = Bare<
+    typeof EngagementErrorCode.ProgramImagesFull
+  >;
+  /** What `addProgramImage` refuses with, beside the store's own failure. */
+  export type ProgramImageError =
+    | ProgramImageUnauthenticated
+    | ProgramImageForbidden
+    | ProgramImageInvalidInput
+    | ProgramImageMissing
+    | ProgramImageInvalid
+    | ProgramImagesFull;
   export type ShopEventZoneUnknown = {
     readonly errorCode: typeof EngagementErrorCode.ShopEventZoneUnknown;
     /** The default shop the save read for an event at no shop, and found absent. */

@@ -38,6 +38,7 @@ const seam = vi.hoisted(() => {
   const PIPELINES = [
     'activateBarber',
     'addBarber',
+    'addProgramImage',
     'amendRosterBreaks',
     'auditDocumentChange',
     'bookAppointment',
@@ -81,6 +82,7 @@ const seam = vi.hoisted(() => {
     'startAnalyticsRecompute',
     'startPolicyRecompute',
     'sweepPolicyRecompute',
+    'sweepProgramImages',
     'transitionAppointment',
     'updateProfile',
     'verifyOtp',
@@ -359,6 +361,10 @@ const ENDPOINTS = {
   editBarber: tracedCallable,
   setBarberOfferings: tracedCallable,
   setBarberPhoto: tracedCallable,
+  addProgramImage: tracedCallable,
+  sweepPositionImagesOnBodyChange: written('positionBodies/{docId}', true),
+  sweepCourseImagesOnBodyChange: written('courseBodies/{docId}', true),
+  sweepEventImagesOnBodyChange: written('eventBodies/{docId}', true),
   activateBarber: tracedCallable,
   deleteDraftBarber: tracedCallable,
   clearArrival: tracedCallable,
@@ -1192,6 +1198,51 @@ const FLIPPED: { readonly [name: string]: Case } = {
     answer: ok({ barberId: 'b-1' }),
     expected: { barberId: 'b-1' },
   },
+  addProgramImage: {
+    pipeline: 'addProgramImage',
+    input: request(
+      {
+        programId: 'role-1',
+        stagedName: 'a1b2c3d4-staged',
+        mediaWidth: 1600,
+        mediaHeight: 900,
+        operationId: 'operation-0123456789ab',
+      },
+      PRIVACY_ADMIN,
+    ),
+    command: {
+      callerUserId: 'u-owner',
+      callerRoles: ['admin'],
+      programId: 'role-1',
+      stagedName: 'a1b2c3d4-staged',
+      mediaWidth: 1600,
+      mediaHeight: 900,
+      operationId: 'operation-0123456789ab',
+    },
+    answer: ok({ imageId: 'operation-0123456789ab_1600x900' }),
+    expected: { imageId: 'operation-0123456789ab_1600x900' },
+  },
+  sweepPositionImagesOnBodyChange: {
+    pipeline: 'sweepProgramImages',
+    input: writeEvent({ docId: 'role-1' }),
+    command: { programId: 'role-1', body: null },
+    answer: ok({ removed: 0 }),
+    expected: undefined,
+  },
+  sweepCourseImagesOnBodyChange: {
+    pipeline: 'sweepProgramImages',
+    input: writeEvent({ docId: 'course-1' }),
+    command: { programId: 'course-1', body: null },
+    answer: ok({ removed: 0 }),
+    expected: undefined,
+  },
+  sweepEventImagesOnBodyChange: {
+    pipeline: 'sweepProgramImages',
+    input: writeEvent({ docId: 'event-1' }),
+    command: { programId: 'event-1', body: null },
+    answer: ok({ removed: 0 }),
+    expected: undefined,
+  },
   setBarberPhoto: {
     pipeline: 'setBarberPhoto',
     input: request(
@@ -1733,7 +1784,7 @@ describe('main.ts — the composition root', () => {
     }
   });
 
-  it('exports exactly the 68 functions — today’s 30, Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers, Phase 3’s client export and erasure pair, Phase 4’s roles change, the break pass’s two roster doors, staff analytics’ report, v2’s three day-writer triggers and its goal, team onboarding’s four barber-record callables, its offerings save, its day-exceptions save and the Team page’s read, staff permissions’ save, the barber’s photo, and the daily close of ended working periods', () => {
+  it('exports exactly the 72 functions — rich text’s picture upload and its three sweeps of a description’s folder, today’s 30, Phase 4a’s three callables, pass F’s issue sink, WS-3’s thirteen governed-collection audit triggers, Phase 3’s client export and erasure pair, Phase 4’s roles change, the break pass’s two roster doors, staff analytics’ report, v2’s three day-writer triggers and its goal, team onboarding’s four barber-record callables, its offerings save, its day-exceptions save and the Team page’s read, staff permissions’ save, the barber’s photo, and the daily close of ended working periods', () => {
     expect([...exported.keys()].sort()).toEqual([...EXPORTS]);
   });
 
@@ -1779,7 +1830,7 @@ describe('main.ts — the composition root', () => {
 
   it('covers every export with a pipeline case — no export runs a Phase 3a handler', () => {
     expect(FLIPPED_EXPORTS).toEqual([...EXPORTS]);
-    expect(FLIPPED_EXPORTS).toHaveLength(68);
+    expect(FLIPPED_EXPORTS).toHaveLength(72);
   });
 
   describe('flips 1–3, Phase 4a and pass F — every export runs exactly its own pipeline', () => {

@@ -9,3 +9,4 @@ export * from './avatar.adapter';
 export * from './media-resolve.adapter';
 export * from './appointment-photos.adapter';
 export * from './staged-upload.adapter';
+export * from './program-image.adapter';

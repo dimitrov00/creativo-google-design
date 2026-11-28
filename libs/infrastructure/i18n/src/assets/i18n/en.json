@@ -165,6 +165,11 @@
     "IDENTITY_REGISTRATION_PROFILE_INVALID": "The information provided is invalid.",
     "IDENTITY_CALL_FAILED": "Something went wrong. Try again.",
     "ENGAGEMENT_PROGRAM_BODY_TOO_LONG": "The description is too long. Shorten it.",
+    "ENGAGEMENT_PROGRAM_BODY_TOO_MANY_IMAGES": "The description has too many pictures. Keep 12 at most.",
+    "ENGAGEMENT_PROGRAM_IMAGE_FORBIDDEN": "You are not allowed to upload pictures here.",
+    "ENGAGEMENT_PROGRAM_IMAGE_MISSING": "The picture was not uploaded. Pick it again.",
+    "ENGAGEMENT_PROGRAM_IMAGE_INVALID": "This picture cannot be used. Pick an image up to 5 MB.",
+    "ENGAGEMENT_PROGRAM_IMAGES_FULL": "The description already has too many pictures. Save it and try again later.",
     "ENGAGEMENT_REPOSITORY_FAILURE": "Something went wrong on our end. Try again.",
     "ENGAGEMENT_SHOP_EVENT_LOCATION_UNKNOWN": "That shop no longer exists. Pick another.",
     "LOYALTY_STREAK_PUBLISH_STALE": "Someone else changed the rule. See the new one.",
@@ -3066,7 +3071,12 @@
         "linkPlaceholder": "creativo.bg, an e-mail or a phone",
         "linkApply": "Done",
         "linkRemove": "Remove link",
-        "linkInvalid": "That is not an address. Enter a website, an e-mail or a phone number."
+        "linkInvalid": "That is not an address. Enter a website, an e-mail or a phone number.",
+        "image": "Picture",
+        "imageAlt": "Picture description",
+        "imageAltPlaceholder": "What the picture shows",
+        "imageRemove": "Remove the picture",
+        "imageFailed": "The picture was not uploaded. Try again."
       },
       "position": {
         "open": "Active",

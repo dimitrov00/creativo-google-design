@@ -31,7 +31,11 @@ import {
 import type { Course, Position, ShopEvent, ShopLocation } from '@core/entities';
 import type { ProgramSaveError } from '@core/errors';
 import { type LocationId, Locale, Tag } from '@core/primitives';
-import { LocationScopeSystem, ProgramsSystem } from '@core/systems';
+import {
+  LocationScopeSystem,
+  ProgramImageSystem,
+  ProgramsSystem,
+} from '@core/systems';
 import { CONTACT_ICON, shopNameOf } from '@creativo/features/shared/catalog';
 import { SiteHeaderComponent } from '@creativo/features/shared/shell';
 import {
@@ -59,6 +63,7 @@ import {
 } from '@creativo/ui/controls';
 import {
   UiRichTextEditor,
+  type UiRichImageUpload,
   type UiRichTextEditorWords,
 } from '@creativo/ui/controls/rich-text-editor';
 import { UiStack } from '@creativo/ui/layout';
@@ -850,6 +855,10 @@ export class AdminPrograms {
       linkApply: word('linkApply'),
       linkRemove: word('linkRemove'),
       linkInvalid: word('linkInvalid'),
+      image: word('image'),
+      imageAlt: word('imageAlt'),
+      imageAltPlaceholder: word('imageAltPlaceholder'),
+      imageRemove: word('imageRemove'),
     };
   });
 
@@ -1103,8 +1112,13 @@ export class AdminPrograms {
       ) {
         return;
       }
-      this.positionBody.set(body.value?.body ?? LocalizedText.blank());
+      const stored = body.value?.body ?? null;
+      this.positionBody.set(stored ?? LocalizedText.blank());
       this.positionBodyReady.set(true);
+      void this.store.resolvePositionImages(
+        position.id,
+        ProgramImageSystem.namedIn(stored),
+      );
     });
     // The stored scope, as stored — an edit never wipes it (OR-42).
     this.positionShopIds.set(position.locationIds);
@@ -1181,6 +1195,35 @@ export class AdminPrograms {
     const value = this.inputValue(event);
     input.text.update((text) => LocalizedText.with(text, language, value));
   }
+
+  /**
+   * A picture picked for the role's description: uploaded into the role's
+   * folder — a new role's is named after the id its save will take — and
+   * answered as the id the text names it by, or the words that say why not.
+   */
+  protected readonly uploadImage = async (
+    file: File,
+  ): Promise<UiRichImageUpload> => {
+    const editing = this.editing();
+    if (editing?.programEditing !== ProgramEditing.Position) {
+      return { imageId: null, refusal: null };
+    }
+    const answer = await this.store.uploadPositionImage(
+      editing.source?.id ?? this.store.draftPositionId(),
+      file,
+    );
+    if (answer.ok) return { imageId: answer.value, refusal: null };
+    const lang = this.loadedLang() ?? undefined;
+    const generic = this.transloco.translate(
+      'admin.programs.richText.imageFailed',
+      {},
+      lang,
+    );
+    const code = answer.error?.serverErrorCode ?? null;
+    if (code === null) return { imageId: null, refusal: generic };
+    const worded = translateCodedError(this.transloco, { errorCode: code });
+    return { imageId: null, refusal: worded === code ? generic : worded };
+  };
 
   /** The description edited: the language in view takes the Markdown. */
   protected typeRich(input: TranslatedInput, markdown: string): void {
@@ -1264,8 +1307,11 @@ export class AdminPrograms {
     // never saved with its description refused behind it.
     if (editing.programEditing === ProgramEditing.Position) {
       const body = ProgramsSystem.body(this.positionBody());
-      if (!body.ok) {
-        this.saveRefusals.set(body.error);
+      const pictures = body.ok
+        ? ProgramImageSystem.admitBody(body.value)
+        : body;
+      if (!pictures.ok) {
+        this.saveRefusals.set(pictures.error);
         return;
       }
     }
@@ -1325,6 +1371,7 @@ export class AdminPrograms {
   /** Loads a form — a blank one to create, a stored one (absent optionals blank) to edit. */
   private fillPosition(input: PositionInput): void {
     this.openOn();
+    this.store.forgetDraft();
     this.positionTitle.set(input.title);
     this.positionSummary.set(input.summary);
     this.positionBody.set(LocalizedText.blank());

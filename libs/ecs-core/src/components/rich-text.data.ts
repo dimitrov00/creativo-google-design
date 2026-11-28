@@ -1,5 +1,8 @@
 import type { ProgramImageId } from '@core/primitives';
 
+/** A picture's id ends in its pixel size: `…_1600x900`. */
+const IMAGE_SIZE = /_([1-9]\d{0,4})x([1-9]\d{0,4})$/;
+
 /**
  * What a block of a body is — the field `richBlockKind`. (`blockKind` is the
  * schedule's: a `MinuteBlock` is busy or a break.)
@@ -75,6 +78,19 @@ export const RichText = {
   image(imageId: ProgramImageId, imageAlt: string): RichText.Image {
     return { richBlockKind: RichBlockKind.Image, imageId, imageAlt };
   },
+
+  /**
+   * The pixel size a picture's id carries (`…_1600x900`, written by the
+   * upload — `ProgramImageSystem.imageIdOf`), so a page can hold the
+   * picture's place before its bytes arrive. `null` for an id that carries
+   * none: the picture then takes its place when it loads.
+   */
+  imageSize(imageId: ProgramImageId): RichText.ImageSize | null {
+    const match = IMAGE_SIZE.exec(imageId);
+    return match === null
+      ? null
+      : { pixelWidth: Number(match[1]), pixelHeight: Number(match[2]) };
+  },
 } as const;
 
 export namespace RichText {
@@ -123,6 +139,12 @@ export namespace RichText {
     readonly richBlockKind: typeof RichBlockKind.Image;
     readonly imageId: ProgramImageId;
     readonly imageAlt: string;
+  };
+
+  /** A picture's size in whole pixels. */
+  export type ImageSize = {
+    readonly pixelWidth: number;
+    readonly pixelHeight: number;
   };
 
   export type Block = Heading | Paragraph | List | Quote | Image;

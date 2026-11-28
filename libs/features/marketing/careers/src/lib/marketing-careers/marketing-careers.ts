@@ -11,10 +11,12 @@ import { Title } from '@angular/platform-browser';
 import { TranslocoDirective, TranslocoService } from '@jsverse/transloco';
 import { PositionStatus } from '@core/components';
 import type { PositionBody } from '@core/entities';
+import { ProgramImageSystem } from '@core/systems';
 import {
   CATALOG_PORTS,
   POSITION_BODY_READ_PORTS,
   POSITION_READ_PORTS,
+  PROGRAM_IMAGE_RESOLVE_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import {
   SiteFooterComponent,
@@ -78,6 +80,7 @@ const INSTAGRAM_URL = 'https://instagram.com/creativo.barbershop';
 export class MarketingCareers {
   private readonly positions = inject(POSITION_READ_PORTS);
   private readonly bodies = inject(POSITION_BODY_READ_PORTS);
+  private readonly images = inject(PROGRAM_IMAGE_RESOLVE_PORTS);
   private readonly catalog = inject(CATALOG_PORTS);
   private readonly transloco = inject(TranslocoService);
   private readonly title = inject(Title);
@@ -87,6 +90,13 @@ export class MarketingCareers {
   private readonly opened = signal<PositionRowVm | null>(null);
   /** The open role's description, once read — `null` for none or not yet. */
   private readonly openedBody = signal<PositionBody | null>(null);
+  /** The addresses of the pictures the descriptions read so far name, by id. */
+  private readonly addresses = signal<ReadonlyMap<string, string>>(new Map());
+  /** A picture's address for the sheet; `null` until it is known. */
+  protected readonly imageSource = computed(() => {
+    const addresses = this.addresses();
+    return (imageId: string): string | null => addresses.get(imageId) ?? null;
+  });
   /** The dictionary, for the template's `@case`s (never bare literals). */
   protected readonly LoadState = LoadState;
 
@@ -141,6 +151,21 @@ export class MarketingCareers {
     void this.bodies.loadPositionBody(row.id).then((result) => {
       if (result.ok && this.opened()?.id === row.id) {
         this.openedBody.set(result.value);
+        // Its pictures' addresses, each asked once; the sheet holds their
+        // places meanwhile.
+        for (const imageId of ProgramImageSystem.namedIn(
+          result.value?.body ?? null,
+        )) {
+          if (this.addresses().has(imageId)) continue;
+          void this.images
+            .resolveProgramImage(row.id, imageId)
+            .then((address) => {
+              if (!address.ok) return;
+              this.addresses.update((known) =>
+                new Map(known).set(imageId, address.value),
+              );
+            });
+        }
       }
     });
   }

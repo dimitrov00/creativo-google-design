@@ -25,7 +25,12 @@ import {
   UiRichCommand,
   type UiRichEditorState,
   type UiRichEngine,
+  type UiRichImageSource,
+  type UiRichImageUpload,
 } from './rich-text-editor.model';
+
+/** The picture types a description takes — what the file picker offers. */
+const IMAGE_TYPES = 'image/jpeg,image/png,image/webp';
 
 /** The words the editor prints and reads out — the host's, in its language. */
 export type UiRichTextEditorWords = {
@@ -50,6 +55,13 @@ export type UiRichTextEditorWords = {
   readonly linkRemove: string;
   /** Said under the address field when what was typed is no address. */
   readonly linkInvalid: string;
+  /** The picture button: «Снимка». */
+  readonly image: string;
+  /** The selected picture's description field and its hint: «Описание на снимката», «Какво се вижда на нея». */
+  readonly imageAlt: string;
+  readonly imageAltPlaceholder: string;
+  /** «Премахни снимката». */
+  readonly imageRemove: string;
 };
 
 /** One toolbar button: what it asks, what it shows, and when it is on. */
@@ -140,7 +152,7 @@ const HISTORY: readonly Tool[] = [
 
 /**
  * The rich text editor — where staff write a description: headings, bold
- * and italic, bulleted and numbered lists, quotes and links, set with a
+ * and italic, bulleted and numbered lists, quotes, links and pictures, set with a
  * toolbar and shown as the page will show them (the editing surface wears
  * `ui-rich-text`'s own type). It reads and answers MARKDOWN — the subset
  * `RichTextSystem` parses — so what is typed is what is stored.
@@ -151,6 +163,12 @@ const HISTORY: readonly Tool[] = [
  * taken, anything else is said to be no address. Typing Markdown works too
  * (`# `, `- `, `1. `, `> `, `**bold**`). A paste from outside comes in as
  * plain text; what was copied inside the editor keeps its formatting.
+ *
+ * Pictures: with `uiImageUpload` the toolbar has a picture button, and a
+ * picture file pasted or dropped in is taken too. The host uploads the
+ * file and answers the id the text names it by; `uiImageSource` turns an
+ * id into its address. A selected picture shows a row for its description
+ * (its alternative text) and a button that takes it out.
  *
  * The editor library (Tiptap) is fetched when the element is first drawn,
  * never with the page that hosts it. Until it answers the surface is an
@@ -229,6 +247,34 @@ const HISTORY: readonly Tool[] = [
             >
               <ui-icon uiName="richText.link" aria-hidden="true" />
             </button>
+            @if (uiImageUpload() !== null) {
+              <button
+                type="button"
+                uiButton
+                uiButtonStyle="plain"
+                uiControlSize="small"
+                uiButtonBorderShape="roundedRectangle"
+                [uiIconOnly]="true"
+                [uiLoading]="uploading() > 0"
+                [disabled]="!ready() || uiDisabled()"
+                [attr.aria-label]="uiWords().image"
+                [attr.title]="uiWords().image"
+                data-testid="rich-tool-image"
+                (mousedown)="$event.preventDefault()"
+                (click)="filePicker.click()"
+              >
+                <ui-icon uiName="richText.image" aria-hidden="true" />
+              </button>
+              <input
+                #filePicker
+                type="file"
+                hidden
+                multiple
+                [accept]="imageTypes"
+                data-testid="rich-image-file"
+                (change)="pickFiles($event)"
+              />
+            }
           </div>
         </div>
         <div class="ui-rich-text-editor__group ui-rich-text-editor__history">
@@ -308,6 +354,43 @@ const HISTORY: readonly Tool[] = [
           }
         </form>
       }
+      @if (state().imageAlt !== null && !linkOpen()) {
+        <div class="ui-rich-text-editor__link" data-testid="rich-image">
+          <input
+            uiTextField
+            uiControlSize="small"
+            type="text"
+            autocomplete="off"
+            [attr.aria-label]="uiWords().imageAlt"
+            [placeholder]="uiWords().imageAltPlaceholder"
+            [value]="state().imageAlt ?? ''"
+            data-testid="rich-image-alt"
+            (input)="typeImageAlt($event)"
+          />
+          <button
+            type="button"
+            uiButton
+            uiButtonStyle="plain"
+            uiControlSize="small"
+            [uiIconOnly]="true"
+            [attr.aria-label]="uiWords().imageRemove"
+            [attr.title]="uiWords().imageRemove"
+            data-testid="rich-image-remove"
+            (click)="removeImage()"
+          >
+            <ui-icon uiName="richText.imageRemove" aria-hidden="true" />
+          </button>
+        </div>
+      }
+      @if (imageRefusal(); as refusal) {
+        <p
+          class="ui-rich-text-editor__refusal ui-rich-text-editor__refusal--bar"
+          role="alert"
+          data-testid="rich-image-refusal"
+        >
+          {{ refusal }}
+        </p>
+      }
     </div>
     <div
       #surface
@@ -360,6 +443,15 @@ export class UiRichTextEditor {
   /** Marks the field as owing something. */
   readonly uiInvalid = input(false);
   readonly uiDisabled = input(false);
+  /**
+   * Takes a picture file and answers the id the text names it by. With
+   * none, the editor has no picture button and takes no picture files.
+   */
+  readonly uiImageUpload = input<
+    ((file: File) => Promise<UiRichImageUpload>) | null
+  >(null);
+  /** Turns a picture's id into its address; `null` holds its place empty. */
+  readonly uiImageSource = input<UiRichImageSource | null>(null);
   /** The words changed: the description as Markdown. */
   readonly uiMarkdownChange = output<string>();
 
@@ -371,6 +463,11 @@ export class UiRichTextEditor {
   protected readonly linkOpen = signal(false);
   protected readonly linkDraft = signal('');
   protected readonly linkRefused = signal(false);
+  protected readonly imageTypes = IMAGE_TYPES;
+  /** How many pictures are on their way up. */
+  protected readonly uploading = signal(0);
+  /** Why the last picture did not land, in the host's words. */
+  protected readonly imageRefusal = signal<string | null>(null);
   /** The Markdown's length, as last written or handed in. */
   protected readonly count = signal(0);
   protected readonly over = computed(() => this.count() > this.uiMaxChars());
@@ -407,6 +504,13 @@ export class UiRichTextEditor {
       });
     });
 
+    // A picture's address arrived (or the host's table changed): the
+    // pictures drawn ask for theirs again.
+    effect(() => {
+      this.uiImageSource();
+      untracked(() => this.engine?.refreshImages());
+    });
+
     effect(() => {
       const disabled = this.uiDisabled();
       untracked(() => this.engine?.setEditable(!disabled));
@@ -433,6 +537,9 @@ export class UiRichTextEditor {
       onChange: () => this.answer(),
       onState: (state) => this.state.set(state),
       onFocus: (focused) => this.focused.set(focused),
+      imageSource: (imageId) =>
+        untracked(this.uiImageSource)?.(imageId) ?? null,
+      onFiles: (files) => void this.takeFiles(files),
     });
     this.ready.set(true);
   }
@@ -499,6 +606,40 @@ export class UiRichTextEditor {
   protected removeLink(): void {
     this.engine?.setLink(null);
     this.linkOpen.set(false);
+  }
+
+  protected pickFiles(event: Event): void {
+    const picker = event.target as HTMLInputElement;
+    const files = Array.from(picker.files ?? []);
+    // The same file picked again must be a new choice.
+    picker.value = '';
+    void this.takeFiles(files);
+  }
+
+  /** Each picture goes up in turn and lands where the caret is. */
+  private async takeFiles(files: readonly File[]): Promise<void> {
+    const upload = this.uiImageUpload();
+    if (upload === null || this.uiDisabled()) return;
+    this.imageRefusal.set(null);
+    for (const file of files) {
+      this.uploading.update((count) => count + 1);
+      const answer = await upload(file);
+      this.uploading.update((count) => count - 1);
+      if (this.destroyed) return;
+      if (answer.imageId !== null) {
+        this.engine?.insertImage(answer.imageId);
+      } else {
+        this.imageRefusal.set(answer.refusal);
+      }
+    }
+  }
+
+  protected typeImageAlt(event: Event): void {
+    this.engine?.setImageAlt((event.target as HTMLInputElement).value);
+  }
+
+  protected removeImage(): void {
+    this.engine?.removeImage();
   }
 
   protected closeLink(): void {

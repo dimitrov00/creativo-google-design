@@ -1,3 +1,5 @@
+import type { UtcEpochMs } from '@core/primitives';
+
 /**
  * What Cloud Storage says of one object, as far as a decision reads it:
  * how many bytes it holds, what it says it is and — for a picture whose
@@ -24,3 +26,14 @@ export const StoredObjectFacts = {
     return { sizeBytes, contentType, pixelWidth: null, pixelHeight: null };
   },
 } as const;
+
+/**
+ * One object of a folder's listing, as far as a sweep reads it: where it
+ * is and when it was written. The server's `listStoredObjects` answers it;
+ * `ProgramImageSystem.staleOf` judges it.
+ */
+export type StoredObjectEntry = {
+  readonly path: string;
+  /** When the object was written; `null` when Storage did not say. */
+  readonly createdUtcMs: UtcEpochMs | null;
+};

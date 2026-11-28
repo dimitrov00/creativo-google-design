@@ -1,4 +1,4 @@
-import type { StoredObjectFacts } from '@core/components';
+import type { StoredObjectEntry, StoredObjectFacts } from '@core/components';
 import type { Result } from '@core/primitives';
 import type { RepositoryError } from '@core/errors';
 
@@ -26,10 +26,24 @@ export type CopyStoredObject = (
   toPath: string,
 ) => Promise<Result<void, RepositoryError>>;
 
+/**
+ * Every object under a prefix, each with when it was written — a folder's
+ * listing for a sweep (`sweepProgramImages`). A prefix that holds nothing
+ * answers `[]`.
+ */
+export type ListStoredObjects = (
+  prefix: string,
+) => Promise<Result<readonly StoredObjectEntry[], RepositoryError>>;
+
 // ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
 
 /** One object read and copied — `storedObjectCopyPorts` (functions). */
 export type StoredObjectCopyPorts = {
   readonly statStoredObject: StatStoredObject;
   readonly copyStoredObject: CopyStoredObject;
+};
+
+/** A folder's listing — `storedObjectListPorts` (functions). */
+export type StoredObjectListPorts = {
+  readonly listStoredObjects: ListStoredObjects;
 };

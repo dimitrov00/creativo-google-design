@@ -165,6 +165,11 @@
     "IDENTITY_REGISTRATION_PROFILE_INVALID": "Предоставената информация е невалидна.",
     "IDENTITY_CALL_FAILED": "Нещо се обърка. Опитай пак.",
     "ENGAGEMENT_PROGRAM_BODY_TOO_LONG": "Описанието е твърде дълго. Съкрати го.",
+    "ENGAGEMENT_PROGRAM_BODY_TOO_MANY_IMAGES": "Описанието има твърде много снимки. Остави най-много 12.",
+    "ENGAGEMENT_PROGRAM_IMAGE_FORBIDDEN": "Нямаш право да качваш снимки тук.",
+    "ENGAGEMENT_PROGRAM_IMAGE_MISSING": "Снимката не беше качена. Избери я отново.",
+    "ENGAGEMENT_PROGRAM_IMAGE_INVALID": "Тази снимка не става. Избери изображение до 5 MB.",
+    "ENGAGEMENT_PROGRAM_IMAGES_FULL": "Описанието вече има твърде много снимки. Запази го и опитай пак по-късно.",
     "ENGAGEMENT_REPOSITORY_FAILURE": "Нещо се обърка от наша страна. Опитай пак.",
     "ENGAGEMENT_SHOP_EVENT_LOCATION_UNKNOWN": "Този салон вече не съществува. Избери друг.",
     "LOYALTY_STREAK_PUBLISH_STALE": "Правилото беше променено от друг. Виж новото.",
@@ -3069,7 +3074,12 @@
         "linkPlaceholder": "creativo.bg, имейл или телефон",
         "linkApply": "Готово",
         "linkRemove": "Премахни връзката",
-        "linkInvalid": "Това не е адрес. Въведи уебсайт, имейл или телефон."
+        "linkInvalid": "Това не е адрес. Въведи уебсайт, имейл или телефон.",
+        "image": "Снимка",
+        "imageAlt": "Описание на снимката",
+        "imageAltPlaceholder": "Какво се вижда на снимката",
+        "imageRemove": "Премахни снимката",
+        "imageFailed": "Снимката не беше качена. Опитай пак."
       },
       "position": {
         "open": "Активна",

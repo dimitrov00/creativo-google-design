@@ -35,6 +35,8 @@ import type {
   PositionBodyReadPorts,
   PositionReadPorts,
   ProfilePorts,
+  ProgramImageCallPorts,
+  ProgramImageResolvePorts,
   ProgramsPorts,
   ReadAsCallPorts,
   ReadAsSessionPorts,
@@ -340,6 +342,14 @@ export const AVATAR_PORTS = new InjectionToken<AvatarPorts>('AVATAR_PORTS');
 export const STAGED_UPLOAD_PORTS = new InjectionToken<StagedUploadPorts>(
   'STAGED_UPLOAD_PORTS',
 );
+
+/** A description's picture upload (`programImageCallPorts`) — the programs editor's. */
+export const PROGRAM_IMAGE_CALL_PORTS =
+  new InjectionToken<ProgramImageCallPorts>('PROGRAM_IMAGE_CALL_PORTS');
+
+/** A description's pictures, by id, in Storage (`programImageResolvePorts`) — lazy. */
+export const PROGRAM_IMAGE_RESOLVE_PORTS =
+  new InjectionToken<ProgramImageResolvePorts>('PROGRAM_IMAGE_RESOLVE_PORTS');
 
 /** A catalogue image's renditions in Storage (`MediaResolvePorts`) — lazy. */
 export const MEDIA_RESOLVE_PORTS = new InjectionToken<MediaResolvePorts>(

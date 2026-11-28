@@ -7,3 +7,7 @@
  * fetched when an editor is first drawn.
  */
 export * from './lib/rich-text-editor/rich-text-editor';
+export type {
+  UiRichImageSource as UiRichEditorImageSource,
+  UiRichImageUpload,
+} from './lib/rich-text-editor/rich-text-editor.model';

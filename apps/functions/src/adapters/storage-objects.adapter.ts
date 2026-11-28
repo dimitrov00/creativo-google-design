@@ -1,5 +1,9 @@
-import { Result } from '@core/primitives';
-import type { ObjectEraserPorts, StoredObjectCopyPorts } from '@core/ports';
+import { Result, UtcEpochMs } from '@core/primitives';
+import type {
+  ObjectEraserPorts,
+  StoredObjectCopyPorts,
+  StoredObjectListPorts,
+} from '@core/ports';
 import type { AdminBucket } from '../lib/firebase-admin';
 import { writeFailed } from './store-answer';
 
@@ -82,6 +86,36 @@ export const storedObjectCopyPorts = (
       return Result.ok(undefined);
     } catch (error) {
       return Result.err(writeFailed(toPath, error));
+    }
+  },
+});
+
+/** An object's creation time as an instant; `null` when Storage did not say, or said nothing readable. */
+function createdOf(value: unknown): UtcEpochMs | null {
+  if (typeof value !== 'string') return null;
+  const instant = UtcEpochMs.of(Date.parse(value));
+  return instant.ok ? instant.value : null;
+}
+
+/**
+ * A folder's listing over the same bucket (`StoredObjectListPorts`, the
+ * description pictures' count and sweep): every object under the prefix,
+ * its path and when it was written (`timeCreated`).
+ */
+export const storedObjectListPorts = (
+  bucket: AdminBucket,
+): StoredObjectListPorts => ({
+  listStoredObjects: async (prefix) => {
+    try {
+      const [files] = await bucket.getFiles({ prefix });
+      return Result.ok(
+        files.map((file) => ({
+          path: file.name,
+          createdUtcMs: createdOf(file.metadata.timeCreated),
+        })),
+      );
+    } catch (error) {
+      return Result.err(writeFailed(prefix, error));
     }
   },
 });

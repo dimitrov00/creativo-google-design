@@ -14,5 +14,6 @@ export * from './lib/client-privacy.adapter';
 export * from './lib/roles-admin.adapter';
 export * from './lib/read-as-call.adapter';
 export * from './lib/team-admin.adapter';
+export * from './lib/program-image.adapter';
 export * from './lib/analytics-call.adapter';
 export * from './lib/reporting-error-handler';

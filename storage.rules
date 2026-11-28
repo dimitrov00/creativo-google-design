@@ -87,11 +87,11 @@ service firebase.storage {
     }
 
     // Catalog media library (service covers, location photos, a barber's
-    // photo — the assets a stored `MediaRef`'s `mediaPath` points at,
+    // photo, a description's pictures under `media/programs/{id}/` — the assets a stored `MediaRef`'s `mediaPath` points at,
     // resolved client-side by `mediaResolvePorts`): public marketing/catalog
     // content, FETCHED by anyone who knows its path; written only with admin
-    // credentials (staff tooling, and the `setBarberPhoto` callable — both
-    // bypass rules), never by clients.
+    // credentials (staff tooling, and the `setBarberPhoto` and
+    // `addProgramImage` callables — all bypass rules), never by clients.
     //
     // `get`, never `list`: a barber record in preparation is staff-only, and
     // its photo's unguessable object name is all that keeps the face from
@@ -111,8 +111,11 @@ service firebase.storage {
     }
 
     // PENDING uploads (`stagedUploadPorts`): a file waiting for a callable to
-    // take it — today a barber's photo, `setBarberPhoto`
-    // (docs/architecture/decisions/2026-11-15-one-photo-per-barber.md). The
+    // take it — a barber's photo, `setBarberPhoto`
+    // (docs/architecture/decisions/2026-11-15-one-photo-per-barber.md), and a
+    // picture for a role's, a course's or an event's description,
+    // `addProgramImage`
+    // (docs/architecture/decisions/2026-11-27-rich-text-for-programs-and-posts.md). The
     // rules cannot ask who may edit a barber (that is the owner's permission
     // cells, judged on the stored account), so the browser writes HERE, under
     // its own uid, and the callable reads it with admin credentials, checks

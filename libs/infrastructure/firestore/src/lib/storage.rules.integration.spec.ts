@@ -402,6 +402,19 @@ describe('storage.rules (emulator)', () => {
         upload(signedIn(ACTIVE, Role.Admin), photo, PNG, IMAGE.contentType),
       );
     });
+
+    it('holds a description’s pictures the same way: fetched by path, written by the callable alone', async () => {
+      const picture = `media/programs/role-${RUN}/act-${RUN}_1600x900`;
+      await seedObject(picture);
+      const anyone = testEnv.unauthenticatedContext();
+      await assertSucceeds(anyone.storage(BUCKET).ref(picture).getMetadata());
+      await assertFails(
+        anyone.storage(BUCKET).ref(`media/programs/role-${RUN}`).listAll(),
+      );
+      const editor = signedIn(BARBER, Role.ContentManager);
+      await assertFails(upload(editor, picture, PNG, IMAGE.contentType));
+      await assertFails(editor.storage(BUCKET).ref(picture).delete());
+    });
   });
 
   it('denies a path no rule names', async () => {
