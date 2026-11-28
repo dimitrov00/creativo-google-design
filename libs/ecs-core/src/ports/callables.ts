@@ -11,6 +11,7 @@ import {
   IdentityCall,
   InvitationCall,
   PermissionsCall,
+  ProgramImageCall,
   RolesCall,
   RosterCall,
   SetAnalyticsGoalCall,
@@ -88,6 +89,7 @@ export const Callables = {
   SetDayExceptions: 'setDayExceptions',
   ListTeam: 'listTeam',
   SetStaffPermissions: 'setStaffPermissions',
+  AddProgramImage: 'addProgramImage',
 } as const;
 export type CallableName = (typeof Callables)[keyof typeof Callables];
 
@@ -321,6 +323,11 @@ export type CallableWire = {
     readonly input: PermissionsCall;
     readonly answer: PermissionsCall.Saved;
   };
+  /** A picture for a description, taken from an upload the caller staged. */
+  readonly [Callables.AddProgramImage]: {
+    readonly input: ProgramImageCall.Add;
+    readonly answer: ProgramImageCall.Added;
+  };
 };
 
 /**
@@ -385,6 +392,8 @@ export const OPERATION_ID_FIELD: {
   [Callables.ListTeam]: 'operationId',
   // The save names itself: the id stamps the document and keys its row.
   [Callables.SetStaffPermissions]: 'operationId',
+  // The upload names itself: the picture's id is made from it.
+  [Callables.AddProgramImage]: 'operationId',
 };
 
 /**
@@ -439,6 +448,7 @@ export const CALLABLE_APP_CHECK_TOKEN: {
   [Callables.SetDayExceptions]: AppCheckTokenUse.Standard,
   [Callables.ListTeam]: AppCheckTokenUse.Standard,
   [Callables.SetStaffPermissions]: AppCheckTokenUse.LimitedUse,
+  [Callables.AddProgramImage]: AppCheckTokenUse.Standard,
 };
 
 /** One callable's answer decoder — the only way its answer becomes branded data. */
@@ -513,4 +523,5 @@ export const CALLABLE_ANSWER_DECODERS: {
   [Callables.SetDayExceptions]: DayExceptionsCall.decodeSaved,
   [Callables.ListTeam]: TeamCall.decodeListed,
   [Callables.SetStaffPermissions]: PermissionsCall.decodeSaved,
+  [Callables.AddProgramImage]: ProgramImageCall.decodeAdded,
 };

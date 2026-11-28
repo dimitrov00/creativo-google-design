@@ -1,4 +1,5 @@
 import type { RichText } from '@core/components';
+import type { ProgramImageId } from '@core/primitives';
 
 /*
  * WHAT THE ELEMENT AND ITS ENGINE SAY TO EACH OTHER — plain types and one
@@ -37,6 +38,20 @@ export type UiRichEditorState = {
   readonly hasSelection: boolean;
   readonly canUndo: boolean;
   readonly canRedo: boolean;
+  /** The description of the picture that is selected; `null` when none is. */
+  readonly imageAlt: string | null;
+};
+
+/** Turns a picture's id into its address; `null` while it has none. */
+export type UiRichImageSource = (imageId: string) => string | null;
+
+/**
+ * What an upload answers: the id the text names the picture by, or — when
+ * it did not land — the words that say why.
+ */
+export type UiRichImageUpload = {
+  readonly imageId: ProgramImageId | null;
+  readonly refusal: string | null;
 };
 
 /** The toolbar before the editor has answered: nothing on, nothing to undo. */
@@ -53,6 +68,7 @@ export const UI_RICH_EDITOR_IDLE: UiRichEditorState = {
   hasSelection: false,
   canUndo: false,
   canRedo: false,
+  imageAlt: null,
 };
 
 /** What the engine is made from. */
@@ -71,6 +87,10 @@ export type UiRichEngineOptions = {
   /** The caret moved or the words changed: the toolbar's new state. */
   readonly onState: (state: UiRichEditorState) => void;
   readonly onFocus: (focused: boolean) => void;
+  /** A picture's address, asked whenever one is drawn. */
+  readonly imageSource: UiRichImageSource;
+  /** Picture files were pasted or dropped in; the caret is where they go. */
+  readonly onFiles: (files: readonly File[]) => void;
 };
 
 /** The running editor, as the element drives it. */
@@ -81,6 +101,14 @@ export type UiRichEngine = {
   run(command: UiRichCommand): void;
   /** Puts a link on the selection (or the link under the caret); `null` takes it off. */
   setLink(href: string | null): void;
+  /** Puts a picture where the caret is. */
+  insertImage(imageId: ProgramImageId): void;
+  /** Rewrites the selected picture's description. */
+  setImageAlt(imageAlt: string): void;
+  /** Takes the selected picture out of the text. */
+  removeImage(): void;
+  /** The addresses changed: every picture drawn asks for its own again. */
+  refreshImages(): void;
   setEditable(editable: boolean): void;
   focus(): void;
   destroy(): void;

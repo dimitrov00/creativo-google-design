@@ -20,13 +20,14 @@ import {
   INBOX_PORTS,
   LOCATION_LOAD_PORTS,
   POSITION_BODY_READ_PORTS,
+  PROGRAM_IMAGE_RESOLVE_PORTS,
   POSITION_READ_PORTS,
   PROFILE_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import { PositionStatus, WorkplaceMode } from '@core/components';
 import type { Position, PositionBody, ShopLocation } from '@core/entities';
 import type { PositionReadPorts } from '@core/ports';
-import { LocationId } from '@core/primitives';
+import { LocationId, Result } from '@core/primitives';
 import {
   locationFixture,
   memoryAppointmentReadPorts,
@@ -135,6 +136,14 @@ async function configure(
       {
         provide: POSITION_READ_PORTS,
         useValue: recordedPositionReads(open, asked),
+      },
+      // A description's pictures, by id.
+      {
+        provide: PROGRAM_IMAGE_RESOLVE_PORTS,
+        useValue: {
+          resolveProgramImage: async (programId: string, imageId: string) =>
+            Result.ok(`https://media.test/${programId}/${imageId}`),
+        },
       },
       // The descriptions, read when a role is opened.
       {
@@ -350,6 +359,39 @@ describe('MarketingCareers', () => {
     const ways = host.querySelector('.cr-contact-sheet__ways');
     expect(summary?.nextElementSibling).toBe(body);
     expect(body?.nextElementSibling).toBe(ways);
+  });
+
+  it('holds a picture’s place in the description, then draws it from its address', async () => {
+    const role = positionOf('pos_1');
+    const fixture = await configure(
+      [role],
+      [],
+      [locationFixture()],
+      [
+        {
+          id: role.id,
+          body: textFixture(
+            'Words\n\n![The chair](act-0123_1600x900)',
+            'Думи\n\n![Столът](act-0123_1600x900)',
+          ),
+        },
+      ],
+    );
+    const host = await openFirstRole(fixture);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const figure = host.querySelector<HTMLElement>(
+      '[data-testid="contact-sheet-body"] .ui-rich-text__figure',
+    );
+    expect(figure?.style.aspectRatio).toBe('1600 / 900');
+    const image = figure?.querySelector('img');
+    expect(image?.getAttribute('src')).toBe(
+      `https://media.test/${role.id}/act-0123_1600x900`,
+    );
+    expect(image?.getAttribute('alt')).toBe('The chair');
   });
 
   it('opens a role with no description as it always did: no body is drawn', async () => {

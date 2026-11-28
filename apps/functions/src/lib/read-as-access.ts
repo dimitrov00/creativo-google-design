@@ -66,4 +66,5 @@ export const CALLABLE_READ_AS_ACCESS: {
   [Callables.SetDayExceptions]: ReadAsAccess.Closed,
   [Callables.ListTeam]: ReadAsAccess.Open,
   [Callables.SetStaffPermissions]: ReadAsAccess.Closed,
+  [Callables.AddProgramImage]: ReadAsAccess.Closed,
 };

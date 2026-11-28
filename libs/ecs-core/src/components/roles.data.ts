@@ -182,6 +182,15 @@ export const Roles = {
   },
 
   /**
+   * Whether a role set writes the programs pages (`CATALOG`, the rules'
+   * `isCatalogManager()`) — `addProgramImage`'s gate. Claims-tolerant like
+   * `mayBook`.
+   */
+  managesCatalog(roles: readonly string[]): boolean {
+    return anyIn(Roles.CATALOG, roles);
+  },
+
+  /**
    * Whether a role set holds the admin pair (`ADMIN`, the rules'
    * `isAdmin()`) — the impersonation callables' and the owner-only gates.
    * Claims-tolerant like `mayBook`: an entry counts only when it IS one of

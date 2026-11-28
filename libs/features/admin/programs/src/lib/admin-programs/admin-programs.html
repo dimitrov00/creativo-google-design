@@ -425,6 +425,8 @@
                 [uiHeadingLevel]="3"
                 [uiInvalid]="owes(input)"
                 [uiDisabled]="saving() || !positionBodyReady()"
+                [uiImageUpload]="uploadImage"
+                [uiImageSource]="store.imageSource()"
                 [attr.lang]="language()"
                 [attr.data-owed]="owes(input) ? '' : null"
                 [attr.data-testid]="'admin-' + input.id + '-' + language()"

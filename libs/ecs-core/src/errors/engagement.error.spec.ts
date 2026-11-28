@@ -282,6 +282,9 @@ describe('EngagementError factories', () => {
     const codes = ENGAGEMENT_ERROR_CODES;
     const at = (code: EngagementErrorCode) => codes.indexOf(code);
     expect(at(EngagementErrorCode.PositionNotFound)).toBe(
+      at(EngagementErrorCode.ProgramBodyTooManyImages) + 1,
+    );
+    expect(at(EngagementErrorCode.ProgramBodyTooManyImages)).toBe(
       at(EngagementErrorCode.ProgramBodyTooLong) + 1,
     );
     expect(at(EngagementErrorCode.ProgramBodyTooLong)).toBe(
@@ -293,6 +296,12 @@ describe('EngagementError factories', () => {
       'ENGAGEMENT_SHOP_EVENT_NOT_FOUND',
       'ENGAGEMENT_SHOP_EVENT_ZONE_UNKNOWN',
       'ENGAGEMENT_SHOP_EVENT_LOCATION_UNKNOWN',
+      'ENGAGEMENT_PROGRAM_IMAGE_UNAUTHENTICATED',
+      'ENGAGEMENT_PROGRAM_IMAGE_FORBIDDEN',
+      'ENGAGEMENT_PROGRAM_IMAGE_INVALID_INPUT',
+      'ENGAGEMENT_PROGRAM_IMAGE_MISSING',
+      'ENGAGEMENT_PROGRAM_IMAGE_INVALID',
+      'ENGAGEMENT_PROGRAM_IMAGES_FULL',
     ]);
   });
 

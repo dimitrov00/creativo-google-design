@@ -150,6 +150,14 @@ describe('UiRichText', () => {
     expect(image?.getAttribute('alt')).toBe('The chair');
   });
 
+  it('holds a picture’s place from the size its id carries, before any address', () => {
+    const figure = draw([
+      RichText.image(ProgramImageId.of('act-0123_1600x900'), 'The chair'),
+    ]).querySelector<HTMLElement>('.ui-rich-text__figure');
+    expect(figure?.style.aspectRatio).toBe('1600 / 900');
+    expect(figure?.querySelector('img')).toBeNull();
+  });
+
   it('follows its blocks when they change', () => {
     draw([RichText.paragraph([plain('One')])]);
     const host = draw([RichText.heading(1, [plain('Two')])]);

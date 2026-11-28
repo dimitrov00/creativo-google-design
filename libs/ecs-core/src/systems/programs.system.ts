@@ -330,7 +330,9 @@ export const ProgramsSystem = {
    * language to store; `null` for none — every language blank — whose
    * document is then removed; or what refuses it: written in one language
    * it is owed in each (`LocalizedText.parse`), and no language may hold
-   * more than `RichText.BODY_MAX_CHARS`.
+   * more than `RichText.BODY_MAX_CHARS`. (How many pictures it may name is
+   * `ProgramImageSystem.admitBody`'s: reading them takes the parser, which
+   * this system — loaded by every route — does not carry.)
    */
   body(raw: LocalizedText): FieldResult<LocalizedText | null> {
     if (raw.bg.trim().length === 0 && raw.en.trim().length === 0) {

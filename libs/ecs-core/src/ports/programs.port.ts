@@ -1,5 +1,9 @@
 import type { Observable } from 'rxjs';
-import type { EnrollmentStatus, PositionStatus } from '@core/components';
+import type {
+  EnrollmentStatus,
+  PositionStatus,
+  ProgramImageCall,
+} from '@core/components';
 import type {
   Result,
   CourseId,
@@ -16,6 +20,7 @@ import type {
   ShopEvent,
   ShopEventBody,
 } from '@core/entities';
+import type { Callable } from './scheduling.port';
 
 /**
  * The shop's programs content — `positions`, `courses`, `events` (blueprint
@@ -149,6 +154,16 @@ export type SaveEventBody = (
   body: ShopEventBody,
 ) => Promise<Result<void, RepositoryError>>;
 
+/**
+ * `addProgramImage` — a picture for a description, taken from an upload
+ * the caller staged under their own account; answers the id the
+ * description names it by.
+ */
+export type AddProgramImage = Callable<
+  ProgramImageCall.Add,
+  ProgramImageCall.Added
+>;
+
 // ── Focused bundles (Law 9 — composed with `&`, never sliced) ─────────────
 
 /** The careers page's roles, live — `POSITION_READ_PORTS`. */
@@ -226,3 +241,8 @@ export type ProgramsPorts = PositionReadPorts &
   CourseWritePorts &
   ShopEventReadPorts &
   ShopEventWritePorts;
+
+/** A description's picture upload — `PROGRAM_IMAGE_CALL_PORTS` (web). */
+export type ProgramImageCallPorts = {
+  readonly addProgramImage: AddProgramImage;
+};

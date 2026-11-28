@@ -97,6 +97,8 @@ export const LogEvent = {
   /** One call of an admin's erasure answered (audit-hardening Phase 3 WS-D): the record's tag, done or not, the residue counts — never a value. */
   PrivacyErasureStep: 'privacy.erasure_step',
   ProfileUpdateRefused: 'profile.update.refused',
+  /** A description's picture landed or was swept, but an object it leaves behind was not deleted: paths only. */
+  ProgramImageCleanupFailed: 'program.image_cleanup_failed',
   RegistrationDisplayNameFailed: 'registration.display_name_failed',
   RhythmRuleWriteFailed: 'rhythm rule write failed',
   /** An admin changed an account's roles (security hardening S-WS-E): ids and a count only. */

@@ -4,7 +4,8 @@ import {
   ViewEncapsulation,
   input,
 } from '@angular/core';
-import { RichBlockKind, RichSpanStyle, type RichText } from '@core/components';
+import { RichBlockKind, RichSpanStyle, RichText } from '@core/components';
+import type { ProgramImageId } from '@core/primitives';
 
 /** Turns a picture's id into its address; `null` while it has none. */
 export type UiRichImageSource = (imageId: string) => string | null;
@@ -93,8 +94,9 @@ export class UiRichTextRuns {
  * a sheet's `h2`).
  *
  * A picture is named by its id; `uiImageSource` turns the id into an
- * address. Without one — or while it answers `null` — the picture is not
- * drawn.
+ * address. Its frame holds its place from the start (the id carries the
+ * picture's size); without a source — or while it answers `null` — the
+ * frame stays empty.
  *
  * Markup contract:
  * ```html
@@ -150,15 +152,20 @@ export class UiRichTextRuns {
           </blockquote>
         }
         @case (Kind.Image) {
-          @if (imageAddress(block.imageId); as address) {
-            <img
-              class="ui-rich-text__image"
-              loading="lazy"
-              decoding="async"
-              [src]="address"
-              [alt]="block.imageAlt"
-            />
-          }
+          <figure
+            class="ui-rich-text__figure"
+            [style.aspect-ratio]="imageRatio(block.imageId)"
+          >
+            @if (imageAddress(block.imageId); as address) {
+              <img
+                class="ui-rich-text__image"
+                loading="lazy"
+                decoding="async"
+                [src]="address"
+                [alt]="block.imageAlt"
+              />
+            }
+          </figure>
         }
       }
     }
@@ -178,6 +185,12 @@ export class UiRichText {
   readonly uiImageSource = input<UiRichImageSource | null>(null);
 
   protected readonly Kind = RichBlockKind;
+
+  /** The place a picture holds before it arrives: its id carries its size. */
+  protected imageRatio(imageId: ProgramImageId): string | null {
+    const size = RichText.imageSize(imageId);
+    return size === null ? null : `${size.pixelWidth} / ${size.pixelHeight}`;
+  }
 
   protected imageAddress(imageId: string): string | null {
     return this.uiImageSource()?.(imageId) ?? null;

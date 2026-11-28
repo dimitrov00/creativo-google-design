@@ -75,6 +75,7 @@ export * from './phone.system';
 export * from './policy-recompute-job.system';
 export * from './profile-completion.system';
 export * from './profile-edit.system';
+export * from './program-image.system';
 export * from './programs.system';
 export * from './records.system';
 export * from './recurrence.system';

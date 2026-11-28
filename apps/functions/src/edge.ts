@@ -753,6 +753,16 @@ const ENGAGEMENT_WIRE = uniform(
     // (D9(b) — the admin write is a rules-guarded browser pipeline), but a
     // missing program reads as every other missing document does, and an
     // event whose shop has no zone as a precondition the deployment owes.
+    // `addProgramImage`: who may act, then what was asked.
+    [EngagementErrorCode.ProgramImageUnauthenticated]: fields(
+      S.Unauthenticated,
+    ),
+    [EngagementErrorCode.ProgramImageForbidden]: fields(S.PermissionDenied),
+    [EngagementErrorCode.ProgramImageInvalidInput]: withField(
+      S.InvalidArgument,
+    ),
+    [EngagementErrorCode.ProgramImageMissing]: fields(S.FailedPrecondition),
+    [EngagementErrorCode.ProgramImagesFull]: fields(S.ResourceExhausted),
     [EngagementErrorCode.PositionNotFound]: fields(S.NotFound),
     [EngagementErrorCode.CourseNotFound]: fields(S.NotFound),
     [EngagementErrorCode.ShopEventNotFound]: fields(S.NotFound),

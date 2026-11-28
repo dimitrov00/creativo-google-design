@@ -4,6 +4,8 @@ import {
   UiRichTextEditor,
   type UiRichTextEditorWords,
 } from './rich-text-editor';
+import { ProgramImageId } from '@core/primitives';
+import type { UiRichImageUpload } from './rich-text-editor.model';
 
 const WORDS: UiRichTextEditorWords = {
   toolbar: 'Formatting',
@@ -23,6 +25,10 @@ const WORDS: UiRichTextEditorWords = {
   linkApply: 'Done',
   linkRemove: 'Remove link',
   linkInvalid: 'That is not an address.',
+  image: 'Picture',
+  imageAlt: 'Picture description',
+  imageAltPlaceholder: 'What the picture shows',
+  imageRemove: 'Remove the picture',
 };
 
 @Component({
@@ -32,6 +38,8 @@ const WORDS: UiRichTextEditorWords = {
     [uiWords]="words"
     [uiMaxChars]="max()"
     [uiDisabled]="disabled()"
+    [uiImageUpload]="upload()"
+    [uiImageSource]="source()"
     uiLabel="Description"
     uiPlaceholder="Tell the story"
     (uiMarkdownChange)="answers.push($event); markdown.set($event)"
@@ -43,6 +51,21 @@ class HostComponent {
   max = signal(20_000);
   disabled = signal(false);
   answers: string[] = [];
+  uploaded: File[] = [];
+  /** What the next upload answers. */
+  next: UiRichImageUpload = {
+    imageId: ProgramImageId.of('act-0123_1600x900'),
+    refusal: null,
+  };
+  upload = signal<((file: File) => Promise<UiRichImageUpload>) | null>(null);
+  source = signal<((imageId: string) => string | null) | null>(null);
+
+  takeUploads(): void {
+    this.upload.set(async (file) => {
+      this.uploaded.push(file);
+      return this.next;
+    });
+  }
 }
 
 describe('UiRichTextEditor', () => {
@@ -254,6 +277,158 @@ describe('UiRichTextEditor', () => {
     expect(paste.defaultPrevented).toBe(true);
     expect(lastAnswer()).toBe('Plain words');
     expect(content().querySelector('b, img')).toBeNull();
+  });
+
+  describe('pictures', () => {
+    const PNG = new File(['x'], 'chair.png', { type: 'image/png' });
+
+    /** Picks files in the toolbar's hidden picker. */
+    function pick(files: readonly File[]): void {
+      const picker = host.querySelector(
+        '[data-testid="rich-image-file"]',
+      ) as HTMLInputElement;
+      Object.defineProperty(picker, 'files', {
+        value: files,
+        configurable: true,
+      });
+      picker.dispatchEvent(new Event('change'));
+    }
+
+    async function settled(check: () => void): Promise<void> {
+      await vi.waitFor(() => {
+        fixture.detectChanges();
+        check();
+      });
+    }
+
+    it('has no picture button until the host can take a picture', async () => {
+      await ready('');
+      expect(tool('image')).toBeNull();
+
+      fixture.componentInstance.takeUploads();
+      fixture.detectChanges();
+      expect(tool('image').getAttribute('aria-label')).toBe('Picture');
+    });
+
+    it('uploads a picked file and names the picture in the text', async () => {
+      await ready('Words');
+      fixture.componentInstance.takeUploads();
+      fixture.componentInstance.source.set((id) => `/media/${id}`);
+      fixture.detectChanges();
+
+      pick([PNG]);
+
+      await settled(() =>
+        expect(lastAnswer()).toContain('![](act-0123_1600x900)'),
+      );
+      expect(fixture.componentInstance.uploaded).toEqual([PNG]);
+      const frame = content().querySelector<HTMLElement>(
+        '.ui-rich-text-editor__image',
+      );
+      expect(frame?.style.aspectRatio).toBe('1600 / 900');
+      expect(frame?.querySelector('img')?.getAttribute('src')).toBe(
+        '/media/act-0123_1600x900',
+      );
+    });
+
+    it('puts a picture after the selection — never over it, and never inside a list item', async () => {
+      await ready('- Fades\n- Beards');
+      fixture.componentInstance.takeUploads();
+      fixture.detectChanges();
+      selectAll();
+
+      pick([PNG]);
+
+      await settled(() =>
+        expect(lastAnswer()).toContain('![](act-0123_1600x900)'),
+      );
+      expect(lastAnswer()).toContain('- Fades\n- Beards');
+      expect(
+        content().querySelector('li .ui-rich-text-editor__image'),
+      ).toBeNull();
+    });
+
+    it('holds a stored picture’s place, and draws it when its address arrives', async () => {
+      await ready('![The chair](act-0123_1600x900)');
+      const frame = content().querySelector<HTMLElement>(
+        '.ui-rich-text-editor__image',
+      );
+      expect(frame?.hasAttribute('data-pending')).toBe(true);
+      expect(frame?.querySelector('img')?.getAttribute('alt')).toBe(
+        'The chair',
+      );
+
+      fixture.componentInstance.source.set((id) => `/media/${id}`);
+      fixture.detectChanges();
+
+      expect(frame?.hasAttribute('data-pending')).toBe(false);
+      expect(frame?.querySelector('img')?.getAttribute('src')).toBe(
+        '/media/act-0123_1600x900',
+      );
+    });
+
+    it('says why a picture did not land, in the host’s words, and adds nothing', async () => {
+      await ready('Words');
+      fixture.componentInstance.takeUploads();
+      fixture.componentInstance.next = {
+        imageId: null,
+        refusal: 'This picture cannot be used.',
+      };
+      fixture.detectChanges();
+
+      pick([PNG]);
+
+      await settled(() =>
+        expect(
+          host.querySelector('[data-testid="rich-image-refusal"]')?.textContent,
+        ).toContain('This picture cannot be used.'),
+      );
+      expect(content().querySelector('.ui-rich-text-editor__image')).toBeNull();
+      expect(lastAnswer()).toBeUndefined();
+    });
+
+    it('takes a pasted picture file, and never the clipboard’s markup', async () => {
+      await ready('');
+      fixture.componentInstance.takeUploads();
+      fixture.detectChanges();
+      const paste = new Event('paste', { bubbles: true, cancelable: true });
+      Object.defineProperty(paste, 'clipboardData', {
+        value: { files: [PNG], getData: () => '<img src=x onerror=x()>' },
+      });
+
+      content().dispatchEvent(paste);
+
+      await settled(() => expect(lastAnswer()).toBe('![](act-0123_1600x900)'));
+      expect(paste.defaultPrevented).toBe(true);
+      expect(fixture.componentInstance.uploaded).toEqual([PNG]);
+    });
+
+    it('describes and removes the selected picture', async () => {
+      await ready('Words');
+      fixture.componentInstance.takeUploads();
+      fixture.detectChanges();
+      pick([PNG]);
+      // A picture just put in is the selection: its row is open.
+      await settled(() =>
+        expect(
+          host.querySelector('[data-testid="rich-image-alt"]'),
+        ).not.toBeNull(),
+      );
+
+      const alt = host.querySelector(
+        '[data-testid="rich-image-alt"]',
+      ) as HTMLInputElement;
+      alt.value = 'The chair';
+      alt.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      expect(lastAnswer()).toContain('![The chair](act-0123_1600x900)');
+
+      press(
+        host.querySelector('[data-testid="rich-image-remove"]') as HTMLElement,
+      );
+      expect(lastAnswer()).toBe('Words');
+      expect(host.querySelector('[data-testid="rich-image-alt"]')).toBeNull();
+    });
   });
 
   it('locks the tools and the text while disabled', async () => {

@@ -61,6 +61,8 @@ import {
   POSITION_BODY_READ_PORTS,
   POSITION_READ_PORTS,
   PROFILE_PORTS,
+  PROGRAM_IMAGE_CALL_PORTS,
+  PROGRAM_IMAGE_RESOLVE_PORTS,
   PROGRAMS_PORTS,
   ReportingErrorHandler,
   READ_AS_CALL_PORTS,
@@ -91,6 +93,7 @@ import {
   rolesAdminPorts,
   analyticsCallPorts,
   teamAdminPorts,
+  programImageCallPorts,
   STAGED_UPLOAD_PORTS,
   TEAM_ADMIN_PORTS,
   TEAM_BARBER_PORTS,
@@ -414,6 +417,11 @@ export const appConfig: ApplicationConfig = {
     {
       provide: TEAM_ADMIN_PORTS,
       useFactory: () => teamAdminPorts(inject(GATEWAY_PORTS)),
+    },
+    // A description's picture upload, over the same callable client.
+    {
+      provide: PROGRAM_IMAGE_CALL_PORTS,
+      useFactory: () => programImageCallPorts(inject(GATEWAY_PORTS)),
     },
     // The staff «Анализи» report, over the same callable client.
     {
@@ -813,6 +821,13 @@ export const appConfig: ApplicationConfig = {
       factory: (m) => (inj) =>
         m.storage.mediaResolvePorts(inj.get(m.storage.FIREBASE_STORAGE)),
       methods: { resolveMedia: LazyMethod.Promise },
+      onLoadError: mediaUnavailable,
+    }),
+    // A description's pictures, by id — the careers sheet and the editor.
+    provideLazyPort(PROGRAM_IMAGE_RESOLVE_PORTS, firebaseData, {
+      factory: (m) => (inj) =>
+        m.storage.programImageResolvePorts(inj.get(m.storage.FIREBASE_STORAGE)),
+      methods: { resolveProgramImage: LazyMethod.Promise },
       onLoadError: mediaUnavailable,
     }),
 

@@ -462,6 +462,7 @@ describe('edge — the wire table', () => {
           AnalyticsErrorCode.GoalInvalidRange,
           TeamErrorCode.InvalidInput,
           GovernanceErrorCode.PermissionsInvalid,
+          EngagementErrorCode.ProgramImageInvalidInput,
         ].sort(),
       );
       expect(namedBy(NamedField.Refusal)).toEqual([

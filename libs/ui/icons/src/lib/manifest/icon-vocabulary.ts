@@ -184,6 +184,9 @@ export const UI_ICON_REGISTRY = {
   'richText.link': 'link',
   /** Takes a link off the words it is on. */
   'richText.unlink': 'link_off',
+  /** A picture put into the text, and one taken out of it. */
+  'richText.image': 'image',
+  'richText.imageRemove': 'delete',
   'richText.undo': 'undo',
   'richText.redo': 'redo',
 

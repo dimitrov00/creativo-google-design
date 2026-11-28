@@ -7,6 +7,7 @@ import {
   EnvironmentProviders,
   Injectable,
   input,
+  signal,
 } from '@angular/core';
 import {
   Translation,
@@ -20,17 +21,26 @@ import {
   LocationStatus,
   PositionStatus,
   RichText,
+  type ProgramImageCall,
 } from '@core/components';
 import type { ShopLocation } from '@core/entities';
 import type { ProgramsPorts } from '@core/ports';
+import { AccountStateService } from '@creativo/features/client/account-state';
 import {
   CourseId,
   EventId,
   LocationId,
   PositionId,
+  ProgramImageId,
   Result,
+  UserId,
 } from '@core/primitives';
-import { RepositoryError } from '@core/errors';
+import {
+  EngagementErrorCode,
+  PipelineError,
+  PipelineErrorCode,
+  RepositoryError,
+} from '@core/errors';
 import { SiteHeaderComponent } from '@creativo/features/shared/shell';
 import {
   type ProgramsWorld,
@@ -58,7 +68,10 @@ import {
   DEFAULT_LOCATION_PORTS,
   ID_PORTS,
   LOCATION_LOAD_PORTS,
+  PROGRAM_IMAGE_CALL_PORTS,
+  PROGRAM_IMAGE_RESOLVE_PORTS,
   PROGRAMS_PORTS,
+  STAGED_UPLOAD_PORTS,
 } from '@creativo/infrastructure/firebase-app';
 import { By } from '@angular/platform-browser';
 import { UiModalSheet } from '@creativo/ui/controls';
@@ -258,6 +271,31 @@ function provideTestI18n(): EnvironmentProviders[] {
 }
 
 /**
+ * A description's pictures, as the page's three picture ports saw them —
+ * emptied before every case.
+ */
+const pictures: {
+  /** The staged uploads, by `userId/stagedName`. */
+  staged: string[];
+  /** Every `addProgramImage` call. */
+  calls: ProgramImageCall.Add[];
+  /** Every address asked, by `programId/imageId`. */
+  asked: string[];
+  /** What the next `addProgramImage` refuses with; `null` answers the picture. */
+  refusal: PipelineError | null;
+  /** The prefix of the ids the page draws (`<prefix>-1`, …). */
+  idPrefix: string;
+} = { staged: [], calls: [], asked: [], refusal: null, idPrefix: 'generated' };
+
+beforeEach(() => {
+  pictures.staged = [];
+  pictures.calls = [];
+  pictures.asked = [];
+  pictures.refusal = null;
+  pictures.idPrefix = 'generated';
+});
+
+/**
  * The page over a world seeded with `seed` (the default shop alone unless
  * `seed.locations` names the shops). A case that scripts a member of the
  * suite overrides it over the full double, which it receives.
@@ -305,7 +343,44 @@ async function configure(
         useValue: memoryDefaultLocationPorts(),
       },
       { provide: CLOCK_PORTS, useValue: memoryClockPorts() },
-      { provide: ID_PORTS, useValue: memoryIdPorts('generated') },
+      { provide: ID_PORTS, useValue: memoryIdPorts(pictures.idPrefix) },
+      {
+        provide: AccountStateService,
+        useValue: { userId: signal(UserId.of('u-editor')) },
+      },
+      {
+        provide: STAGED_UPLOAD_PORTS,
+        useValue: {
+          stageUpload: async (userId: string, stagedName: string) => {
+            pictures.staged.push(`${userId}/${stagedName}`);
+            return Result.ok(undefined);
+          },
+        },
+      },
+      {
+        provide: PROGRAM_IMAGE_CALL_PORTS,
+        useValue: {
+          addProgramImage: async (call: ProgramImageCall.Add) => {
+            pictures.calls.push(call);
+            return pictures.refusal === null
+              ? Result.ok({
+                  imageId: ProgramImageId.of(
+                    `${call.operationId}_${call.mediaWidth}x${call.mediaHeight}`,
+                  ),
+                })
+              : Result.err(pictures.refusal);
+          },
+        },
+      },
+      {
+        provide: PROGRAM_IMAGE_RESOLVE_PORTS,
+        useValue: {
+          resolveProgramImage: async (programId: string, imageId: string) => {
+            pictures.asked.push(`${programId}/${imageId}`);
+            return Result.ok(`https://media.test/${programId}/${imageId}`);
+          },
+        },
+      },
     ],
   }).compileComponents();
 
@@ -1754,5 +1829,151 @@ describe('AdminPrograms — a role’s description (rich text)', () => {
     click(host, 'admin-save');
     await settle(fixture);
     expect(world.positions.size).toBe(1);
+  });
+});
+
+describe('AdminPrograms — a description’s pictures', () => {
+  const stored = positionOf('pos_1');
+  const JPEG = new File(['x'], 'chair.jpg', { type: 'image/jpeg' });
+
+  const editorOf = (fixture: ComponentFixture<AdminPrograms>) =>
+    fixture.debugElement.query(By.directive(UiRichTextEditor));
+
+  /** The editor hands the page a picked file, as its picture button does. */
+  const upload = (fixture: ComponentFixture<AdminPrograms>, file: File) =>
+    (editorOf(fixture).componentInstance as UiRichTextEditor).uiImageUpload()?.(
+      file,
+    );
+
+  beforeEach(() => {
+    // Ids long enough to name an upload (`ClientOperationId`).
+    pictures.idPrefix = 'generated-picture-id';
+    // The browser's own picture reading, which jsdom has none of: a
+    // 1600 × 900 picture, and an address for the bytes in hand.
+    vi.stubGlobal('createImageBitmap', async () => ({
+      width: 1600,
+      height: 900,
+      close: () => undefined,
+    }));
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:picked');
+    vi.spyOn(URL, 'revokeObjectURL').mockReturnValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('uploads a picture into the stored role’s folder and shows it from the bytes in hand', async () => {
+    const { fixture, host } = await configure({ positions: [stored] });
+    rowsOf(host, 'admin-positions-list')[0]?.click();
+    await settle(fixture);
+
+    const answer = await upload(fixture, JPEG);
+
+    expect(pictures.staged).toEqual(['u-editor/generated-picture-id-1']);
+    expect(pictures.calls).toEqual([
+      {
+        programId: stored.id,
+        stagedName: 'generated-picture-id-1',
+        mediaWidth: 1600,
+        mediaHeight: 900,
+        operationId: 'generated-picture-id-2',
+      },
+    ]);
+    expect(answer).toEqual({
+      imageId: 'generated-picture-id-2_1600x900',
+      refusal: null,
+    });
+    fixture.detectChanges();
+    expect(
+      editorOf(fixture).componentInstance.uiImageSource()?.(
+        'generated-picture-id-2_1600x900',
+      ),
+    ).toBe('blob:picked');
+  });
+
+  it('gives a new role’s pictures the folder of the id its save then takes', async () => {
+    const { fixture, host, world } = await configure();
+    click(host, 'admin-new');
+    await settle(fixture);
+
+    await upload(fixture, JPEG);
+    const folder = pictures.calls[0]?.programId;
+    expect(folder).toBe('generated-picture-id-1');
+
+    await upload(fixture, JPEG);
+    expect(pictures.calls[1]?.programId).toBe(folder);
+
+    fillInput(host, 'admin-position-title-en', 'Barber');
+    fillInput(host, 'admin-position-title-bg', 'Бръснар');
+    fillInput(host, 'admin-position-summary-en', 'Full-time chair');
+    fillInput(host, 'admin-position-summary-bg', 'Пълен работен ден');
+    fixture.detectChanges();
+    click(host, 'admin-save');
+    await settle(fixture);
+
+    expect([...world.positions.keys()]).toEqual([folder]);
+  });
+
+  it('asks the addresses of a stored description’s pictures once it is read', async () => {
+    const { fixture, host } = await configure({
+      positions: [stored],
+      positionBodies: [
+        {
+          id: stored.id,
+          body: textFixture(
+            '![Chair](pic-a_800x600)',
+            '![Стол](pic-a_800x600)',
+          ),
+        },
+      ],
+    });
+    rowsOf(host, 'admin-positions-list')[0]?.click();
+    await settle(fixture);
+
+    expect(pictures.asked).toEqual([`${stored.id}/pic-a_800x600`]);
+    expect(
+      editorOf(fixture).componentInstance.uiImageSource()?.('pic-a_800x600'),
+    ).toBe(`https://media.test/${stored.id}/pic-a_800x600`);
+  });
+
+  it('words a refused picture, and a failure it has no words for as the general line', async () => {
+    const { fixture, host } = await configure({ positions: [stored] });
+    rowsOf(host, 'admin-positions-list')[0]?.click();
+    await settle(fixture);
+
+    pictures.refusal = PipelineError.of(
+      PipelineErrorCode.InvalidRequest,
+      EngagementErrorCode.ProgramImagesFull,
+      null,
+      null,
+    );
+    expect(await upload(fixture, JPEG)).toEqual({
+      imageId: null,
+      refusal:
+        'The description already has too many pictures. Save it and try again later.',
+    });
+
+    pictures.refusal = PipelineError.bare(PipelineErrorCode.Unavailable);
+    expect(await upload(fixture, JPEG)).toEqual({
+      imageId: null,
+      refusal: 'The picture was not uploaded. Try again.',
+    });
+  });
+
+  it('refuses a file the browser cannot read as a picture before anything goes up', async () => {
+    const { fixture, host } = await configure({ positions: [stored] });
+    rowsOf(host, 'admin-positions-list')[0]?.click();
+    await settle(fixture);
+    vi.stubGlobal('createImageBitmap', async () => {
+      throw new Error('not a picture');
+    });
+
+    expect(await upload(fixture, JPEG)).toEqual({
+      imageId: null,
+      refusal: 'This picture cannot be used. Pick an image up to 5 MB.',
+    });
+    expect(pictures.staged).toEqual([]);
   });
 });

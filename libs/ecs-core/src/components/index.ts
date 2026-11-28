@@ -214,6 +214,7 @@ export * from './profile-edits.data';
 export * from './program-input.data';
 export * from './program-contact.data';
 export * from './program-status.data';
+export * from './program-image-call.data';
 export * from './workplace-mode.data';
 export * from './public-label.data';
 export * from './punch-card.data';

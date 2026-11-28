@@ -71,12 +71,9 @@
      tool: every tool is always in reach, undo and redo at the trailing
      edge of whichever row they land on. */
   .ui-rich-text-editor__tools {
-    display: flex;
-    flex: 0 1 auto;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--sys-space-tight);
-    min-inline-size: 0;
+    /* The groups wrap as the bar's own items, so undo and redo share the
+       last row with whatever tools landed on it — never a row of their own. */
+    display: contents;
   }
 
   .ui-rich-text-editor__group {
@@ -168,13 +165,28 @@
   }
 
   /* A picture the text names, until pictures are drawn here: a plate. */
+  /* A picture: a frame that holds its place (the engine sets its
+     aspect ratio from the id), filled while the address is on its way. */
   .ui-rich-text-editor__image {
-    padding: var(--sys-space-regular);
-    border: 1px dashed var(--sys-color-separator);
+    display: block;
+    margin: 0;
+    overflow: hidden;
     border-radius: var(--control-radius-subtle);
-    color: var(--sys-color-secondary-label);
-    font: var(--sys-font-footnote);
-    text-align: center;
+    background: var(--sys-color-fill);
+    cursor: default;
+  }
+
+  .ui-rich-text-editor__image[data-pending] {
+    min-block-size: 6rem;
+  }
+
+  .ui-rich-text-editor__image[data-pending] > img {
+    visibility: hidden;
+  }
+
+  .ui-rich-text-editor__refusal--bar {
+    padding: var(--sys-space-compact);
+    border-block-end: 1px solid var(--sys-color-separator);
   }
 
   .ui-rich-text-editor__content .ProseMirror-selectednode {

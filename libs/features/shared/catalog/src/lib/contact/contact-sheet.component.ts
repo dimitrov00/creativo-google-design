@@ -17,6 +17,7 @@ import {
   UiListGroup,
   UiListRow,
   UiRichText,
+  type UiRichImageSource,
   UiSheetHeadline,
 } from '@creativo/ui/patterns';
 import { opensNewTab } from './program-contact.presenter';
@@ -106,6 +107,7 @@ import { CONTACT_ICON, type ContactSheetVm } from './program-contact.vm';
               <ui-rich-text
                 [uiBlocks]="contact.body ?? []"
                 [uiHeadingLevel]="3"
+                [uiImageSource]="uiImageSource()"
                 data-testid="contact-sheet-body"
               />
             }
@@ -171,6 +173,8 @@ import { CONTACT_ICON, type ContactSheetVm } from './program-contact.vm';
 export class ContactSheetComponent {
   /** The thing to answer; `null` while no row is open. */
   readonly uiContact = input<ContactSheetVm | null>(null);
+  /** Turns a picture the description names into its address; `null` holds its place empty. */
+  readonly uiImageSource = input<UiRichImageSource | null>(null);
   /** The sheet has left: the page lets go of the row. */
   readonly uiClosed = output<void>();
 

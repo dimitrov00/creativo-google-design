@@ -79,10 +79,19 @@
     color: inherit;
   }
 
+  /* A picture's frame holds its place from the first paint — the element
+     sets its aspect ratio from the picture's id — so the text under it
+     does not jump when the bytes arrive. */
+  .ui-rich-text__figure {
+    margin: 0;
+    overflow: hidden;
+    border-radius: var(--control-radius-subtle);
+    background: var(--sys-color-fill);
+  }
+
   .ui-rich-text__image {
     display: block;
     inline-size: 100%;
     block-size: auto;
-    border-radius: var(--control-radius-subtle);
   }
 }
